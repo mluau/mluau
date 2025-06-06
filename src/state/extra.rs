@@ -99,9 +99,6 @@ pub(crate) struct ExtraData {
 
     // Values currently being yielded from Lua.yield()
     pub(super) yielded_values: Option<MultiValue>,
-
-    #[cfg(all(not(feature = "luau"), not(feature = "lua51"), not(feature = "luajit")))]
-    pub(super) yield_continuation: bool,
 }
 
 impl Drop for ExtraData {
@@ -205,8 +202,6 @@ impl ExtraData {
             #[cfg(feature = "luau")]
             running_gc: false,
             yielded_values: None,
-            #[cfg(all(not(feature = "luau"), not(feature = "lua51"), not(feature = "luajit")))]
-            yield_continuation: false,
         }));
 
         // Store it in the registry
