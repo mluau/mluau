@@ -733,7 +733,6 @@ impl RawLua {
     /// Uses 2 stack spaces, does not call checkstack.
     pub(crate) unsafe fn stack_value(&self, idx: c_int, type_hint: Option<c_int>) -> Value {
         let state = self.state();
-        println!("ABC");
         match type_hint.unwrap_or_else(|| ffi::lua_type(state, idx)) {
             ffi::LUA_TNIL => Nil,
 
@@ -772,7 +771,6 @@ impl RawLua {
             }
 
             ffi::LUA_TSTRING => {
-                println!("STRING");
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
                 ffi::lua_xpush(state, self.ref_thread(aux_thread), idx);
                 if replace {
@@ -782,7 +780,6 @@ impl RawLua {
             }
 
             ffi::LUA_TTABLE => {
-                println!("TABLE");
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
                 ffi::lua_xpush(state, self.ref_thread(aux_thread), idx);
                 if replace {
@@ -909,7 +906,6 @@ impl RawLua {
             ffi::lua_gettop(ref_thread) >= vref.index,
             "GC finalizer is not allowed in ref_thread"
         );
-        println!("Trying to dropref");
         ffi::lua_pushnil(ref_thread);
         ffi::lua_replace(ref_thread, vref.index);
         (*self.extra.get()).ref_thread[vref.aux_thread]
