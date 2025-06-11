@@ -434,7 +434,7 @@ impl Thread {
         unsafe {
             let _sg = StackGuard::new(state);
 
-            let nargs = args.push_into_specified_stack_multi(&lua, thread_state)?;
+            args.push_into_specified_stack_multi(&lua, thread_state)?;
 
             Ok(AsyncThread {
                 thread: self,
