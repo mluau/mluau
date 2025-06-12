@@ -6,9 +6,6 @@ use crate::types::{Callback, CallbackUpvalue};
 #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 use crate::types::ContinuationUpvalue;
 
-#[cfg(feature = "async")]
-use crate::types::{AsyncCallback, AsyncCallbackUpvalue, AsyncPollUpvalue};
-
 pub(crate) trait TypeKey: Any {
     fn type_key() -> *const c_void;
 }
@@ -52,41 +49,5 @@ impl TypeKey for crate::types::HookCallback {
     fn type_key() -> *const c_void {
         static HOOK_CALLBACK_TYPE_KEY: u8 = 0;
         &HOOK_CALLBACK_TYPE_KEY as *const u8 as *const c_void
-    }
-}
-
-#[cfg(feature = "async")]
-impl TypeKey for AsyncCallback {
-    #[inline(always)]
-    fn type_key() -> *const c_void {
-        static ASYNC_CALLBACK_TYPE_KEY: u8 = 0;
-        &ASYNC_CALLBACK_TYPE_KEY as *const u8 as *const c_void
-    }
-}
-
-#[cfg(feature = "async")]
-impl TypeKey for AsyncCallbackUpvalue {
-    #[inline(always)]
-    fn type_key() -> *const c_void {
-        static ASYNC_CALLBACK_UPVALUE_TYPE_KEY: u8 = 0;
-        &ASYNC_CALLBACK_UPVALUE_TYPE_KEY as *const u8 as *const c_void
-    }
-}
-
-#[cfg(feature = "async")]
-impl TypeKey for AsyncPollUpvalue {
-    #[inline(always)]
-    fn type_key() -> *const c_void {
-        static ASYNC_POLL_UPVALUE_TYPE_KEY: u8 = 0;
-        &ASYNC_POLL_UPVALUE_TYPE_KEY as *const u8 as *const c_void
-    }
-}
-
-#[cfg(feature = "async")]
-impl TypeKey for Option<std::task::Waker> {
-    #[inline(always)]
-    fn type_key() -> *const c_void {
-        static WAKER_TYPE_KEY: u8 = 0;
-        &WAKER_TYPE_KEY as *const u8 as *const c_void
     }
 }

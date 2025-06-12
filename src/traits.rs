@@ -10,9 +10,6 @@ use crate::types::MaybeSend;
 use crate::util::{check_stack, short_type_name};
 use crate::value::Value;
 
-#[cfg(feature = "async")]
-use std::future::Future;
-
 /// Trait for types convertible to [`Value`].
 pub trait IntoLua: Sized {
     /// Performs the conversion.
@@ -181,29 +178,9 @@ pub trait ObjectLike: Sealed {
     where
         R: FromLuaMulti;
 
-    /// Asynchronously calls the object as a function assuming it has `__call` metamethod.
-    ///
-    /// The metamethod is called with the object as its first argument, followed by the passed
-    /// arguments.
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn call_async<R>(&self, args: impl IntoLuaMulti) -> impl Future<Output = Result<R>>
-    where
-        R: FromLuaMulti;
-
     /// Gets the function associated to key `name` from the object and calls it,
     /// passing the object itself along with `args` as function arguments.
     fn call_method<R>(&self, name: &str, args: impl IntoLuaMulti) -> Result<R>
-    where
-        R: FromLuaMulti;
-
-    /// Gets the function associated to key `name` from the object and asynchronously calls it,
-    /// passing the object itself along with `args` as function arguments.
-    ///
-    /// This might invoke the `__index` metamethod.
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn call_async_method<R>(&self, name: &str, args: impl IntoLuaMulti) -> impl Future<Output = Result<R>>
     where
         R: FromLuaMulti;
 
@@ -212,16 +189,6 @@ pub trait ObjectLike: Sealed {
     ///
     /// This might invoke the `__index` metamethod.
     fn call_function<R>(&self, name: &str, args: impl IntoLuaMulti) -> Result<R>
-    where
-        R: FromLuaMulti;
-
-    /// Gets the function associated to key `name` from the object and asynchronously calls it,
-    /// passing `args` as function arguments.
-    ///
-    /// This might invoke the `__index` metamethod.
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn call_async_function<R>(&self, name: &str, args: impl IntoLuaMulti) -> impl Future<Output = Result<R>>
     where
         R: FromLuaMulti;
 
@@ -243,14 +210,6 @@ pub trait LuaNativeFnMut<A: FromLuaMulti> {
     type Output: IntoLuaMulti;
 
     fn call(&mut self, args: A) -> Self::Output;
-}
-
-/// A trait for types that returns a future and can be used as Lua functions.
-#[cfg(feature = "async")]
-pub trait LuaNativeAsyncFn<A: FromLuaMulti> {
-    type Output: IntoLuaMulti;
-
-    fn call(&self, args: A) -> impl Future<Output = Self::Output> + MaybeSend + 'static;
 }
 
 macro_rules! impl_lua_native_fn {
@@ -280,23 +239,6 @@ macro_rules! impl_lua_native_fn {
 
             #[allow(non_snake_case)]
             fn call(&mut self, args: ($($A,)*)) -> Self::Output {
-                let ($($A,)*) = args;
-                self($($A,)*)
-            }
-        }
-
-        #[cfg(feature = "async")]
-        impl<FN, $($A,)* Fut, R> LuaNativeAsyncFn<($($A,)*)> for FN
-        where
-            FN: Fn($($A,)*) -> Fut + MaybeSend + 'static,
-            ($($A,)*): FromLuaMulti,
-            Fut: Future<Output = R> + MaybeSend + 'static,
-            R: IntoLuaMulti,
-        {
-            type Output = R;
-
-            #[allow(non_snake_case)]
-            fn call(&self, args: ($($A,)*)) -> impl Future<Output = Self::Output> + MaybeSend + 'static {
                 let ($($A,)*) = args;
                 self($($A,)*)
             }

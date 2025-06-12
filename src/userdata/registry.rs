@@ -17,13 +17,6 @@ use crate::userdata::{
 use crate::util::short_type_name;
 use crate::value::Value;
 
-#[cfg(feature = "async")]
-use {
-    crate::types::AsyncCallback,
-    crate::userdata::{UserDataRef, UserDataRefMut},
-    std::future::{self, Future},
-};
-
 #[derive(Clone, Copy)]
 enum UserDataType {
     Shared(TypeIdHints),
@@ -47,11 +40,7 @@ pub(crate) struct RawUserDataRegistry {
 
     // Methods
     pub(crate) methods: Vec<(String, Callback)>,
-    #[cfg(feature = "async")]
-    pub(crate) async_methods: Vec<(String, AsyncCallback)>,
     pub(crate) meta_methods: Vec<(String, Callback)>,
-    #[cfg(feature = "async")]
-    pub(crate) async_meta_methods: Vec<(String, AsyncCallback)>,
 
     pub(crate) destructor: ffi::lua_CFunction,
     pub(crate) type_id: Option<TypeId>,
@@ -92,11 +81,7 @@ impl<T> UserDataRegistry<T> {
             field_setters: Vec::new(),
             meta_fields: Vec::new(),
             methods: Vec::new(),
-            #[cfg(feature = "async")]
-            async_methods: Vec::new(),
             meta_methods: Vec::new(),
-            #[cfg(feature = "async")]
-            async_meta_methods: Vec::new(),
             destructor: super::util::destroy_userdata_storage::<T>,
             type_id: r#type.type_id(),
             type_name: short_type_name::<T>(),
@@ -206,94 +191,6 @@ impl<T> UserDataRegistry<T> {
         })
     }
 
-    #[cfg(feature = "async")]
-    fn box_async_method<M, A, MR, R>(&self, name: &str, method: M) -> AsyncCallback
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRef<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti,
-    {
-        let name = get_function_name::<T>(name);
-        macro_rules! try_self_arg {
-            ($res:expr) => {
-                match $res {
-                    Ok(res) => res,
-                    Err(err) => return Box::pin(future::ready(Err(Error::bad_self_argument(&name, err)))),
-                }
-            };
-        }
-
-        Box::new(move |rawlua, nargs| unsafe {
-            if nargs == 0 {
-                let err = Error::from_lua_conversion("missing argument", "userdata", None);
-                try_self_arg!(Err(err));
-            }
-            // Stack will be empty when polling the future, keep `self` on the ref thread
-            let state = rawlua.state();
-            let self_ud = try_self_arg!(AnyUserData::from_specified_stack(-nargs, rawlua, state));
-            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
-
-            let self_ud = try_self_arg!(self_ud.borrow());
-            let args = match args {
-                Ok(args) => args,
-                Err(e) => return Box::pin(future::ready(Err(e))),
-            };
-            let lua = rawlua.lua();
-            let fut = method(lua.clone(), self_ud, args);
-            // Lua is locked when the future is polled
-            Box::pin(async move {
-                fut.await?
-                    .push_into_specified_stack_multi(lua.raw_lua(), lua.raw_lua().state())
-            })
-        })
-    }
-
-    #[cfg(feature = "async")]
-    fn box_async_method_mut<M, A, MR, R>(&self, name: &str, method: M) -> AsyncCallback
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRefMut<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti,
-    {
-        let name = get_function_name::<T>(name);
-        macro_rules! try_self_arg {
-            ($res:expr) => {
-                match $res {
-                    Ok(res) => res,
-                    Err(err) => return Box::pin(future::ready(Err(Error::bad_self_argument(&name, err)))),
-                }
-            };
-        }
-
-        Box::new(move |rawlua, nargs| unsafe {
-            if nargs == 0 {
-                let err = Error::from_lua_conversion("missing argument", "userdata", None);
-                try_self_arg!(Err(err));
-            }
-            // Stack will be empty when polling the future, keep `self` on the ref thread
-            let state = rawlua.state();
-            let self_ud = try_self_arg!(AnyUserData::from_specified_stack(-nargs, rawlua, state));
-            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
-
-            let self_ud = try_self_arg!(self_ud.borrow_mut());
-            let args = match args {
-                Ok(args) => args,
-                Err(e) => return Box::pin(future::ready(Err(e))),
-            };
-            let lua = rawlua.lua();
-            let fut = method(lua.clone(), self_ud, args);
-            // Lua is locked when the future is polled
-            Box::pin(async move {
-                fut.await?
-                    .push_into_specified_stack_multi(lua.raw_lua(), lua.raw_lua().state())
-            })
-        })
-    }
-
     fn box_function<F, A, R>(&self, name: &str, function: F) -> Callback
     where
         F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
@@ -323,29 +220,6 @@ impl<T> UserDataRegistry<T> {
             let state = lua.state();
             let args = A::from_specified_stack_args(nargs, 1, Some(&name), lua, state)?;
             function(lua.lua(), args)?.push_into_specified_stack_multi(lua, state)
-        })
-    }
-
-    #[cfg(feature = "async")]
-    fn box_async_function<F, A, FR, R>(&self, name: &str, function: F) -> AsyncCallback
-    where
-        F: Fn(Lua, A) -> FR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        FR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti,
-    {
-        let name = get_function_name::<T>(name);
-        Box::new(move |rawlua, nargs| unsafe {
-            let args = match A::from_specified_stack_args(nargs, 1, Some(&name), rawlua, rawlua.state()) {
-                Ok(args) => args,
-                Err(e) => return Box::pin(future::ready(Err(e))),
-            };
-            let lua = rawlua.lua();
-            let fut = function(lua.clone(), args);
-            Box::pin(async move {
-                fut.await?
-                    .push_into_specified_stack_multi(lua.raw_lua(), lua.raw_lua().state())
-            })
         })
     }
 
@@ -471,34 +345,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         self.raw.methods.push((name, callback));
     }
 
-    #[cfg(feature = "async")]
-    fn add_async_method<M, A, MR, R>(&mut self, name: impl ToString, method: M)
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRef<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti,
-    {
-        let name = name.to_string();
-        let callback = self.box_async_method(&name, method);
-        self.raw.async_methods.push((name, callback));
-    }
-
-    #[cfg(feature = "async")]
-    fn add_async_method_mut<M, A, MR, R>(&mut self, name: impl ToString, method: M)
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRefMut<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti,
-    {
-        let name = name.to_string();
-        let callback = self.box_async_method_mut(&name, method);
-        self.raw.async_methods.push((name, callback));
-    }
-
     fn add_function<F, A, R>(&mut self, name: impl ToString, function: F)
     where
         F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
@@ -519,19 +365,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         let name = name.to_string();
         let callback = self.box_function_mut(&name, function);
         self.raw.methods.push((name, callback));
-    }
-
-    #[cfg(feature = "async")]
-    fn add_async_function<F, A, FR, R>(&mut self, name: impl ToString, function: F)
-    where
-        F: Fn(Lua, A) -> FR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        FR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti,
-    {
-        let name = name.to_string();
-        let callback = self.box_async_function(&name, function);
-        self.raw.async_methods.push((name, callback));
     }
 
     fn add_meta_method<M, A, R>(&mut self, name: impl ToString, method: M)
@@ -556,34 +389,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         self.raw.meta_methods.push((name, callback));
     }
 
-    #[cfg(all(feature = "async", not(any(feature = "lua51", feature = "luau"))))]
-    fn add_async_meta_method<M, A, MR, R>(&mut self, name: impl ToString, method: M)
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRef<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti,
-    {
-        let name = name.to_string();
-        let callback = self.box_async_method(&name, method);
-        self.raw.async_meta_methods.push((name, callback));
-    }
-
-    #[cfg(all(feature = "async", not(any(feature = "lua51", feature = "luau"))))]
-    fn add_async_meta_method_mut<M, A, MR, R>(&mut self, name: impl ToString, method: M)
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRefMut<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti,
-    {
-        let name = name.to_string();
-        let callback = self.box_async_method_mut(&name, method);
-        self.raw.async_meta_methods.push((name, callback));
-    }
-
     fn add_meta_function<F, A, R>(&mut self, name: impl ToString, function: F)
     where
         F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
@@ -605,19 +410,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         let callback = self.box_function_mut(&name, function);
         self.raw.meta_methods.push((name, callback));
     }
-
-    #[cfg(all(feature = "async", not(any(feature = "lua51", feature = "luau"))))]
-    fn add_async_meta_function<F, A, FR, R>(&mut self, name: impl ToString, function: F)
-    where
-        F: Fn(Lua, A) -> FR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        FR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti,
-    {
-        let name = name.to_string();
-        let callback = self.box_async_function(&name, function);
-        self.raw.async_meta_methods.push((name, callback));
-    }
 }
 
 macro_rules! lua_userdata_impl {
@@ -633,11 +425,7 @@ macro_rules! lua_userdata_impl {
                 (registry.raw.field_setters).extend(orig_registry.raw.field_setters);
                 (registry.raw.meta_fields).extend(orig_registry.raw.meta_fields);
                 (registry.raw.methods).extend(orig_registry.raw.methods);
-                #[cfg(feature = "async")]
-                (registry.raw.async_methods).extend(orig_registry.raw.async_methods);
                 (registry.raw.meta_methods).extend(orig_registry.raw.meta_methods);
-                #[cfg(feature = "async")]
-                (registry.raw.async_meta_methods).extend(orig_registry.raw.async_meta_methods);
             }
         }
     };

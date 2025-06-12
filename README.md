@@ -76,16 +76,7 @@ Below is a list of the available feature flags. By default `mlua` does not enabl
 
 ### Async/await support
 
-`mlua` supports async/await for all Lua versions including Luau.
-
-This works using Lua [coroutines](https://www.lua.org/manual/5.3/manual.html#2.6) and requires running [Thread](https://docs.rs/mlua/latest/mlua/struct.Thread.html) along with enabling `feature = "async"` in `Cargo.toml`.
-
-**Examples**:
-- [HTTP Client](examples/async_http_client.rs)
-- [HTTP Client (json)](examples/async_http_reqwest.rs)
-- [HTTP Server](examples/async_http_server.rs)
-- [TCP Server](examples/async_tcp_server.rs)
-
+Anti-Raid's fork of mlua does not support async/await due to maintenance concerns, but the original `mlua` crate does.
 
 **shell command examples**:
 ```shell

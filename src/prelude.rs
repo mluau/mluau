@@ -28,10 +28,6 @@ pub use crate::{
     NavigateError as LuaNavigateError, Require as LuaRequire, Vector as LuaVector,
 };
 
-#[cfg(feature = "async")]
-#[doc(no_inline)]
-pub use crate::{AsyncThread as LuaAsyncThread, LuaNativeAsyncFn};
-
 #[cfg(feature = "serde")]
 #[doc(no_inline)]
 pub use crate::{

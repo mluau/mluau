@@ -37,14 +37,6 @@
 //!
 //! Requires `feature = "serde"`.
 //!
-//! # Async/await support
-//!
-//! The [`Lua::create_async_function`] allows creating non-blocking functions that returns
-//! [`Future`]. Lua code with async capabilities can be executed by [`Function::call_async`] family
-//! of functions or polling [`AsyncThread`] using any runtime (eg. Tokio).
-//!
-//! Requires `feature = "async"`.
-//!
 //! # `Send` and `Sync` support
 //!
 //! By default `mlua` is `!Send`. This can be changed by enabling `feature = "send"` that adds
@@ -135,10 +127,6 @@ pub use crate::{
     luau::{NavigateError, Require, TextRequirer},
     vector::Vector,
 };
-
-#[cfg(feature = "async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-pub use crate::{thread::AsyncThread, traits::LuaNativeAsyncFn};
 
 #[cfg(feature = "serde")]
 #[doc(inline)]

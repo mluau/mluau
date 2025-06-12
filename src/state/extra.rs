@@ -21,9 +21,6 @@ use crate::util::{get_internal_metatable, push_internal_userdata, TypeKey, Wrapp
 use crate::chunk::Compiler;
 use crate::MultiValue;
 
-#[cfg(feature = "async")]
-use {futures_util::task::noop_waker_ref, std::ptr::NonNull, std::task::Waker};
-
 use super::{Lua, WeakLua};
 
 // Unique key to store `ExtraData` in the registry
@@ -101,16 +98,9 @@ pub(crate) struct ExtraData {
     // Pool of `WrappedFailure` enums in the ref thread (as userdata)
     pub(super) wrapped_failure_pool: Vec<c_int>,
     pub(super) wrapped_failure_top: usize,
-    // Pool of `Thread`s (coroutines) for async execution
-    #[cfg(feature = "async")]
-    pub(super) thread_pool: Vec<(usize, c_int)>,
 
     // Address of `WrappedFailure` metatable
     pub(super) wrapped_failure_mt_ptr: *const c_void,
-
-    // Waker for polling futures
-    #[cfg(feature = "async")]
-    pub(super) waker: NonNull<Waker>,
 
     #[cfg(not(feature = "luau"))]
     pub(super) hook_callback: Option<crate::types::HookCallback>,
@@ -192,11 +182,7 @@ impl ExtraData {
             ref_thread_internal: RefThread::new(state),
             wrapped_failure_pool: Vec::with_capacity(WRAPPED_FAILURE_POOL_DEFAULT_CAPACITY),
             wrapped_failure_top: 0,
-            #[cfg(feature = "async")]
-            thread_pool: Vec::new(),
             wrapped_failure_mt_ptr,
-            #[cfg(feature = "async")]
-            waker: NonNull::from(noop_waker_ref()),
             #[cfg(not(feature = "luau"))]
             hook_callback: None,
             #[cfg(not(feature = "luau"))]

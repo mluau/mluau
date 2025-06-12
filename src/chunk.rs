@@ -517,17 +517,6 @@ impl Chunk<'_> {
         self.call(())
     }
 
-    /// Asynchronously execute this chunk of code.
-    ///
-    /// See [`exec`] for more details.
-    ///
-    /// [`exec`]: Chunk::exec
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub async fn exec_async(self) -> Result<()> {
-        self.call_async(()).await
-    }
-
     /// Evaluate the chunk as either an expression or block.
     ///
     /// If the chunk can be parsed as an expression, this loads and executes the chunk and returns
@@ -547,45 +536,11 @@ impl Chunk<'_> {
         }
     }
 
-    /// Asynchronously evaluate the chunk as either an expression or block.
-    ///
-    /// See [`eval`] for more details.
-    ///
-    /// [`eval`]: Chunk::eval
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub async fn eval_async<R>(self) -> Result<R>
-    where
-        R: FromLuaMulti,
-    {
-        if self.detect_mode() == ChunkMode::Binary {
-            self.call_async(()).await
-        } else if let Ok(function) = self.to_expression() {
-            function.call_async(()).await
-        } else {
-            self.call_async(()).await
-        }
-    }
-
     /// Load the chunk function and call it with the given arguments.
     ///
     /// This is equivalent to `into_function` and calling the resulting function.
     pub fn call<R: FromLuaMulti>(self, args: impl IntoLuaMulti) -> Result<R> {
         self.into_function()?.call(args)
-    }
-
-    /// Load the chunk function and asynchronously call it with the given arguments.
-    ///
-    /// See [`call`] for more details.
-    ///
-    /// [`call`]: Chunk::call
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub async fn call_async<R>(self, args: impl IntoLuaMulti) -> Result<R>
-    where
-        R: FromLuaMulti,
-    {
-        self.into_function()?.call_async(args).await
     }
 
     /// Load this chunk into a regular [`Function`].

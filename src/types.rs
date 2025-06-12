@@ -9,12 +9,6 @@ use crate::state::{ExtraData, Lua, RawLua};
 // Re-export mutex wrappers
 pub(crate) use sync::{ArcReentrantMutexGuard, ReentrantMutex, ReentrantMutexGuard, XRc, XWeak};
 
-#[cfg(all(feature = "async", feature = "send"))]
-pub(crate) type BoxFuture<'a, T> = futures_util::future::BoxFuture<'a, T>;
-
-#[cfg(all(feature = "async", not(feature = "send")))]
-pub(crate) type BoxFuture<'a, T> = futures_util::future::LocalBoxFuture<'a, T>;
-
 pub use app_data::{AppData, AppDataRef, AppDataRefMut};
 pub use either::Either;
 pub use registry_key::RegistryKey;
@@ -55,20 +49,6 @@ pub(crate) struct Upvalue<T> {
 pub(crate) type CallbackUpvalue = Upvalue<Option<Callback>>;
 #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 pub(crate) type ContinuationUpvalue = Upvalue<Option<(Callback, Continuation)>>;
-
-#[cfg(all(feature = "async", feature = "send"))]
-pub(crate) type AsyncCallback =
-    Box<dyn for<'a> Fn(&'a RawLua, c_int) -> BoxFuture<'a, Result<c_int>> + Send + 'static>;
-
-#[cfg(all(feature = "async", not(feature = "send")))]
-pub(crate) type AsyncCallback =
-    Box<dyn for<'a> Fn(&'a RawLua, c_int) -> BoxFuture<'a, Result<c_int>> + 'static>;
-
-#[cfg(feature = "async")]
-pub(crate) type AsyncCallbackUpvalue = Upvalue<AsyncCallback>;
-
-#[cfg(feature = "async")]
-pub(crate) type AsyncPollUpvalue = Upvalue<Option<BoxFuture<'static, Result<c_int>>>>;
 
 /// Type to set next Lua VM action after executing interrupt or hook function.
 pub enum VmState {

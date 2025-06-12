@@ -15,9 +15,6 @@ use crate::types::{MaybeSend, ValueRef};
 use crate::util::{check_stack, get_userdata, push_string, take_userdata, StackGuard};
 use crate::value::Value;
 
-#[cfg(feature = "async")]
-use std::future::Future;
-
 #[cfg(feature = "serde")]
 use {
     serde::ser::{self, Serialize, Serializer},
@@ -266,36 +263,6 @@ pub trait UserDataMethods<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
-    /// Add an async method which accepts a `&T` as the first parameter and returns [`Future`].
-    ///
-    /// Refer to [`add_method`] for more information about the implementation.
-    ///
-    /// [`add_method`]: UserDataMethods::add_method
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn add_async_method<M, A, MR, R>(&mut self, name: impl ToString, method: M)
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRef<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti;
-
-    /// Add an async method which accepts a `&mut T` as the first parameter and returns [`Future`].
-    ///
-    /// Refer to [`add_method`] for more information about the implementation.
-    ///
-    /// [`add_method`]: UserDataMethods::add_method
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn add_async_method_mut<M, A, MR, R>(&mut self, name: impl ToString, method: M)
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRefMut<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti;
-
     /// Add a regular method as a function which accepts generic arguments.
     ///
     /// The first argument will be a [`AnyUserData`] of type `T` if the method is called with Lua
@@ -316,21 +283,6 @@ pub trait UserDataMethods<T> {
     where
         F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti;
-
-    /// Add a regular method as an async function which accepts generic arguments and returns
-    /// [`Future`].
-    ///
-    /// This is an async version of [`add_function`].
-    ///
-    /// [`add_function`]: UserDataMethods::add_function
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn add_async_function<F, A, FR, R>(&mut self, name: impl ToString, function: F)
-    where
-        F: Fn(Lua, A) -> FR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        FR: Future<Output = Result<R>> + MaybeSend + 'static,
         R: IntoLuaMulti;
 
     /// Add a metamethod which accepts a `&T` as the first parameter.
@@ -361,40 +313,6 @@ pub trait UserDataMethods<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
-    /// Add an async metamethod which accepts a `&T` as the first parameter and returns [`Future`].
-    ///
-    /// This is an async version of [`add_meta_method`].
-    ///
-    /// [`add_meta_method`]: UserDataMethods::add_meta_method
-    #[cfg(all(feature = "async", not(any(feature = "lua51", feature = "luau"))))]
-    #[cfg_attr(
-        docsrs,
-        doc(cfg(all(feature = "async", not(any(feature = "lua51", feature = "luau")))))
-    )]
-    fn add_async_meta_method<M, A, MR, R>(&mut self, name: impl ToString, method: M)
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRef<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti;
-
-    /// Add an async metamethod which accepts a `&mut T` as the first parameter and returns
-    /// [`Future`].
-    ///
-    /// This is an async version of [`add_meta_method_mut`].
-    ///
-    /// [`add_meta_method_mut`]: UserDataMethods::add_meta_method_mut
-    #[cfg(all(feature = "async", not(any(feature = "lua51", feature = "luau"))))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn add_async_meta_method_mut<M, A, MR, R>(&mut self, name: impl ToString, method: M)
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRefMut<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti;
-
     /// Add a metamethod which accepts generic arguments.
     ///
     /// Metamethods for binary operators can be triggered if either the left or right argument to
@@ -415,23 +333,6 @@ pub trait UserDataMethods<T> {
     where
         F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti;
-
-    /// Add a metamethod which accepts generic arguments and returns [`Future`].
-    ///
-    /// This is an async version of [`add_meta_function`].
-    ///
-    /// [`add_meta_function`]: UserDataMethods::add_meta_function
-    #[cfg(all(feature = "async", not(any(feature = "lua51", feature = "luau"))))]
-    #[cfg_attr(
-        docsrs,
-        doc(cfg(all(feature = "async", not(any(feature = "lua51", feature = "luau")))))
-    )]
-    fn add_async_meta_function<F, A, FR, R>(&mut self, name: impl ToString, function: F)
-    where
-        F: Fn(Lua, A) -> FR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        FR: Future<Output = Result<R>> + MaybeSend + 'static,
         R: IntoLuaMulti;
 }
 

@@ -224,29 +224,6 @@ fn function_call_lua_concat(c: &mut Criterion) {
     });
 }
 
-fn function_async_call_sum(c: &mut Criterion) {
-    let options = LuaOptions::new().thread_pool_size(1024);
-    let lua = Lua::new_with(LuaStdLib::ALL_SAFE, options).unwrap();
-
-    let sum = lua
-        .create_async_function(|_, (a, b, c): (i64, i64, i64)| async move {
-            task::yield_now().await;
-            Ok(a + b - c)
-        })
-        .unwrap();
-
-    c.bench_function("function [async call Rust sum]", |b| {
-        let rt = Runtime::new().unwrap();
-        b.to_async(rt).iter_batched(
-            || collect_gc_twice(&lua),
-            |_| async {
-                assert_eq!(sum.call_async::<i64>((10, 20, 30)).await.unwrap(), 0);
-            },
-            BatchSize::SmallInput,
-        );
-    });
-}
-
 fn registry_value_create(c: &mut Criterion) {
     let lua = Lua::new();
     lua.gc_stop();
@@ -350,41 +327,6 @@ fn userdata_call_method(c: &mut Criterion) {
     });
 }
 
-fn userdata_async_call_method(c: &mut Criterion) {
-    struct UserData(i64);
-    impl LuaUserData for UserData {
-        fn add_methods<M: LuaUserDataMethods<Self>>(methods: &mut M) {
-            methods.add_async_method("add", |_, this, i: i64| async move {
-                task::yield_now().await;
-                Ok(this.0 + i)
-            });
-        }
-    }
-
-    let options = LuaOptions::new().thread_pool_size(1024);
-    let lua = Lua::new_with(LuaStdLib::ALL_SAFE, options).unwrap();
-    let ud = lua.create_userdata(UserData(123)).unwrap();
-    let method = lua
-        .load("function(ud, i) return ud:add(i) end")
-        .eval::<LuaFunction>()
-        .unwrap();
-    let i = AtomicUsize::new(0);
-
-    c.bench_function("userdata [async call method] 10", |b| {
-        let rt = Runtime::new().unwrap();
-        b.to_async(rt).iter_batched(
-            || {
-                collect_gc_twice(&lua);
-                (method.clone(), ud.clone(), i.fetch_add(1, Ordering::Relaxed))
-            },
-            |(method, ud, i)| async move {
-                assert_eq!(method.call_async::<usize>((ud, i)).await.unwrap(), 123 + i);
-            },
-            BatchSize::SmallInput,
-        );
-    });
-}
-
 criterion_group! {
     name = benches;
     config = Criterion::default()
@@ -405,7 +347,6 @@ criterion_group! {
         function_call_lua_sum,
         function_call_concat,
         function_call_lua_concat,
-        function_async_call_sum,
 
         registry_value_create,
         registry_value_get,
@@ -413,7 +354,6 @@ criterion_group! {
         userdata_create,
         userdata_call_index,
         userdata_call_method,
-        userdata_async_call_method,
 }
 
 criterion_main!(benches);

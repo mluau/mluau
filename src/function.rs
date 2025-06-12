@@ -14,16 +14,6 @@ use crate::util::{
 };
 use crate::value::Value;
 
-#[cfg(feature = "async")]
-use {
-    crate::thread::AsyncThread,
-    crate::traits::LuaNativeAsyncFn,
-    crate::types::AsyncCallback,
-    std::future::{self, Future},
-    std::pin::Pin,
-    std::task::{Context, Poll},
-};
-
 /// Handle to an internal Lua function.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function(pub(crate) ValueRef);
@@ -128,49 +118,6 @@ impl Function {
             let nresults = ffi::lua_gettop(state) - stack_start;
             R::from_specified_stack_multi(nresults, &lua, state)
         }
-    }
-
-    /// Returns a future that, when polled, calls `self`, passing `args` as function arguments,
-    /// and drives the execution.
-    ///
-    /// Internally it wraps the function to an [`AsyncThread`]. The returned type implements
-    /// `Future<Output = Result<R>>` and can be awaited.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::time::Duration;
-    /// # use mlua::{Lua, Result};
-    /// # #[tokio::main]
-    /// # async fn main() -> Result<()> {
-    /// # let lua = Lua::new();
-    ///
-    /// let sleep = lua.create_async_function(move |_lua, n: u64| async move {
-    ///     tokio::time::sleep(Duration::from_millis(n)).await;
-    ///     Ok(())
-    /// })?;
-    ///
-    /// sleep.call_async::<()>(10).await?;
-    ///
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// [`AsyncThread`]: crate::AsyncThread
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub fn call_async<R>(&self, args: impl IntoLuaMulti) -> AsyncCallFuture<R>
-    where
-        R: FromLuaMulti,
-    {
-        let lua = self.0.lua.lock();
-        AsyncCallFuture(unsafe {
-            lua.create_recycled_thread(self).and_then(|th| {
-                let mut th = th.into_async(args)?;
-                th.set_recyclable(true);
-                Ok(th)
-            })
-        })
     }
 
     /// Returns a function that, when called, calls `self`, passing `args` as the first set of
@@ -518,9 +465,6 @@ impl Function {
 
 struct WrappedFunction(pub(crate) Callback);
 
-#[cfg(feature = "async")]
-struct WrappedAsyncFunction(pub(crate) AsyncCallback);
-
 impl Function {
     /// Wraps a Rust function or closure, returning an opaque type that implements [`IntoLua`]
     /// trait.
@@ -590,57 +534,6 @@ impl Function {
             func.call(args).push_into_specified_stack_multi(lua, state)
         }))
     }
-
-    /// Wraps a Rust async function or closure, returning an opaque type that implements [`IntoLua`]
-    /// trait.
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub fn wrap_async<F, A, R>(func: F) -> impl IntoLua
-    where
-        F: LuaNativeAsyncFn<A, Output = Result<R>> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        WrappedAsyncFunction(Box::new(move |rawlua, nargs| unsafe {
-            let state = rawlua.state();
-            let args = match A::from_specified_stack_args(nargs, 1, None, rawlua, state) {
-                Ok(args) => args,
-                Err(e) => return Box::pin(future::ready(Err(e))),
-            };
-            let lua = rawlua.lua();
-            let fut = func.call(args);
-            Box::pin(async move {
-                fut.await?
-                    .push_into_specified_stack_multi(lua.raw_lua(), lua.raw_lua().state())
-            })
-        }))
-    }
-
-    /// Wraps a Rust async function or closure, returning an opaque type that implements [`IntoLua`]
-    /// trait.
-    ///
-    /// This function is similar to [`Function::wrap_async`] but any returned `Result` will be
-    /// converted to a `ok, err` tuple without throwing an exception.
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub fn wrap_raw_async<F, A>(func: F) -> impl IntoLua
-    where
-        F: LuaNativeAsyncFn<A> + MaybeSend + 'static,
-        A: FromLuaMulti,
-    {
-        WrappedAsyncFunction(Box::new(move |rawlua, nargs| unsafe {
-            let args = match A::from_specified_stack_args(nargs, 1, None, rawlua, rawlua.state()) {
-                Ok(args) => args,
-                Err(e) => return Box::pin(future::ready(Err(e))),
-            };
-            let lua = rawlua.lua();
-            let fut = func.call(args);
-            Box::pin(async move {
-                fut.await
-                    .push_into_specified_stack_multi(lua.raw_lua(), lua.raw_lua().state())
-            })
-        }))
-    }
 }
 
 impl IntoLua for WrappedFunction {
@@ -650,37 +543,8 @@ impl IntoLua for WrappedFunction {
     }
 }
 
-#[cfg(feature = "async")]
-impl IntoLua for WrappedAsyncFunction {
-    #[inline]
-    fn into_lua(self, lua: &Lua) -> Result<Value> {
-        lua.lock().create_async_callback(self.0).map(Value::Function)
-    }
-}
-
 impl LuaType for Function {
     const TYPE_ID: c_int = ffi::LUA_TFUNCTION;
-}
-
-#[cfg(feature = "async")]
-#[must_use = "futures do nothing unless you `.await` or poll them"]
-pub struct AsyncCallFuture<R: FromLuaMulti>(Result<AsyncThread<R>>);
-
-#[cfg(feature = "async")]
-impl<R: FromLuaMulti> Future for AsyncCallFuture<R> {
-    type Output = Result<R>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // Safety: We're not moving any pinned data
-        let this = unsafe { self.get_unchecked_mut() };
-        match &mut this.0 {
-            Ok(thread) => {
-                let pinned_thread = unsafe { Pin::new_unchecked(thread) };
-                pinned_thread.poll(cx)
-            }
-            Err(err) => Poll::Ready(Err(err.clone())),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -691,7 +555,4 @@ mod assertions {
     static_assertions::assert_not_impl_any!(Function: Send);
     #[cfg(feature = "send")]
     static_assertions::assert_impl_all!(Function: Send, Sync);
-
-    #[cfg(all(feature = "async", feature = "send"))]
-    static_assertions::assert_impl_all!(AsyncCallFuture<()>: Send);
 }

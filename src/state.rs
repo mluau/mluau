@@ -38,12 +38,6 @@ use crate::{hook::HookTriggers, types::HookKind};
 #[cfg(any(feature = "luau", doc))]
 use crate::{buffer::Buffer, chunk::Compiler};
 
-#[cfg(feature = "async")]
-use {
-    crate::types::LightUserData,
-    std::future::{self, Future},
-};
-
 #[cfg(feature = "serde")]
 use serde::Serialize;
 
@@ -99,15 +93,6 @@ pub struct LuaOptions {
     /// [`pcall`]: https://www.lua.org/manual/5.4/manual.html#pdf-pcall
     /// [`xpcall`]: https://www.lua.org/manual/5.4/manual.html#pdf-xpcall
     pub catch_rust_panics: bool,
-
-    /// Max size of thread (coroutine) object pool used to execute asynchronous functions.
-    ///
-    /// Default: **0** (disabled)
-    ///
-    /// [`lua_resetthread`]: https://www.lua.org/manual/5.4/manual.html#lua_resetthread
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub thread_pool_size: usize,
 }
 
 impl Default for LuaOptions {
@@ -121,8 +106,6 @@ impl LuaOptions {
     pub const fn new() -> Self {
         LuaOptions {
             catch_rust_panics: true,
-            #[cfg(feature = "async")]
-            thread_pool_size: 0,
         }
     }
 
@@ -132,17 +115,6 @@ impl LuaOptions {
     #[must_use]
     pub const fn catch_rust_panics(mut self, enabled: bool) -> Self {
         self.catch_rust_panics = enabled;
-        self
-    }
-
-    /// Sets [`thread_pool_size`] option.
-    ///
-    /// [`thread_pool_size`]: #structfield.thread_pool_size
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    #[must_use]
-    pub const fn thread_pool_size(mut self, size: usize) -> Self {
-        self.thread_pool_size = size;
         self
     }
 }
@@ -1346,67 +1318,6 @@ impl Lua {
         Ok(Function(lua.new_value_ref(aux_thread, idx)))
     }
 
-    /// Wraps a Rust async function or closure, creating a callable Lua function handle to it.
-    ///
-    /// While executing the function Rust will poll the Future and if the result is not ready,
-    /// call `yield()` passing internal representation of a `Poll::Pending` value.
-    ///
-    /// The function must be called inside Lua coroutine ([`Thread`]) to be able to suspend its
-    /// execution. An executor should be used to poll [`AsyncThread`] and mlua will take a provided
-    /// Waker in that case. Otherwise noop waker will be used if try to call the function outside of
-    /// Rust executors.
-    ///
-    /// The family of `call_async()` functions takes care about creating [`Thread`].
-    ///
-    /// # Examples
-    ///
-    /// Non blocking sleep:
-    ///
-    /// ```
-    /// use std::time::Duration;
-    /// use mlua::{Lua, Result};
-    ///
-    /// async fn sleep(_lua: Lua, n: u64) -> Result<&'static str> {
-    ///     tokio::time::sleep(Duration::from_millis(n)).await;
-    ///     Ok("done")
-    /// }
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<()> {
-    ///     let lua = Lua::new();
-    ///     lua.globals().set("sleep", lua.create_async_function(sleep)?)?;
-    ///     let res: String = lua.load("return sleep(...)").call_async(100).await?; // Sleep 100ms
-    ///     assert_eq!(res, "done");
-    ///     Ok(())
-    /// }
-    /// ```
-    ///
-    /// [`AsyncThread`]: crate::AsyncThread
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub fn create_async_function<F, A, FR, R>(&self, func: F) -> Result<Function>
-    where
-        F: Fn(Lua, A) -> FR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        FR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti,
-    {
-        // In future we should switch to async closures when they are stable to capture `&Lua`
-        // See https://rust-lang.github.io/rfcs/3668-async-closures.html
-        (self.lock()).create_async_callback(Box::new(move |rawlua, nargs| unsafe {
-            let args = match A::from_specified_stack_args(nargs, 1, None, rawlua, rawlua.state()) {
-                Ok(args) => args,
-                Err(e) => return Box::pin(future::ready(Err(e))),
-            };
-            let lua = rawlua.lua();
-            let fut = func(lua.clone(), args);
-            Box::pin(async move {
-                fut.await?
-                    .push_into_specified_stack_multi(lua.raw_lua(), lua.raw_lua().state())
-            })
-        }))
-    }
-
     /// Wraps a Lua function into a new thread (or coroutine).
     ///
     /// Equivalent to `coroutine.create`.
@@ -2061,24 +1972,6 @@ impl Lua {
         extra.app_data.remove()
     }
 
-    /// Returns an internal `Poll::Pending` constant used for executing async callbacks.
-    ///
-    /// Every time when [`Future`] is Pending, Lua corotine is suspended with this constant.
-    #[cfg(feature = "async")]
-    #[doc(hidden)]
-    #[inline(always)]
-    pub fn poll_pending() -> LightUserData {
-        static ASYNC_POLL_PENDING: u8 = 0;
-        LightUserData(&ASYNC_POLL_PENDING as *const u8 as *mut std::os::raw::c_void)
-    }
-
-    #[cfg(feature = "async")]
-    #[inline(always)]
-    pub(crate) fn poll_terminate() -> LightUserData {
-        static ASYNC_POLL_TERMINATE: u8 = 0;
-        LightUserData(&ASYNC_POLL_TERMINATE as *const u8 as *mut std::os::raw::c_void)
-    }
-
     /// Returns a weak reference to the Lua instance.
     ///
     /// This is useful for creating a reference to the Lua instance that does not prevent it from
@@ -2129,15 +2022,6 @@ impl Lua {
     #[inline(always)]
     pub(crate) fn lock_arc(&self) -> LuaGuard {
         LuaGuard(self.raw.lock_arc())
-    }
-
-    /// Returns a handle to the unprotected Lua state without any synchronization.
-    ///
-    /// This is useful where we know that the lock is already held by the caller.
-    #[cfg(feature = "async")]
-    #[inline(always)]
-    pub(crate) unsafe fn raw_lua(&self) -> &RawLua {
-        &*self.raw.data_ptr()
     }
 
     /// Set the yield arguments. Note that Lua will not yield until you return from the function
