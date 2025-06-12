@@ -17,6 +17,13 @@
 [Benchmarks]: https://github.com/khvzak/script-bench-rs
 [FAQ]: FAQ.md
 
+This repository is a fork of `mlua` with the following changes
+
+- Use list of auxilary threads instead of just one to prevent panicking if user code manages to make more than 1 million references in Rust-side code
+- Support for yielding and continuations
+- Thread stack optimizations
+- Removal of async support for maintainability purposes
+
 # The main branch is the development version of `mlua`. Please see the [v0.10](https://github.com/mlua-rs/mlua/tree/v0.10) branch for the stable versions of `mlua`.
 
 > **Note**
