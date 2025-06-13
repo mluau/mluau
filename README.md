@@ -1,14 +1,14 @@
-# mlua
+# mluau
 [![Build Status]][github-actions] [![Latest Version]][crates.io] [![API Documentation]][docs.rs] [![Coverage Status]][codecov.io] ![MSRV]
 
-[Build Status]: https://github.com/mlua-rs/mlua/workflows/CI/badge.svg
-[github-actions]: https://github.com/mlua-rs/mlua/actions
+[Build Status]: https://github.com/mluau/mlua/workflows/CI/badge.svg
+[github-actions]: https://github.com/mluau/mlua/actions
 [Latest Version]: https://img.shields.io/crates/v/mlua.svg
 [crates.io]: https://crates.io/crates/mlua
 [API Documentation]: https://docs.rs/mlua/badge.svg
 [docs.rs]: https://docs.rs/mlua
-[Coverage Status]: https://codecov.io/gh/mlua-rs/mlua/branch/main/graph/badge.svg?token=99339FS1CG
-[codecov.io]: https://codecov.io/gh/mlua-rs/mlua
+[Coverage Status]: https://codecov.io/gh/mluau/mlua/branch/main/graph/badge.svg?token=99339FS1CG
+[codecov.io]: https://codecov.io/gh/mluau/mlua
 [MSRV]: https://img.shields.io/badge/rust-1.79+-brightgreen.svg?&logo=rust
 
 [Guided Tour] | [Benchmarks] | [FAQ]
@@ -26,11 +26,11 @@ This repository is a fork of `mlua` with the following changes
 - Removal of ``Lua::scope`` for maintainability purposes and to slightly improve performance
 - ``collectgarbage`` is now (properly) limited to ``count`` and ``collect`` as stated in the Luau sandboxing guide
 
-# The main branch is the development version of `mlua`. Please see the [v0.10](https://github.com/mlua-rs/mlua/tree/v0.10) branch for the stable versions of `mlua`.
+# The main branch is the development version of `mlua`. Please see the [v0.10](https://github.com/mluau/mlua/tree/v0.10) branch for the stable versions of `mlua`.
 
 > **Note**
 >
-> See v0.10 [release notes](https://github.com/mlua-rs/mlua/blob/main/docs/release_notes/v0.10.md).
+> See v0.10 [release notes](https://github.com/mluau/mlua/blob/main/docs/release_notes/v0.10.md).
 
 `mlua` is a set of bindings to the [Lua](https://www.lua.org) programming language for Rust with a goal to provide a
 _safe_ (as much as possible), high level, easy to use, practical and flexible API.
@@ -41,7 +41,7 @@ Started as an `rlua` fork, `mlua` supports Lua 5.4, 5.3, 5.2, 5.1 (including Lua
 
 WebAssembly (WASM) is supported through `wasm32-unknown-emscripten` target for all Lua/Luau versions excluding JIT.
 
-[GitHub Actions]: https://github.com/mlua-rs/mlua/actions
+[GitHub Actions]: https://github.com/mluau/mlua/actions
 [Luau]: https://luau.org
 
 ## Usage
