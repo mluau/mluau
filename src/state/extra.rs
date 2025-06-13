@@ -93,7 +93,7 @@ pub(crate) struct ExtraData {
 
     // Auxiliary threads to store references
     pub(super) ref_thread: Vec<RefThread>,
-    // Special auxillary thread for mlua internal use
+    // Special auxiliary thread for mlua internal use
     pub(super) ref_thread_internal: RefThread,
 
     // Pool of `WrappedFailure` enums in the ref thread (as userdata)

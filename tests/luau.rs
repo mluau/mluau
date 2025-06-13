@@ -438,7 +438,7 @@ fn test_loadstring() -> Result<()> {
     assert_eq!(f.call::<i32>(())?, 123);
 
     let err = lua
-        .load(r#"loadstring("retur 123", "chunk")"#)
+        .load(r#"loadstring("return 123", "chunk")"#)
         .exec()
         .err()
         .unwrap();

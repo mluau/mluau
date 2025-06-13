@@ -26,12 +26,12 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
   - Support for Luau continuations - a Luau feature that allows a yielded Luau thread to call a Rust continuation function upon `coroutine.resume`, before resuming back to Luau.
 - Thread stack optimizations and bug fixes:
   - Removes unnecessary copies of the main thread stack to improve resume/yield performance.
-  - Uses an auxilary thread list to prevent panicking if user code makes more than 1 million references to Rust-side code.
+  - Uses an auxiliary thread list to prevent panicking if user code makes more than 1 million references to Rust-side code.
 - *Removal of async support.*
   - `mlua`'s async implementation is prone to freezes and deadlocks, and doesn't fit in as well as we'd like with Luau and the Luau ecosystem in mind.
   - Not to worry! We're looking to replace it with a dedicated Luau-focused scheduler in the future, and are working on making sure it's rock solid just like the rest of Luau.
 - Improved adherence to Luau spec to minimize UB and allow for a more easily sandboxed Luau environment:
-  - Removal of the `__gc` metamethod on userdata; although implemented by mlua, [should not be suppoted in Luau](https://luau.org/sandbox#__gc) due to memory safety and optimization considerations.
+  - Removal of the `__gc` metamethod on userdata; although implemented by mlua, [should not be supported in Luau](https://luau.org/sandbox#__gc) due to memory safety and optimization considerations.
   - ``collectgarbage`` now limited to options ``"count"`` and ``"collect"`` for better sandboxing. Importantly, this disallows user code from purposely stopping the garbage collector, even when sandbox mode is disabled.
 - Removal of ``Lua::scope``, a feature we don't use that carried a slight performance penalty.
 
