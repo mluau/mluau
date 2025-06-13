@@ -60,8 +60,7 @@ pub enum Error {
     /// Either a callback or a userdata method has been called, but the callback or userdata has
     /// been destructed.
     ///
-    /// This can happen either due to to being destructed in a previous __gc, or due to being
-    /// destructed from exiting a `Lua::scope` call.
+    /// This can happen due to to being destructed in a previous __gc
     CallbackDestructed,
     /// Not enough stack space to place arguments to Lua functions or return values from callbacks.
     ///
@@ -128,8 +127,7 @@ pub enum Error {
     UserDataTypeMismatch,
     /// An [`AnyUserData`] borrow failed because it has been destructed.
     ///
-    /// This error can happen either due to to being destructed in a previous __gc, or due to being
-    /// destructed from exiting a `Lua::scope` call.
+    /// This error can happen due to to being destructed in a previous __gc
     ///
     /// [`AnyUserData`]: crate::AnyUserData
     UserDataDestructed,

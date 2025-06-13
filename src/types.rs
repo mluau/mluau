@@ -39,8 +39,6 @@ pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> Result<c_int
 #[cfg(all(not(feature = "send"), not(feature = "lua51"), not(feature = "luajit")))]
 pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> Result<c_int> + 'static>;
 
-pub(crate) type ScopedCallback<'s> = Box<dyn Fn(&RawLua, c_int) -> Result<c_int> + 's>;
-
 pub(crate) struct Upvalue<T> {
     pub(crate) data: T,
     pub(crate) extra: XRc<UnsafeCell<ExtraData>>,

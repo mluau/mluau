@@ -23,6 +23,8 @@ This repository is a fork of `mlua` with the following changes
 - Support for yielding and continuations
 - Thread stack optimizations
 - Removal of async support for maintainability purposes
+- Removal of ``Lua::scope`` for maintainability purposes and to slightly improve performance
+- ``collectgarbage`` is now (properly) limited to ``count`` and ``collect`` as stated in the Luau sandboxing guide
 
 # The main branch is the development version of `mlua`. Please see the [v0.10](https://github.com/mlua-rs/mlua/tree/v0.10) branch for the stable versions of `mlua`.
 

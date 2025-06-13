@@ -1126,14 +1126,6 @@ impl RawLua {
         (*self.extra.get()).registered_userdata_mt.insert(mt_ptr, type_id);
     }
 
-    #[inline(always)]
-    pub(crate) unsafe fn deregister_userdata_metatable(&self, mt_ptr: *const c_void) {
-        (*self.extra.get()).registered_userdata_mt.remove(&mt_ptr);
-        if (*self.extra.get()).last_checked_userdata_mt.0 == mt_ptr {
-            (*self.extra.get()).last_checked_userdata_mt = (ptr::null(), None);
-        }
-    }
-
     // Returns `TypeId` for the userdata ref, checking that it's registered and not destructed.
     //
     // Returns `None` if the userdata is registered but non-static.

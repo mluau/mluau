@@ -13,7 +13,6 @@ use crate::function::Function;
 use crate::hook::Debug;
 use crate::memory::MemoryState;
 use crate::multi::MultiValue;
-use crate::scope::Scope;
 use crate::state::util::get_next_spot;
 use crate::stdlib::StdLib;
 use crate::string::String;
@@ -1533,23 +1532,6 @@ impl Lua {
             ffi::lua_pushthread(state);
             Thread(lua.pop_ref(), state)
         }
-    }
-
-    /// Calls the given function with a [`Scope`] parameter, giving the function the ability to
-    /// create userdata and callbacks from Rust types that are `!Send` or non-`'static`.
-    ///
-    /// The lifetime of any function or userdata created through [`Scope`] lasts only until the
-    /// completion of this method call, on completion all such created values are automatically
-    /// dropped and Lua references to them are invalidated. If a script accesses a value created
-    /// through [`Scope`] outside of this method, a Lua error will result. Since we can ensure the
-    /// lifetime of values created through [`Scope`], and we know that [`Lua`] cannot be sent to
-    /// another thread while [`Scope`] is live, it is safe to allow `!Send` data types and whose
-    /// lifetimes only outlive the scope lifetime.
-    pub fn scope<'env, R>(
-        &self,
-        f: impl for<'scope> FnOnce(&'scope Scope<'scope, 'env>) -> Result<R>,
-    ) -> Result<R> {
-        f(&Scope::new(self.lock_arc()))
     }
 
     /// Attempts to coerce a Lua value into a String in a manner consistent with Lua's internal
