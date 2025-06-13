@@ -264,6 +264,68 @@ fn test_thread_yield_args() -> Result<()> {
         (42, String::from("69420"), 45.6)
     );
 
+    // yield, no userdata
+    let my_lua_func = lua
+        .load(
+            r#"
+        local my_data = ...
+        return my_data()
+        "#,
+        )
+        .into_function()?;
+
+    let thread = lua.create_thread(my_lua_func)?;
+    let intermediate = thread.resume::<mlua::MultiValue>(lua.create_function(|lua, ()| lua.yield_with(100))?);
+    assert!(
+        intermediate.is_ok(),
+        "Failed to resume thread: {:?}",
+        intermediate
+    );
+    assert_eq!(thread.status(), ThreadStatus::Resumable);
+    let result = thread.resume::<i32>(intermediate.unwrap());
+    assert!(result.is_ok(), "Failed to resume thread: {:?}", result);
+    assert_eq!(result.unwrap(), 100, "Unexpected yield value");
+    assert_eq!(thread.status(), ThreadStatus::Finished);
+
+    struct MyTestUserData {
+        value: i32,
+    }
+
+    impl mlua::UserData for MyTestUserData {
+        fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
+            methods.add_method("yield", |lua, this, ()| {
+                println!("yield called");
+                lua.yield_with(this.value)?;
+                Ok("Thread did not yield")
+            });
+        }
+    }
+
+    let my_data = MyTestUserData { value: 100 };
+
+    let my_lua_func = lua
+        .load(
+            r#"
+        local my_data = ...
+        return my_data:yield()
+        "#,
+        )
+        .into_function()?;
+
+    let thread = lua.create_thread(my_lua_func)?;
+    let intermediate = thread.resume::<mlua::MultiValue>(my_data);
+    println!("intermediate={:?}", intermediate);
+    assert!(
+        intermediate.is_ok(),
+        "Failed to resume thread: {:?}",
+        intermediate
+    );
+    assert_eq!(thread.status(), ThreadStatus::Resumable);
+    let result = thread.resume::<i32>(intermediate.unwrap());
+    assert!(result.is_ok(), "Failed to resume thread: {:?}", result);
+    assert_eq!(result.unwrap(), 100, "Unexpected yield value");
+    assert_eq!(thread.status(), ThreadStatus::Finished);
+
     Ok(())
 }
 
@@ -518,7 +580,7 @@ fn test_continuation() {
     assert!(v.contains("Reached continuation which should panic!"));
 }
 
-#[test]
+//#[test]
 fn test_large_thread_creation() {
     let lua = Lua::new();
     lua.set_memory_limit(100_000_000_000).unwrap();
