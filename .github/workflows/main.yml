@@ -122,15 +122,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run ${{ matrix.lua }} tests
         run: |
-          cargo test --features "${{ matrix.lua }},vendored"
-          cargo test --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers"
-          cargo test --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send"
+          cargo test --no-default-features --features "${{ matrix.lua }},vendored"
+          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers"
+          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send"
         shell: bash
       - name: Run compile tests (macos lua54)
         if: ${{ matrix.os == 'macos-latest' && matrix.lua == 'lua54' }}
         run: |
-          TRYBUILD=overwrite cargo test --features "${{ matrix.lua }},vendored" --tests -- --ignored
-          TRYBUILD=overwrite cargo test --features "${{ matrix.lua }},vendored,send,serde,macros" --tests -- --ignored
+          TRYBUILD=overwrite cargo test --no-default-features --features "${{ matrix.lua }},vendored" --tests -- --ignored
+          TRYBUILD=overwrite cargo test --no-default-features --features "${{ matrix.lua }},vendored,send,serde,macros" --tests -- --ignored
         shell: bash
 
   test_with_sanitizer:
@@ -154,8 +154,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run ${{ matrix.lua }} tests with address sanitizer
         run: |
-          cargo test --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow" --target x86_64-unknown-linux-gnu -- --skip test_too_many_recursions
-          cargo test --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send" --target x86_64-unknown-linux-gnu -- --skip test_too_many_recursions
+          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow" --target x86_64-unknown-linux-gnu -- --skip test_too_many_recursions
+          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send" --target x86_64-unknown-linux-gnu -- --skip test_too_many_recursions
         shell: bash
         env:
           RUSTFLAGS: -Z sanitizer=address
@@ -181,7 +181,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run ${{ matrix.lua }} tests with forced memory limit
         run: |
-          cargo test --tests --features "${{ matrix.lua }},vendored,send,serde,macros,anyhow,userdata-wrappers"
+          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,send,serde,macros,anyhow,userdata-wrappers"
         shell: bash
         env:
           RUSTFLAGS: --cfg=force_memory_limit
@@ -210,7 +210,7 @@ jobs:
       - name: Run ${{ matrix.lua }} module tests
         run: |
           (cd tests/module && cargo build --no-default-features --release --features "${{ matrix.lua }}")
-          (cd tests/module/loader && cargo test --release --features "${{ matrix.lua }},vendored")
+          (cd tests/module/loader && cargo test --no-default-features --release --features "${{ matrix.lua }},vendored")
         shell: bash
 
   test_modules_windows:
@@ -232,7 +232,7 @@ jobs:
       - name: Run ${{ matrix.lua }} module tests
         run: |
           (cd tests/module && cargo build --no-default-features --release --features "${{ matrix.lua }}")
-          (cd tests/module/loader && cargo test --release --features "${{ matrix.lua }}")
+          (cd tests/module/loader && cargo test --no-default-features --release --features "${{ matrix.lua }}")
 
   test_wasm32_emscripten:
     name: Test on wasm32-unknown-emscripten
@@ -253,8 +253,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends emscripten
       - name: Run ${{ matrix.lua }} tests
         run: |
-          cargo test --tests --features "${{ matrix.lua }},vendored"
-          cargo test --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers"
+          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored"
+          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers"
 
   rustfmt:
     name: Rustfmt
