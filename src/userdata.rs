@@ -223,6 +223,8 @@ impl MetaMethod {
 
     pub(crate) fn validate(name: &str) -> Result<&str> {
         match name {
+            // __gc is safe on Luau as it doesnt actually exist
+            #[cfg(not(feature = "luau"))]
             "__gc" => Err(Error::MetaMethodRestricted(name.to_string())),
             "__metatable" => Err(Error::MetaMethodRestricted(name.to_string())),
             _ if name.starts_with("__mlua") => Err(Error::MetaMethodRestricted(name.to_string())),
@@ -621,20 +623,51 @@ impl AnyUserData {
     pub fn destroy(&self) -> Result<()> {
         let lua = self.0.lua.lock();
         let state = lua.state();
+
         unsafe {
             let _sg = StackGuard::new(state);
             check_stack(state, 3)?;
 
-            lua.push_userdata_ref_at(&self.0, state)?;
-            protect_lua!(state, 1, 1, fn(state) {
-                if ffi::luaL_callmeta(state, -1, cstr!("__gc")) == 0 {
-                    ffi::lua_pushboolean(state, 0);
+            // Luau does not have __gc
+            #[cfg(feature = "luau")]
+            {
+                match lua.get_userdata_ref_type_id(&self.0)? {
+                    Some(type_id) => {
+                        // Get out the destructor from extra
+                        let dtor = match (&(*lua.extra())).get_userdata_dtor(type_id) {
+                            Some(dtor) => dtor,
+                            None => return Err(Error::UserDataTypeMismatch),
+                        };
+
+                        // Call the destructor
+                        protect_lua!(state, 0, 1, |state| {
+                            ffi::lua_pushcfunction(state, dtor);
+                            lua.push_ref_at(&self.0, state);
+                            ffi::lua_call(state, 1, 1);
+                        })?;
+
+                        if ffi::lua_isboolean(state, -1) != 0 && ffi::lua_toboolean(state, -1) != 0 {
+                            return Ok(());
+                        }
+                        return Err(Error::UserDataBorrowMutError);
+                    }
+                    None => return Err(Error::UserDataTypeMismatch),
                 }
-            })?;
-            if ffi::lua_isboolean(state, -1) != 0 && ffi::lua_toboolean(state, -1) != 0 {
-                return Ok(());
             }
-            Err(Error::UserDataBorrowMutError)
+
+            #[cfg(not(feature = "luau"))]
+            {
+                lua.push_userdata_ref_at(&self.0, state)?;
+                protect_lua!(state, 1, 1, fn(state) {
+                    if ffi::luaL_callmeta(state, -1, cstr!("__gc")) == 0 {
+                        ffi::lua_pushboolean(state, 0);
+                    }
+                })?;
+                if ffi::lua_isboolean(state, -1) != 0 && ffi::lua_toboolean(state, -1) != 0 {
+                    return Ok(());
+                }
+                Err(Error::UserDataBorrowMutError)
+            }
         }
     }
 
