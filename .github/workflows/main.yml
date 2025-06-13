@@ -26,16 +26,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build ${{ matrix.lua }} vendored
         run: |
-          cargo build --features "${{ matrix.lua }},vendored"
-          cargo build --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers"
-          cargo build --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send"
+          cargo build --no-default-features --features "${{ matrix.lua }},vendored"
+          cargo build --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers"
+          cargo build --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send"
         shell: bash
       - name: Build ${{ matrix.lua }} pkg-config
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends liblua5.4-dev liblua5.3-dev liblua5.2-dev liblua5.1-0-dev libluajit-5.1-dev
-          cargo build --features "${{ matrix.lua }}"
+          cargo build --no-default-features --features "${{ matrix.lua }}"
 
   build_aarch64_cross_macos:
     name: Cross-compile to aarch64-apple-darwin
@@ -51,7 +51,7 @@ jobs:
           toolchain: stable
           target: aarch64-apple-darwin
       - name: Cross-compile
-        run: cargo build --target aarch64-apple-darwin --features "${{ matrix.lua }},vendored,send,serde,macros,anyhow,userdata-wrappers"
+        run: cargo build --no-default-features --target aarch64-apple-darwin --features "${{ matrix.lua }},vendored,send,serde,macros,anyhow,userdata-wrappers"
 
   build_aarch64_cross_ubuntu:
     name: Cross-compile to aarch64-unknown-linux-gnu
@@ -72,7 +72,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross
         shell: bash
       - name: Cross-compile
-        run: cargo build --target aarch64-unknown-linux-gnu --features "${{ matrix.lua }},vendored,send,serde,macros,anyhow,userdata-wrappers"
+        run: cargo build --no-default-features --target aarch64-unknown-linux-gnu --features "${{ matrix.lua }},vendored,send,serde,macros,anyhow,userdata-wrappers"
         shell: bash
 
   build_armv7_cross_ubuntu:
@@ -94,7 +94,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc-dev-armhf-cross
         shell: bash
       - name: Cross-compile
-        run: cargo build --target armv7-unknown-linux-gnueabihf --features "${{ matrix.lua }},vendored,send,serde,macros,anyhow,userdata-wrappers"
+        run: cargo build --no-default-features --target armv7-unknown-linux-gnueabihf --features "${{ matrix.lua }},vendored,send,serde,macros,anyhow,userdata-wrappers"
         shell: bash
 
   test:
@@ -122,15 +122,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run ${{ matrix.lua }} tests
         run: |
-          cargo test --features "${{ matrix.lua }},vendored"
-          cargo test --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers"
-          cargo test --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send"
+          cargo test --no-default-features --features "${{ matrix.lua }},vendored"
+          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers"
+          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send"
         shell: bash
       - name: Run compile tests (macos lua54)
         if: ${{ matrix.os == 'macos-latest' && matrix.lua == 'lua54' }}
         run: |
-          TRYBUILD=overwrite cargo test --features "${{ matrix.lua }},vendored" --tests -- --ignored
-          TRYBUILD=overwrite cargo test --features "${{ matrix.lua }},vendored,send,serde,macros" --tests -- --ignored
+          TRYBUILD=overwrite cargo test --no-default-features --features "${{ matrix.lua }},vendored" --tests -- --ignored
+          TRYBUILD=overwrite cargo test --no-default-features --features "${{ matrix.lua }},vendored,send,serde,macros" --tests -- --ignored
         shell: bash
 
   test_with_sanitizer:
@@ -154,8 +154,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run ${{ matrix.lua }} tests with address sanitizer
         run: |
-          cargo test --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow" --target x86_64-unknown-linux-gnu -- --skip test_too_many_recursions
-          cargo test --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send" --target x86_64-unknown-linux-gnu -- --skip test_too_many_recursions
+          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow" --target x86_64-unknown-linux-gnu -- --skip test_too_many_recursions
+          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send" --target x86_64-unknown-linux-gnu -- --skip test_too_many_recursions
         shell: bash
         env:
           RUSTFLAGS: -Z sanitizer=address
@@ -181,7 +181,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run ${{ matrix.lua }} tests with forced memory limit
         run: |
-          cargo test --tests --features "${{ matrix.lua }},vendored,send,serde,macros,anyhow,userdata-wrappers"
+          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,send,serde,macros,anyhow,userdata-wrappers"
         shell: bash
         env:
           RUSTFLAGS: --cfg=force_memory_limit
@@ -209,8 +209,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run ${{ matrix.lua }} module tests
         run: |
-          (cd tests/module && cargo build --release --features "${{ matrix.lua }}")
-          (cd tests/module/loader && cargo test --release --features "${{ matrix.lua }},vendored")
+          (cd tests/module && cargo build --no-default-features --release --features "${{ matrix.lua }}")
+          (cd tests/module/loader && cargo test --no-default-features --release --features "${{ matrix.lua }},vendored")
         shell: bash
 
   test_modules_windows:
@@ -231,8 +231,8 @@ jobs:
           pacman -S --noconfirm mingw-w64-x86_64-rust mingw-w64-x86_64-lua mingw-w64-x86_64-luajit mingw-w64-x86_64-pkg-config
       - name: Run ${{ matrix.lua }} module tests
         run: |
-          (cd tests/module && cargo build --release --features "${{ matrix.lua }}")
-          (cd tests/module/loader && cargo test --release --features "${{ matrix.lua }}")
+          (cd tests/module && cargo build --no-default-features --release --features "${{ matrix.lua }}")
+          (cd tests/module/loader && cargo test --no-default-features --release --features "${{ matrix.lua }}")
 
   test_wasm32_emscripten:
     name: Test on wasm32-unknown-emscripten
@@ -253,8 +253,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends emscripten
       - name: Run ${{ matrix.lua }} tests
         run: |
-          cargo test --tests --features "${{ matrix.lua }},vendored"
-          cargo test --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers"
+          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored"
+          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers"
 
   rustfmt:
     name: Rustfmt
