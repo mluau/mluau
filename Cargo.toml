@@ -20,10 +20,7 @@ features = ["lua54", "vendored", "send", "serde", "macros"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
-members = [
-    "mlua_derive",
-    "mlua-sys",
-]
+members = ["mlua_derive", "mlua-sys"]
 
 [features]
 lua54 = ["ffi/lua54"]
@@ -35,6 +32,9 @@ luajit52 = ["luajit", "ffi/luajit52"]
 luau = ["ffi/luau"]
 luau-jit = ["luau", "ffi/luau-codegen"]
 luau-vector4 = ["luau", "ffi/luau-vector4"]
+luau-lute = ["luau", "ffi/luau-lute"]
+luau-lute-crypto = ["luau-lute", "ffi/luau-lute-crypto"]
+luau-lute-net = ["luau-lute", "ffi/luau-lute-net"]
 vendored = ["ffi/vendored"]
 module = ["mlua_derive", "ffi/module"]
 send = ["error-send"]
