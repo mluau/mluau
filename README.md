@@ -25,6 +25,8 @@ This repository is a fork of `mlua` with the following changes
 - Removal of async support for maintainability purposes
 - Removal of ``Lua::scope`` for maintainability purposes and to slightly improve performance
 - ``collectgarbage`` is now (properly) limited to ``count`` and ``collect`` as stated in the Luau sandboxing guide
+- WIP: Integration with the Lute runtime
+- Support for getting metatable of non-mlua/non-Rust userdata via the unsafe ``AnyUserData::underlying_metatable`` method. This is useful for managing ``newproxy`` and (Luau only) Lute userdata.
 
 # The main branch is the development version of `mlua`. Please see the [v0.10](https://github.com/mluau/mlua/tree/v0.10) branch for the stable versions of `mlua`.
 

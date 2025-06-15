@@ -18,7 +18,24 @@ extern "C" {
 }
 
 extern "C-unwind" {
-    pub fn lutec_run_once(state: *mut lua_State) -> c_int;
+    pub fn lutec_run_once(state: *mut lua_State) -> RunOnceResult;
+    pub fn lutec_run_once_lua(state: *mut lua_State) -> c_int;
+    pub fn lutec_has_work(state: *mut lua_State) -> c_int;
+    pub fn lutec_has_threads(state: *mut lua_State) -> c_int;
+    pub fn lutec_has_continuation(state: *mut lua_State) -> c_int;
+}
+
+pub const LUTE_STATE_MISSING_ERROR: c_int = 0;
+pub const LUTE_STATE_ERROR: c_int = 1;
+pub const LUTE_STATE_SUCCESS: c_int = 2;
+pub const LUTE_STATE_EMPTY: c_int = 3;
+pub const LUTE_STATE_UNSUPPORTED_OP: c_int = 4;
+
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub struct RunOnceResult {
+    pub op: c_int,             // Operation result code
+    pub state: *mut lua_State, // The lua_State that was run, if applicable
 }
 
 #[repr(C)]

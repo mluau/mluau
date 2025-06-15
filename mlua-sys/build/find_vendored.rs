@@ -20,6 +20,11 @@ pub fn probe_lua() {
 
     #[cfg(feature = "luau-lute")]
     {
+        #[cfg(not(feature = "luau"))]
+        {
+            compile_error!("lute runtime requires luau feature to be enabled");
+        }
+
         #[cfg(feature = "luau-vector4")]
         {
             compile_error!("lute runtime does not support vector4 builds");

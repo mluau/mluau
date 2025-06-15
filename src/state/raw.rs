@@ -50,6 +50,9 @@ use crate::{
     types::{HookCallback, HookKind, VmState},
 };
 
+#[cfg(feature = "luau")]
+use crate::luau::lute::{LuteRuntimeHandle, LuteStdLib};
+
 /// An inner Lua struct which holds a raw Lua state.
 #[doc(hidden)]
 pub struct RawLua {
@@ -65,6 +68,16 @@ impl Drop for RawLua {
         unsafe {
             if !self.owned {
                 return;
+            }
+
+            #[cfg(feature = "luau-lute")]
+            {
+                // SAFETY: lutec_isruntimeloaded and lutec_destroy_runtime
+                // do not need any extra stack space and should not
+                // throw an exception
+                if ffi::lutec_isruntimeloaded(self.main_state()) == 1 {
+                    ffi::lutec_destroy_runtime(self.main_state());
+                }
             }
 
             let mem_state = MemoryState::get(self.main_state());
@@ -98,6 +111,145 @@ impl RawLua {
     #[inline(always)]
     pub(crate) fn weak(&self) -> &WeakLua {
         unsafe { (*self.extra.get()).weak() }
+    }
+
+    #[cfg(feature = "luau-lute")]
+    /// Returns if a lute runtime is loaded into the client or not
+    pub(crate) fn is_lute_loaded(&self) -> Result<bool> {
+        let mut is_loaded = false;
+        unsafe {
+            let state = self.main_state();
+            check_stack(state, 1)?;
+            protect_lua!(state, 0, 0, |state| {
+                if ffi::lutec_isruntimeloaded(state) == 1 {
+                    is_loaded = true
+                }
+            })?;
+
+            if is_loaded && (*self.extra.get()).lute_handle.is_none() {
+                (*self.extra.get()).lute_handle = Some(LuteRuntimeHandle::new()?);
+            }    
+        };
+
+        Ok(is_loaded)
+    }
+
+    #[cfg(feature = "luau-lute")]
+    pub(crate) fn setup_lute_runtime(&self) -> Result<()> {
+        unsafe {
+            let state = self.main_state();
+            protect_lua!(state, 0, 0, |state| {
+                ffi::lutec_setup_runtime(state);
+            })?;
+
+            (*self.extra.get()).lute_handle = Some(LuteRuntimeHandle::new()?);
+        };
+
+        Ok(())
+    }
+
+    #[cfg(feature = "luau-lute")]
+    unsafe fn get_pushed_lute_table(&self) -> Table {
+        let state = self.main_state();
+        let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
+        ffi::lua_xpush(state, self.ref_thread(aux_thread), 1);
+        if replace {
+            ffi::lua_replace(self.ref_thread(aux_thread), idxs);
+        }
+        Table(self.new_value_ref(aux_thread, idxs))
+    }
+
+    /// Loads the specified lute standard libraries into the current Lua state.
+    /// 
+    /// This errors if the runtime is not loaded.
+    #[cfg(feature = "luau-lute")]
+    pub(crate) fn load_lute_stdlib(&self, libs: LuteStdLib) -> Result<()> {
+        if !self.is_lute_loaded()? {
+            return Err(Error::external(
+                "Lute runtime is not loaded. Please call setup_lute_runtime first.",
+            ));
+        }
+
+        unsafe {
+            let extra = self.extra.get();
+
+            // SAFETY: is_lute_loaded() ensures that lute_handle is Some()
+            let mut handle = (*extra).lute_handle.as_mut().unwrap_unchecked();
+
+            let state = self.main_state();
+            let _sg = StackGuard::new(state);
+            check_stack(state, 1)?;
+            protect_lua!(state, 0, 0, |state| {                
+                #[cfg(feature = "luau-lute-crypto")]
+                if libs.contains(LuteStdLib::CRYPTO) && handle.crypto.is_none() {
+                    ffi::lutec_opencrypto(state);
+                    handle.crypto = Some(self.get_pushed_lute_table());
+                    ffi::lua_setglobal(state, c"fs".as_ptr());
+                }
+
+                if libs.contains(LuteStdLib::FS) && handle.fs.is_none() {
+                    ffi::lutec_openfs(state);
+                    handle.fs = Some(self.get_pushed_lute_table());
+                    ffi::lua_setglobal(state, c"fs".as_ptr());
+                }
+                if libs.contains(LuteStdLib::LUAU) && handle.luau.is_none() {
+                    ffi::lutec_openluau(state);
+                    handle.luau = Some(self.get_pushed_lute_table());
+                    ffi::lua_setglobal(state, c"luau".as_ptr());
+                }
+                #[cfg(feature = "luau-lute-net")]
+                if libs.contains(LuteStdLib::NET) && handle.net.is_none() {
+                    ffi::lutec_opennet(state);
+                    handle.net = Some(self.get_pushed_lute_table());
+                    ffi::lua_setglobal(state, c"net".as_ptr());
+                }
+                if libs.contains(LuteStdLib::PROCESS) && handle.process.is_none() {
+                    ffi::lutec_openprocess(state);
+                    handle.process = Some(self.get_pushed_lute_table());
+                    ffi::lua_setglobal(state, c"process".as_ptr());
+                }
+                if libs.contains(LuteStdLib::TASK) && handle.task.is_none() {
+                    ffi::lutec_opentask(state);
+                    handle.task = Some(self.get_pushed_lute_table());
+                    ffi::lua_setglobal(state, c"task".as_ptr());
+                }
+                if libs.contains(LuteStdLib::VM) && handle.vm.is_none() {
+                    ffi::lutec_openvm(state);
+                    handle.vm = Some(self.get_pushed_lute_table());
+                    ffi::lua_setglobal(state, c"vm".as_ptr());
+                }
+                if libs.contains(LuteStdLib::SYSTEM) && handle.system.is_none() {
+                    ffi::lutec_opensystem(state);
+                    handle.system = Some(self.get_pushed_lute_table());
+                    ffi::lua_setglobal(state, c"system".as_ptr());
+                }
+                if libs.contains(LuteStdLib::TIME) && handle.time.is_none() {
+                    ffi::lutec_opentime(state);
+                    handle.time = Some(self.get_pushed_lute_table());
+                    ffi::lua_setglobal(state, c"time".as_ptr());
+                }
+            })?;
+        };
+
+        Ok(())
+    }
+
+    #[cfg(feature = "luau-lute")]
+    pub(crate) fn destroy_lute_runtime(&self) -> Result<bool> {
+        let mut has_destroyed = false;
+        unsafe {
+            let state = self.main_state();
+            protect_lua!(state, 0, 0, |state| {
+                has_destroyed = ffi::lutec_destroy_runtime(state) == 0;
+            })?;
+        };
+
+        if has_destroyed {
+            // Clear the lute handle
+            unsafe { (*self.extra.get()).lute_handle = None };
+        }
+        
+        Ok(has_destroyed)
     }
 
     /// Returns a pointer to the current Lua state.
