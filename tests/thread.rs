@@ -588,18 +588,18 @@ fn test_large_thread_creation() {
         .create_thread(lua.create_function(|lua, _: ()| Ok(())).unwrap())
         .unwrap();
 
-    let mut ths = Vec::new();
+    let mut this = Vec::new();
     for i in 1..2000000 {
         let th = lua
             .create_thread(lua.create_function(|_, ()| Ok(())).unwrap())
             .expect("Failed to create thread");
-        ths.push(th);
+        this.push(th);
     }
     let th2 = lua
         .create_thread(lua.create_function(|lua, _: ()| Ok(())).unwrap())
         .unwrap();
 
-    for rth in ths {
+    for rth in this {
         let dbg_a = format!("{:?}", rth);
         let th_a = format!("{:?}", th1);
         let th_b = format!("{:?}", th2);
@@ -614,7 +614,7 @@ fn test_large_thread_creation() {
         let dbg_th1 = format!("{:?}", th1);
         let dbg_th2 = format!("{:?}", th2);
 
-        // Ensure that the PartialEq across auxillary threads does not affect the values on stack
+        // Ensure that the PartialEq across auxiliary threads does not affect the values on stack
         // themselves.
         assert_eq!(dbg_a, dbg_b, "Thread {:?} debug format changed", rth);
         assert_eq!(th_a, dbg_th1, "Thread {:?} debug format changed for th1", rth);

@@ -1,14 +1,16 @@
 # mluau
-[![Build Status]][github-actions] [![Latest Version]][crates.io] [![API Documentation]][docs.rs] [![Coverage Status]][codecov.io] ![MSRV]
+<!-- [![Build Status]][github-actions] [![Latest Version]][crates.io] [![API Documentation]][docs.rs] [![Coverage Status]][codecov.io] ![MSRV] -->
 
-[Build Status]: https://github.com/mluau/mlua/workflows/CI/badge.svg
-[github-actions]: https://github.com/mluau/mlua/actions
-[Latest Version]: https://img.shields.io/crates/v/mlua.svg
-[crates.io]: https://crates.io/crates/mlua
+[![Build Status]][github-actions] [![API Documentation]][docs.rs] ![MSRV]
+
+[Build Status]: https://github.com/mluau/mluau/workflows/CI/badge.svg
+[github-actions]: https://github.com/mluau/mluau/actions
+<!-- [Latest Version]: https://img.shields.io/crates/v/mlua.svg
+[crates.io]: https://crates.io/crates/mlua -->
 [API Documentation]: https://docs.rs/mlua/badge.svg
 [docs.rs]: https://docs.rs/mlua
-[Coverage Status]: https://codecov.io/gh/mluau/mlua/branch/main/graph/badge.svg?token=99339FS1CG
-[codecov.io]: https://codecov.io/gh/mluau/mlua
+<!-- [Coverage Status]: https://codecov.io/gh/mluau/mluau/branch/main/graph/badge.svg?token=99339FS1CG
+[codecov.io]: https://codecov.io/gh/mluau/mlua -->
 [MSRV]: https://img.shields.io/badge/rust-1.79+-brightgreen.svg?&logo=rust
 
 [Guided Tour] | [Benchmarks] | [FAQ]
@@ -17,25 +19,40 @@
 [Benchmarks]: https://github.com/khvzak/script-bench-rs
 [FAQ]: FAQ.md
 
-This repository is a fork of `mlua` with the following changes
+This repository is a fork of `mlua` with a greater focus on Luau, with the following changes (so far):
 
-- Use list of auxilary threads instead of just one to prevent panicking if user code manages to make more than 1 million references in Rust-side code
-- Support for yielding and continuations
-- Thread stack optimizations
-- Removal of async support for maintainability purposes
-- Removal of ``Lua::scope`` for maintainability purposes and to slightly improve performance
-- ``collectgarbage`` is now (properly) limited to ``count`` and ``collect`` as stated in the Luau sandboxing guide
-- WIP: Integration with the Lute runtime
+- More reliable coroutine and yielding support:
+  - `mluau` allows Rust functions to yield back to Luau directly, improving support for iterators, coroutines, and task schedulers.
+  - Support for Luau continuations - a Luau feature that allows a yielded Luau thread to call a Rust continuation function upon `coroutine.resume`, before resuming back to Luau.
+- Thread stack optimizations and bug fixes:
+  - Removes unnecessary copies of the main thread stack to improve resume/yield performance.
+  - Uses an auxiliary thread list to prevent panicking if user code makes more than 1 million references to Rust-side code.
+- *Removal of async support.*
+  - `mlua`'s async implementation is prone to freezes and deadlocks, and doesn't fit in as well as we'd like with Luau and the Luau ecosystem in mind.
+  - Not to worry! We're looking to replace it with a dedicated Luau-focused scheduler in the future, and are working on making sure it's rock solid just like the rest of Luau.
+- Improved adherence to Luau spec to minimize UB and allow for a more easily sandboxed Luau environment:
+  - Removal of the `__gc` metamethod on userdata; although implemented by mlua, [should not be supported in Luau](https://luau.org/sandbox#__gc) due to memory safety and optimization considerations.
+  - ``collectgarbage`` now limited to options ``"count"`` and ``"collect"`` for better sandboxing. Importantly, this disallows user code from purposely stopping the garbage collector, even when sandbox mode is disabled.
+- Removal of ``Lua::scope``, a feature we don't use that carried a slight performance penalty.
+- Integration with the [Lute](https://github.com/luau-lang/lute) runtime
 - Support for getting metatable of non-mlua/non-Rust userdata via the unsafe ``AnyUserData::underlying_metatable`` method. This is useful for managing ``newproxy`` and (Luau only) Lute userdata.
 
-# The main branch is the development version of `mlua`. Please see the [v0.10](https://github.com/mluau/mlua/tree/v0.10) branch for the stable versions of `mlua`.
+## Roadmap
+
+- Dedicated scheduler for `mluau`
+- Integration with C++ tooling, most importantly Lute, the Luau language's official general purpose runtime for Luau.
+  - Support for Luau AST, Compiler, etc. reflection through Lute.
+- Tagged userdata (performance optimization)
+- Removing Lua 5.1 -> 5.4 support to ease maintenance burden and allow us to focus solely on Luau.
+
+## The below is `mlua`'s last README which should still be accurate or mostly accurate to `mluau`
 
 > **Note**
 >
-> See v0.10 [release notes](https://github.com/mluau/mlua/blob/main/docs/release_notes/v0.10.md).
+> See v0.10 [release notes](https://github.com/mlua/mlua/blob/main/docs/release_notes/v0.10.md).
 
 `mlua` is a set of bindings to the [Lua](https://www.lua.org) programming language for Rust with a goal to provide a
-_safe_ (as much as possible), high level, easy to use, practical and flexible API.
+*safe* (as much as possible), high level, easy to use, practical and flexible API.
 
 Started as an `rlua` fork, `mlua` supports Lua 5.4, 5.3, 5.2, 5.1 (including LuaJIT) and [Luau] and allows writing native Lua modules in Rust as well as using Lua in a standalone mode.
 
@@ -53,54 +70,34 @@ WebAssembly (WASM) is supported through `wasm32-unknown-emscripten` target for a
 `mlua` uses feature flags to reduce the amount of dependencies and compiled code, and allow to choose only required set of features.
 Below is a list of the available feature flags. By default `mlua` does not enable any features.
 
-* `lua54`: enable Lua [5.4] support
-* `lua53`: enable Lua [5.3] support
-* `lua52`: enable Lua [5.2] support
-* `lua51`: enable Lua [5.1] support
-* `luajit`: enable [LuaJIT] support
-* `luajit52`: enable [LuaJIT] support with partial compatibility with Lua 5.2
-* `luau`: enable [Luau] support (auto vendored mode)
-* `luau-jit`: enable [Luau] support with JIT backend.
-* `luau-vector4`: enable [Luau] support with 4-dimensional vector.
-* `vendored`: build static Lua(JIT) libraries from sources during `mlua` compilation using [lua-src] or [luajit-src]
-* `module`: enable module mode (building loadable `cdylib` library for Lua)
-* `async`: enable async/await support (any executor can be used, eg. [tokio] or [async-std])
-* `send`: make `mlua::Lua: Send + Sync` (adds [`Send`] requirement to `mlua::Function` and `mlua::UserData`)
-* `error-send`: make `mlua:Error: Send + Sync`
-* `serde`: add serialization and deserialization support to `mlua` types using [serde]
-* `macros`: enable procedural macros (such as `chunk!`)
-* `anyhow`: enable `anyhow::Error` conversion into Lua
-* `userdata-wrappers`: opt into `impl UserData` for `Rc<T>`/`Arc<T>`/`Rc<RefCell<T>>`/`Arc<Mutex<T>>` where `T: UserData`
+- `lua54`: enable Lua [5.4] support
+- `lua53`: enable Lua [5.3] support
+- `lua52`: enable Lua [5.2] support
+- `lua51`: enable Lua [5.1] support
+- `luajit`: enable [LuaJIT] support
+- `luajit52`: enable [LuaJIT] support with partial compatibility with Lua 5.2
+- `luau`: enable [Luau] support (auto vendored mode)
+- `luau-jit`: enable [Luau] support with JIT backend.
+- `luau-vector4`: enable [Luau] support with 4-dimensional vector.
+- `vendored`: build static Lua(JIT) libraries from sources during `mlua` compilation using [lua-src] or [luajit-src]
+- `module`: enable module mode (building loadable `cdylib` library for Lua)
+<!-- * `async`: enable async/await support (any executor can be used, eg. [tokio] or [async-std]) -->
+- `send`: make `mlua::Lua: Send + Sync` (adds [`Send`] requirement to `mlua::Function` and `mlua::UserData`)
+- `error-send`: make `mlua:Error: Send + Sync`
+- `serde`: add serialization and deserialization support to `mlua` types using [serde]
+- `macros`: enable procedural macros (such as `chunk!`)
+- `anyhow`: enable `anyhow::Error` conversion into Lua
+- `userdata-wrappers`: opt into `impl UserData` for `Rc<T>`/`Arc<T>`/`Rc<RefCell<T>>`/`Arc<Mutex<T>>` where `T: UserData`
 
 [5.4]: https://www.lua.org/manual/5.4/manual.html
 [5.3]: https://www.lua.org/manual/5.3/manual.html
 [5.2]: https://www.lua.org/manual/5.2/manual.html
 [5.1]: https://www.lua.org/manual/5.1/manual.html
 [LuaJIT]: https://luajit.org/
-[Luau]: https://github.com/luau-lang/luau
 [lua-src]: https://github.com/mlua-rs/lua-src-rs
 [luajit-src]: https://github.com/mlua-rs/luajit-src-rs
-[tokio]: https://github.com/tokio-rs/tokio
-[async-std]: https://github.com/async-rs/async-std
 [`Send`]: https://doc.rust-lang.org/std/marker/trait.Send.html
 [serde]: https://github.com/serde-rs/serde
-
-### Async/await support
-
-Anti-Raid's fork of mlua does not support async/await due to maintenance concerns, but the original `mlua` crate does.
-
-**shell command examples**:
-```shell
-# async http client (hyper)
-cargo run --example async_http_client --features=lua54,async,macros
-
-# async http client (reqwest)
-cargo run --example async_http_reqwest --features=lua54,async,macros,serde
-
-# async http server
-cargo run --example async_http_server --features=lua54,async,macros,send
-curl -v http://localhost:3000
-```
 
 ### Serialization (serde) support
 
@@ -122,6 +119,7 @@ To achieve this, mlua supports the `LUA_LIB`, `LUA_LIB_NAME` and `LUA_LINK` envi
 `LUA_LINK` is optional and may be `dylib` (a dynamic library) or `static` (a static library, `.a` archive).
 
 An example of how to use them:
+
 ``` sh
 my_project $ LUA_LIB=$HOME/tmp/lua-5.2.4/src LUA_LIB_NAME=lua LUA_LINK=static cargo build
 ```
@@ -131,6 +129,7 @@ my_project $ LUA_LIB=$HOME/tmp/lua-5.2.4/src LUA_LIB_NAME=lua LUA_LINK=static ca
 Just enable the `vendored` feature and cargo will automatically build and link the specified Lua/LuaJIT version. This is the easiest way to get started with `mlua`.
 
 ### Standalone mode
+
 In standalone mode, `mlua` allows adding scripting support to your application with a gently configured Lua runtime to ensure safety and soundness.
 
 Add to `Cargo.toml`:
@@ -161,6 +160,7 @@ fn main() -> LuaResult<()> {
 ```
 
 ### Module mode
+
 In module mode, `mlua` allows creating a compiled Lua module that can be loaded from Lua code using [`require`](https://www.lua.org/manual/5.4/manual.html#pdf-require). In this case `mlua` uses an external Lua runtime which could lead to potential unsafety due to the unpredictability of the Lua environment and usage of libraries such as [`debug`](https://www.lua.org/manual/5.4/manual.html#6.10).
 
 [Example](examples/module)
@@ -203,6 +203,7 @@ hello, world!
 ```
 
 On macOS, you need to set additional linker arguments. One option is to compile with `cargo rustc --release -- -C link-arg=-undefined -C link-arg=dynamic_lookup`, the other is to create a `.cargo/config.toml` with the following content:
+
 ``` toml
 [target.x86_64-apple-darwin]
 rustflags = [
@@ -216,6 +217,7 @@ rustflags = [
   "-C", "link-arg=dynamic_lookup",
 ]
 ```
+
 On Linux you can build modules normally with `cargo build --release`.
 
 On Windows the target module will be linked with the `lua5x.dll` library (depending on your feature flags).
@@ -253,6 +255,7 @@ It is surprisingly, fiendishly difficult to use the Lua C API without the potent
 resumed by returning or propagating the Lua error to Rust code.
 
 For example:
+
 ``` rust
 let lua = Lua::new();
 let f = lua.create_function(|_, ()| -> LuaResult<()> {
@@ -281,13 +284,13 @@ using panics for general error handling.
 Below is a list of `mlua` behaviors that should be considered a bug.
 If you encounter them, a bug report would be very welcome:
 
-  + If you can cause UB with `mlua` without typing the word "unsafe", this is a bug.
+  - If you can cause UB with `mlua` without typing the word "unsafe", this is a bug.
 
-  + If your program panics with a message that contains the string "mlua internal error", this is a bug.
+  - If your program panics with a message that contains the string "mlua internal error", this is a bug.
 
-  + Lua C API errors are handled by longjmp. All instances where the Lua C API would otherwise longjmp over calling stack frames should be guarded against, except in internal callbacks where this is intentional. If you detect that `mlua` is triggering a longjmp over your Rust stack frames, this is a bug!
+  - Lua C API errors are handled by longjmp. All instances where the Lua C API would otherwise longjmp over calling stack frames should be guarded against, except in internal callbacks where this is intentional. If you detect that `mlua` is triggering a longjmp over your Rust stack frames, this is a bug!
 
-  + If you detect that, after catching a panic or during a Drop triggered from a panic, a `Lua` or handle method is triggering other bugs or there is a Lua stack space leak, this is a bug. `mlua` instances are supposed to remain fully usable in the face of user generated panics. This guarantee does not extend to panics marked with "mlua internal error" simply because that is already indicative of a separate bug.
+  - If you detect that, after catching a panic or during a Drop triggered from a panic, a `Lua` or handle method is triggering other bugs or there is a Lua stack space leak, this is a bug. `mlua` instances are supposed to remain fully usable in the face of user generated panics. This guarantee does not extend to panics marked with "mlua internal error" simply because that is already indicative of a separate bug.
 
 ## Sandboxing
 
