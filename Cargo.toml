@@ -20,12 +20,10 @@ features = ["lua54", "vendored", "send", "serde", "macros"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
-members = [
-    "mlua_derive",
-    "mlua-sys",
-]
+members = ["mlua_derive", "mlua-sys"]
 
 [features]
+default = ["luau"]
 lua54 = ["ffi/lua54"]
 lua53 = ["ffi/lua53"]
 lua52 = ["ffi/lua52"]
