@@ -131,6 +131,11 @@ pub(crate) struct ExtraData {
     #[cfg(feature = "luau-lute")]
     pub(crate) lute_handle: Option<LuteRuntimeHandle>,
 
+    #[cfg(all(feature = "luau-lute", feature = "send"))]
+    pub(crate) lute_runtimeinitter: Option<Box<dyn Fn(&Lua, Lua) -> Result<()> + Send + Sync + 'static>>,
+    #[cfg(all(feature = "luau-lute", not(feature = "send")))]
+    pub(crate) lute_runtimeinitter: Option<Box<dyn Fn(&Lua, Lua) -> Result<()> + 'static>>,
+
     // Values currently being yielded from Lua.yield()
     pub(super) yielded_values: Option<MultiValue>,
 }
@@ -213,6 +218,8 @@ impl ExtraData {
             running_gc: false,
             #[cfg(feature = "luau-lute")]
             lute_handle: None,
+            #[cfg(feature = "luau-lute")]
+            lute_runtimeinitter: None,
             yielded_values: None,
         }));
 

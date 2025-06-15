@@ -53,6 +53,68 @@ use crate::{
 #[cfg(feature = "luau-lute")]
 use crate::luau::lute::{LuteRuntimeHandle, LuteStdLib};
 
+#[cfg(feature = "luau-lute")]
+use std::{sync::LazyLock, panic::{catch_unwind, AssertUnwindSafe}};
+
+#[cfg(feature = "luau-lute")]
+static SETUP_LUTE_RUNTIME_INITTER: LazyLock<()> = LazyLock::new(|| {
+    unsafe {
+        pub unsafe extern "C" fn init_config(config: *mut ffi::lutec_setupState) {
+            unsafe extern "C-unwind" fn setup_lua_state(wrapper: *mut ffi::lua_State_wrapper) {
+                let _ = catch_unwind(AssertUnwindSafe(|| {
+                    let mut rawlua = RawLua::new_ext(StdLib::ALL_SAFE, &LuaOptions::default(), false);
+
+                    let lua = Lua {
+                        raw: rawlua,
+                        collect_garbage: true,
+                    };
+            
+                    mlua_expect!(lua.configure_luau(), "Error configuring Luau");            
+
+                    (*wrapper).L = lua.lock().main_state();
+                }));
+            }
+
+            unsafe extern "C-unwind" fn post_init_lua_state(parent: *mut ffi::lua_State, L: *mut ffi::lua_State) {
+                if parent.is_null() || L.is_null() {
+                    return; // no parent/target, nothing to do
+                }
+                
+                let rawlua = RawLua::init_from_ptr(parent, false);
+                let child_rawlua = RawLua::init_from_ptr(L, false);
+
+                callback_error_ext(
+                    parent,
+                    rawlua.lock().extra.get(),
+                    true,
+                    move |extra, _| {
+                    let child_lua = Lua {
+                        raw: child_rawlua,
+                        collect_garbage: true,
+                    };
+                    let lua = (*extra).lua();
+                    if let Some(lute_runtimeinitter) = &(*extra).lute_runtimeinitter {
+                        lute_runtimeinitter(lua, child_lua)?;
+                    }
+
+                    // Lute expects the Lua state to be sandboxed
+                    lua.sandbox(true)?;
+
+                    Ok(())
+                });
+            }    
+    
+            (*config).setup_lua_state = setup_lua_state;
+            (*config).post_init_lua_state = post_init_lua_state;
+        }
+    
+        let res = ffi::lutec_set_runtimeinitter(init_config);
+        if res != 0 {
+            panic!("internal error: runtimeinitter failed")
+        }
+    }
+});
+
 /// An inner Lua struct which holds a raw Lua state.
 #[doc(hidden)]
 pub struct RawLua {
@@ -127,7 +189,7 @@ impl RawLua {
             })?;
 
             if is_loaded && (*self.extra.get()).lute_handle.is_none() {
-                (*self.extra.get()).lute_handle = Some(LuteRuntimeHandle::new()?);
+                (*self.extra.get()).lute_handle = Some(LuteRuntimeHandle::new(self)?);
             }
         };
 
@@ -142,7 +204,7 @@ impl RawLua {
                 ffi::lutec_setup_runtime(state);
             })?;
 
-            (*self.extra.get()).lute_handle = Some(LuteRuntimeHandle::new()?);
+            (*self.extra.get()).lute_handle = Some(LuteRuntimeHandle::new(self)?);
         };
 
         Ok(())
@@ -252,6 +314,66 @@ impl RawLua {
         Ok(has_destroyed)
     }
 
+    #[cfg(all(feature = "luau-lute", feature = "send"))]
+    pub(crate) fn set_lute_runtime_initter<F>(&self, f: F)
+    where
+        F: Fn(&Lua, Lua) -> Result<()> + Send + Sync + 'static,
+    {
+        unsafe {
+            let extra = self.extra.get();
+            (*extra).lute_runtimeinitter = Some(Box::new(f));
+        }
+    }
+
+    #[cfg(all(feature = "luau-lute", not(feature = "send")))]
+    pub(crate) fn set_lute_runtime_initter<F>(&self, f: F)
+    where
+        F: Fn(&Lua, Lua) -> Result<()> + 'static,
+    {
+        unsafe {
+            let extra = self.extra.get();
+            (*extra).lute_runtimeinitter = Some(Box::new(f));
+        }
+    }
+
+    /// Returns if the Lute scheduler has any work to do.
+    #[cfg(feature = "luau-lute")]
+    pub(crate) fn has_lute_work(&self) -> Result<bool> {
+        let state = self.main_state();
+        let has_work = unsafe { ffi::lutec_has_work(state) != 0 };
+        Ok(has_work)
+    }
+
+    /// Returns if the Lute scheduler has any threads to run.
+    #[cfg(feature = "luau-lute")]
+    pub(crate) fn has_lute_threads(&self) -> Result<bool> {
+        let state = self.main_state();
+        let has_threads = unsafe { ffi::lutec_has_threads(state) != 0 };
+        Ok(has_threads)
+    }
+
+    /// Returns if the Lute scheduler has any continuations to run.
+    #[cfg(feature = "luau-lute")]
+    pub(crate) fn has_lute_continuations(&self) -> Result<bool> {
+        let state = self.main_state();
+        let has_continuations = unsafe { ffi::lutec_has_continuation(state) != 0 };
+        Ok(has_continuations)
+    }
+
+    #[cfg(feature = "luau-lute")]
+    /// Returns a Function that runs the Lute scheduler once.
+    pub(crate) fn lute_run_once_lua(&self) -> Result<Function> {
+        unsafe {
+            let (aux_thread, idx, replace) = get_next_spot(self.extra());
+            ffi::lua_pushcfunction(self.ref_thread(aux_thread), ffi::lutec_run_once_lua);
+            if replace {
+                ffi::lua_replace(self.ref_thread(aux_thread), idx);
+            }
+
+            Ok(Function(self.new_value_ref(aux_thread, idx)))
+        }
+    }
+
     /// Returns a pointer to the current Lua state.
     ///
     /// The pointer refers to the active Lua coroutine and depends on the context.
@@ -289,6 +411,16 @@ impl RawLua {
     }
 
     pub(super) unsafe fn new(libs: StdLib, options: &LuaOptions) -> XRc<ReentrantMutex<Self>> {
+        Self::new_ext(libs, options, true)
+    }
+
+    pub(super) unsafe fn new_ext(libs: StdLib, options: &LuaOptions, owned: bool) -> XRc<ReentrantMutex<Self>> {
+        #[cfg(feature = "luau-lute")]
+        {
+            // Ensure that the lute runtime is initialized
+            let _ = *SETUP_LUTE_RUNTIME_INITTER;
+        }
+
         let mem_state: *mut MemoryState = Box::into_raw(Box::default());
         let mut state = ffi::lua_newstate(ALLOCATOR, mem_state as *mut c_void);
         // If state is null then switch to Lua internal allocator
@@ -307,7 +439,7 @@ impl RawLua {
             ffi::luau_codegen_create(state);
         }
 
-        let rawlua = Self::init_from_ptr(state, true);
+        let rawlua = Self::init_from_ptr(state, owned);
         let extra = rawlua.lock().extra.get();
 
         mlua_expect!(

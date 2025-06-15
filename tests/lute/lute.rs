@@ -22,12 +22,16 @@ fn test_lute_runtime() -> LuaResult<()> {
     assert_eq!(lua.load("return b.value").eval::<i32>()?, 42);
 
     // Load the lute runtime
-    lua.setup_lute_runtime()?;
-    lua.load_lute_stdlib(LuaLuteStdLib::TIME)?;
-    let time = lua.lute_handle()
-        .expect("Lute runtime is not loaded")
-        .time
+    lua.lute()?.load_stdlib(LuaLuteStdLib::TIME)?;
+    assert!(lua.lute()?.is_loaded()?);
+    let time = lua.lute()?
+        .time()?
         .expect("Time library is not loaded");
+
+    lua.lute()?.set_runtime_initter(|parent, child| {
+        child.globals().set("test_mluau_var", 132)?;
+        Ok(())
+    });
 
     lua.globals().set("time", time)?;
 
@@ -58,6 +62,12 @@ fn test_lute_runtime() -> LuaResult<()> {
             "The metatable is locked"
         );
     }
+
+    lua.lute()?.load_stdlib(LuaLuteStdLib::VM)?;
+    let vm = lua.lute()?
+        .vm()?
+        .expect("VM library is not loaded");
+
 
     Ok(())
 }
