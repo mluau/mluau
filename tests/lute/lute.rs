@@ -24,6 +24,12 @@ fn test_lute_runtime() -> LuaResult<()> {
     // Load the lute runtime
     lua.setup_lute_runtime()?;
     lua.load_lute_stdlib(LuaLuteStdLib::TIME)?;
+    let time = lua.lute_handle()
+        .expect("Lute runtime is not loaded")
+        .time
+        .expect("Time library is not loaded");
+
+    lua.globals().set("time", time)?;
 
     pub struct A {
         v: i32,

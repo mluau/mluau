@@ -132,4 +132,15 @@ impl Lua {
     pub fn load_lute_stdlib(&self, libs: LuteStdLib) -> Result<()> {
         self.lock().load_lute_stdlib(libs)
     }
+
+    /// Returns a handle to the lute runtime, if it is loaded.
+    /// 
+    /// The handle will contain references to the loaded standard libraries.
+    /// 
+    /// Note that this will return a copy of the internal handle so updates
+    /// via ``load_lute_stdlib`` will not be reflected in this handle.
+    #[cfg(feature = "luau-lute")]
+    pub fn lute_handle(&self) -> Option<LuteRuntimeHandle>  {
+        self.lock().lute_handle()
+    }
 }

@@ -152,7 +152,7 @@ impl RawLua {
     unsafe fn get_pushed_lute_table(&self) -> Table {
         let state = self.main_state();
         let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-        ffi::lua_xpush(state, self.ref_thread(aux_thread), 1);
+        ffi::lua_xmove(state, self.ref_thread(aux_thread), 1);
         if replace {
             ffi::lua_replace(self.ref_thread(aux_thread), idxs);
         }
@@ -174,6 +174,8 @@ impl RawLua {
             let extra = self.extra.get();
 
             // SAFETY: is_lute_loaded() ensures that lute_handle is Some()
+            // and no one should be calling load_lute_stdlib while holding a
+            // mutable reference to the lute handle.
             let mut handle = (*extra).lute_handle.as_mut().unwrap_unchecked();
 
             let state = self.main_state();
@@ -184,29 +186,24 @@ impl RawLua {
                 if libs.contains(LuteStdLib::CRYPTO) && handle.crypto.is_none() {
                     ffi::lutec_opencrypto(state);
                     handle.crypto = Some(self.get_pushed_lute_table());
-                    ffi::lua_setglobal(state, c"fs".as_ptr());
                 }
 
                 if libs.contains(LuteStdLib::FS) && handle.fs.is_none() {
                     ffi::lutec_openfs(state);
                     handle.fs = Some(self.get_pushed_lute_table());
-                    ffi::lua_setglobal(state, c"fs".as_ptr());
                 }
                 if libs.contains(LuteStdLib::LUAU) && handle.luau.is_none() {
                     ffi::lutec_openluau(state);
                     handle.luau = Some(self.get_pushed_lute_table());
-                    ffi::lua_setglobal(state, c"luau".as_ptr());
                 }
                 #[cfg(feature = "luau-lute-net")]
                 if libs.contains(LuteStdLib::NET) && handle.net.is_none() {
                     ffi::lutec_opennet(state);
                     handle.net = Some(self.get_pushed_lute_table());
-                    ffi::lua_setglobal(state, c"net".as_ptr());
                 }
                 if libs.contains(LuteStdLib::PROCESS) && handle.process.is_none() {
                     ffi::lutec_openprocess(state);
                     handle.process = Some(self.get_pushed_lute_table());
-                    ffi::lua_setglobal(state, c"process".as_ptr());
                 }
                 if libs.contains(LuteStdLib::TASK) && handle.task.is_none() {
                     ffi::lutec_opentask(state);
@@ -216,22 +213,26 @@ impl RawLua {
                 if libs.contains(LuteStdLib::VM) && handle.vm.is_none() {
                     ffi::lutec_openvm(state);
                     handle.vm = Some(self.get_pushed_lute_table());
-                    ffi::lua_setglobal(state, c"vm".as_ptr());
                 }
                 if libs.contains(LuteStdLib::SYSTEM) && handle.system.is_none() {
                     ffi::lutec_opensystem(state);
                     handle.system = Some(self.get_pushed_lute_table());
-                    ffi::lua_setglobal(state, c"system".as_ptr());
                 }
                 if libs.contains(LuteStdLib::TIME) && handle.time.is_none() {
                     ffi::lutec_opentime(state);
                     handle.time = Some(self.get_pushed_lute_table());
-                    ffi::lua_setglobal(state, c"time".as_ptr());
                 }
             })?;
         };
 
         Ok(())
+    }
+
+    #[cfg(feature = "luau-lute")]
+    pub(crate) fn lute_handle(&self) -> Option<LuteRuntimeHandle> {
+        // SAFETY: lute_handle is cloned so a double-mutable reference should
+        // not be possible
+        unsafe { (*self.extra.get()).lute_handle.clone() } 
     }
 
     #[cfg(feature = "luau-lute")]
