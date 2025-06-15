@@ -208,7 +208,6 @@ impl RawLua {
                 if libs.contains(LuteStdLib::TASK) && handle.task.is_none() {
                     ffi::lutec_opentask(state);
                     handle.task = Some(self.get_pushed_lute_table());
-                    ffi::lua_setglobal(state, c"task".as_ptr());
                 }
                 if libs.contains(LuteStdLib::VM) && handle.vm.is_none() {
                     ffi::lutec_openvm(state);
