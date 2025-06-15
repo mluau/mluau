@@ -114,13 +114,13 @@ impl Lua {
         self.lock().is_lute_loaded()
     }
 
-    /// Sets up a lute runtime on the current Lua state. This internally creates a second auxillary
+    /// Sets up a lute runtime on the current Lua state. This internally creates a second auxiliary
     /// VM to be created to act as the data VM
     pub fn setup_lute_runtime(&self) -> Result<()> {
         self.lock().setup_lute_runtime()
     }
 
-    /// Destroys the lute runtime on the current Lua state. This internally destroys the auxillary
+    /// Destroys the lute runtime on the current Lua state. This internally destroys the auxiliary
     /// VM created to act as the data VM as well
     pub fn destroy_lute_runtime(&self) -> Result<bool> {
         self.lock().destroy_lute_runtime()
