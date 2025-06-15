@@ -2,7 +2,7 @@ use crate::error::{Error, Result};
 use crate::state::util::get_next_spot;
 use crate::state::RawLua;
 use crate::util::check_stack;
-use crate::{ffi, Lua, WeakLua, Table, Function};
+use crate::{ffi, Lua, WeakLua, Table, Function, Thread};
 use crate::types::MaybeSend;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign};
 
@@ -31,6 +31,12 @@ impl LuteStdLib {
     pub fn contains(self, lib: Self) -> bool {
         (self & lib).0 != 0
     }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum LuteSchedulerRunOnceResult {
+    Empty,
+    Success(Thread),
 }
 
 impl BitAnd for LuteStdLib {
@@ -143,7 +149,7 @@ impl Lute {
     #[cfg(feature = "send")]
     pub fn set_runtime_initter<F>(&self, initter: F) -> Result<()>
     where
-        F: Fn(&Lua, Lua) -> Result<()> + Send + Sync + 'static,
+        F: Fn(&Lua, &Lua) -> Result<()> + Send + Sync + 'static,
     {
         let Some(lua) = self.0.try_upgrade() else {
             return Err(Error::RuntimeError("Lua VM not open".into()));
@@ -161,7 +167,7 @@ impl Lute {
     #[cfg(not(feature = "send"))]
     pub fn set_runtime_initter<F>(&self, initter: F) -> Result<()>
     where
-        F: Fn(&Lua, Lua) -> Result<()> + 'static,
+        F: Fn(&Lua, &Lua) -> Result<()> + 'static,
     {
         let Some(lua) = self.0.try_upgrade() else {
             return Err(Error::RuntimeError("Lua VM not open".into()));
@@ -258,6 +264,20 @@ impl Lute {
     /// Returns the ``time`` library from the lute runtime, if it is loaded.
     pub fn time(&self) -> Result<Option<Table>> {
         self.with_handle(|h| Ok(h.time))
+    }
+
+    /// Returns the ``scheduler_run_once`` function from the lute runtime, if it is loaded.
+    pub fn scheduler_run_once(&self) -> Result<Function> {
+        self.with_handle(|h| Ok(h.scheduler_run_once))
+    }
+
+    /// Run one iteration of the lute scheduler.
+    pub fn run_scheduler_once(&self) -> Result<LuteSchedulerRunOnceResult> {
+        let Some(lua) = self.0.try_upgrade() else {
+            return Err(Error::RuntimeError("Lua VM not open".into()));
+        };
+
+        lua.lock().lute_run_once()
     }
 
     /// Returns a handle to the lute runtime, if it is loaded.

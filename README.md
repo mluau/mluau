@@ -36,6 +36,7 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
 - Removal of ``Lua::scope``, a feature we don't use that carried a slight performance penalty.
 - Integration with the [Lute](https://github.com/luau-lang/lute) runtime
 - Support for getting metatable of non-mlua/non-Rust userdata via the unsafe ``AnyUserData::underlying_metatable`` method. This is useful for managing ``newproxy`` and (Luau only) Lute userdata.
+- ``Thread::pop_results`` unsafe function has been added to allow popping results directly from the thread's stack to a ``R`` which implements ``FromLua``. This is useful when trying to interoperate with Lute runtime
 
 ## Roadmap
 

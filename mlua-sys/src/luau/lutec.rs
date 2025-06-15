@@ -48,7 +48,6 @@ pub struct lua_State_wrapper {
 #[repr(C)]
 pub struct lutec_setupState {
     pub setup_lua_state: unsafe extern "C-unwind" fn(wrapper: *mut lua_State_wrapper),
-    pub post_init_lua_state: unsafe extern "C-unwind" fn(parent: *mut lua_State, L: *mut lua_State),
 }
 
 // Populates function pointers in the given lutec_setupState.

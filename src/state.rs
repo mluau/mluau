@@ -911,7 +911,10 @@ impl Lua {
         let lua = self.lock();
         unsafe {
             match MemoryState::get(lua.state()) {
-                mem_state if !mem_state.is_null() => Ok((*mem_state).set_memory_limit(limit)),
+                mem_state if !mem_state.is_null() => {
+                    println!("Got memory limit: {}", (*mem_state).memory_limit());
+                    Ok((*mem_state).set_memory_limit(limit))
+                },
                 _ => Err(Error::MemoryControlNotAvailable),
             }
         }
