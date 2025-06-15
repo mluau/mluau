@@ -23,6 +23,9 @@ use crate::MultiValue;
 
 use super::{Lua, WeakLua};
 
+#[cfg(feature = "luau-lute")]
+use crate::luau::lute::LuteRuntimeHandle;
+
 // Unique key to store `ExtraData` in the registry
 static EXTRA_REGISTRY_KEY: u8 = 0;
 
@@ -125,6 +128,14 @@ pub(crate) struct ExtraData {
     #[cfg(feature = "luau-jit")]
     pub(super) enable_jit: bool,
 
+    #[cfg(feature = "luau-lute")]
+    pub(crate) lute_handle: Option<LuteRuntimeHandle>,
+
+    #[cfg(all(feature = "luau-lute", feature = "send"))]
+    pub(crate) lute_runtimeinitter: Option<Box<dyn Fn(&Lua, Lua) -> Result<()> + Send + Sync + 'static>>,
+    #[cfg(all(feature = "luau-lute", not(feature = "send")))]
+    pub(crate) lute_runtimeinitter: Option<Box<dyn Fn(&Lua, Lua) -> Result<()> + 'static>>,
+
     // Values currently being yielded from Lua.yield()
     pub(super) yielded_values: Option<MultiValue>,
 }
@@ -205,6 +216,10 @@ impl ExtraData {
             enable_jit: true,
             #[cfg(feature = "luau")]
             running_gc: false,
+            #[cfg(feature = "luau-lute")]
+            lute_handle: None,
+            #[cfg(feature = "luau-lute")]
+            lute_runtimeinitter: None,
             yielded_values: None,
         }));
 
