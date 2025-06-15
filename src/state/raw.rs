@@ -50,7 +50,7 @@ use crate::{
     types::{HookCallback, HookKind, VmState},
 };
 
-#[cfg(feature = "luau")]
+#[cfg(feature = "luau-lute")]
 use crate::luau::lute::{LuteRuntimeHandle, LuteStdLib};
 
 /// An inner Lua struct which holds a raw Lua state.
