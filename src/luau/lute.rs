@@ -1,7 +1,8 @@
 use crate::error::{Error, Result};
-use crate::{Lua, Table, state::RawLua, ffi};
-use crate::util::check_stack;
 use crate::state::util::get_next_spot;
+use crate::state::RawLua;
+use crate::util::check_stack;
+use crate::{ffi, Lua, Table};
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign};
 
 /// Flags describing the set of lute standard libraries to load.
@@ -10,16 +11,16 @@ pub struct LuteStdLib(u32);
 
 impl LuteStdLib {
     #[cfg(feature = "luau-lute-crypto")]
-    pub const CRYPTO : LuteStdLib = LuteStdLib(1);
-    pub const FS : LuteStdLib = LuteStdLib(1 << 1);
-    pub const LUAU : LuteStdLib = LuteStdLib(1 << 2);
+    pub const CRYPTO: LuteStdLib = LuteStdLib(1);
+    pub const FS: LuteStdLib = LuteStdLib(1 << 1);
+    pub const LUAU: LuteStdLib = LuteStdLib(1 << 2);
     #[cfg(feature = "luau-lute-net")]
-    pub const NET : LuteStdLib = LuteStdLib(1 << 3);
-    pub const PROCESS : LuteStdLib = LuteStdLib(1 << 4);
-    pub const TASK : LuteStdLib = LuteStdLib(1 << 5);
-    pub const VM : LuteStdLib = LuteStdLib(1 << 6);
-    pub const SYSTEM : LuteStdLib = LuteStdLib(1 << 7);
-    pub const TIME : LuteStdLib = LuteStdLib(1 << 8);
+    pub const NET: LuteStdLib = LuteStdLib(1 << 3);
+    pub const PROCESS: LuteStdLib = LuteStdLib(1 << 4);
+    pub const TASK: LuteStdLib = LuteStdLib(1 << 5);
+    pub const VM: LuteStdLib = LuteStdLib(1 << 6);
+    pub const SYSTEM: LuteStdLib = LuteStdLib(1 << 7);
+    pub const TIME: LuteStdLib = LuteStdLib(1 << 8);
 
     /// No libraries
     pub const NONE: LuteStdLib = LuteStdLib(0);
@@ -113,19 +114,20 @@ impl Lua {
         self.lock().is_lute_loaded()
     }
 
-    /// Sets up a lute runtime on the current Lua state. This internally creates a second auxillary VM
-    /// to be created to act as the data VM
+    /// Sets up a lute runtime on the current Lua state. This internally creates a second auxillary
+    /// VM to be created to act as the data VM
     pub fn setup_lute_runtime(&self) -> Result<()> {
         self.lock().setup_lute_runtime()
     }
 
-    /// Destroys the lute runtime on the current Lua state. This internally destroys the auxillary VM created to act as the data VM as well
+    /// Destroys the lute runtime on the current Lua state. This internally destroys the auxillary
+    /// VM created to act as the data VM as well
     pub fn destroy_lute_runtime(&self) -> Result<bool> {
         self.lock().destroy_lute_runtime()
     }
 
     /// Loads the specified lute standard libraries into the current Lua state.
-    /// 
+    ///
     /// This errors if the runtime is not loaded.
     pub fn load_lute_stdlib(&self, libs: LuteStdLib) -> Result<()> {
         self.lock().load_lute_stdlib(libs)

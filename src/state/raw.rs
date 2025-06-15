@@ -128,7 +128,7 @@ impl RawLua {
 
             if is_loaded && (*self.extra.get()).lute_handle.is_none() {
                 (*self.extra.get()).lute_handle = Some(LuteRuntimeHandle::new()?);
-            }    
+            }
         };
 
         Ok(is_loaded)
@@ -160,7 +160,7 @@ impl RawLua {
     }
 
     /// Loads the specified lute standard libraries into the current Lua state.
-    /// 
+    ///
     /// This errors if the runtime is not loaded.
     #[cfg(feature = "luau-lute")]
     pub(crate) fn load_lute_stdlib(&self, libs: LuteStdLib) -> Result<()> {
@@ -179,7 +179,7 @@ impl RawLua {
             let state = self.main_state();
             let _sg = StackGuard::new(state);
             check_stack(state, 1)?;
-            protect_lua!(state, 0, 0, |state| {                
+            protect_lua!(state, 0, 0, |state| {
                 #[cfg(feature = "luau-lute-crypto")]
                 if libs.contains(LuteStdLib::CRYPTO) && handle.crypto.is_none() {
                     ffi::lutec_opencrypto(state);
@@ -248,7 +248,7 @@ impl RawLua {
             // Clear the lute handle
             unsafe { (*self.extra.get()).lute_handle = None };
         }
-        
+
         Ok(has_destroyed)
     }
 

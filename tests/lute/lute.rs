@@ -7,7 +7,7 @@ fn test_lute_runtime() -> LuaResult<()> {
     let lua = Lua::new();
 
     pub struct B {
-        v: i32
+        v: i32,
     }
 
     impl LuaUserData for B {
@@ -17,9 +17,8 @@ fn test_lute_runtime() -> LuaResult<()> {
     }
 
     // Register the B type in Luau
-    lua.load("b = ...; return b").call::<LuaUserDataRef<B>>(B {
-        v: 42
-    })?;
+    lua.load("b = ...; return b")
+        .call::<LuaUserDataRef<B>>(B { v: 42 })?;
     assert_eq!(lua.load("return b.value").eval::<i32>()?, 42);
 
     // Load the lute runtime
@@ -27,7 +26,7 @@ fn test_lute_runtime() -> LuaResult<()> {
     lua.load_lute_stdlib(LuaLuteStdLib::TIME)?;
 
     pub struct A {
-        v: i32
+        v: i32,
     }
 
     impl LuaUserData for A {
@@ -37,9 +36,8 @@ fn test_lute_runtime() -> LuaResult<()> {
     }
 
     // Register the A type in Luau
-    lua.load("a = ...; return a").call::<LuaUserDataRef<A>>(A {
-        v: 100
-    })?;
+    lua.load("a = ...; return a")
+        .call::<LuaUserDataRef<A>>(A { v: 100 })?;
     assert_eq!(lua.load("return a.value").eval::<i32>()?, 100);
 
     let res = lua.load("aud = ...; assert(aud.value == 32, 'aud is invalid'); a = time.duration.seconds(2) + time.duration.seconds(3); return a").call::<LuaAnyUserData>(A {
@@ -49,7 +47,10 @@ fn test_lute_runtime() -> LuaResult<()> {
     unsafe {
         // Check for lute's special metatable
         let metatable = res.underlying_metatable()?;
-        assert_eq!(metatable.get::<LuaString>("__metatable")?.to_str()?, "The metatable is locked");
+        assert_eq!(
+            metatable.get::<LuaString>("__metatable")?.to_str()?,
+            "The metatable is locked"
+        );
     }
 
     Ok(())

@@ -836,11 +836,11 @@ impl AnyUserData {
     ///
     /// This is mainly useful with lute and luau-created userdata
     /// which do not have a type id from mlua.
-    /// 
+    ///
     /// Returns ``UserDataTypeMismatch`` if the userdata is empty or has no metatable.
-    /// 
+    ///
     /// Safety:
-    /// 
+    ///
     /// It is up to the user to ensure that changes made to the underlying metatable
     /// do not modify restricted mlua userdata metamethods etc. When in doubt, use
     /// ``metatable()`` instead. It is possible to cause memory unsafety by abusing
@@ -848,7 +848,7 @@ impl AnyUserData {
     pub unsafe fn underlying_metatable(&self) -> Result<Table> {
         self.raw_underlying_metatable()
     }
-    
+
     fn raw_underlying_metatable(&self) -> Result<Table> {
         let lua = self.0.lua.lock();
         let state = lua.state();
