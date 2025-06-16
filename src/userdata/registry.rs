@@ -718,7 +718,15 @@ macro_rules! lua_userdata_impl {
                 (registry.raw.functions).extend(orig_registry.raw.functions);
                 (registry.raw.methods).extend(orig_registry.raw.methods);
                 (registry.raw.meta_methods).extend(orig_registry.raw.meta_methods);
-                (registry.raw.namecalls).extend(orig_registry.raw.namecalls);
+                #[cfg(feature = "luau")]
+                {
+                    (registry.raw.namecalls).extend(orig_registry.raw.namecalls);
+                    if let Some(dynamic_method) = orig_registry.raw.dynamic_method {
+                        registry.raw.dynamic_method = Some(dynamic_method);
+                    }
+                    registry.raw.disable_namecall_optimization =
+                        orig_registry.raw.disable_namecall_optimization;
+                }
             }
         }
     };
