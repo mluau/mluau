@@ -337,6 +337,7 @@ fn test_error() -> Result<()> {
     }
 
     let return_string_error = globals.get::<Function>("return_string_error")?;
+    println!("return_string_error: {:?}", return_string_error.call::<Error>(()));
     assert!(return_string_error.call::<Error>(()).is_ok());
 
     match lua.load("if you are happy and you know it syntax error").exec() {
@@ -1017,7 +1018,7 @@ fn test_ref_stack_exhaustion() {
         let lua = Lua::new();
         let mut vals = Vec::new();
         for _ in 0..200000 {
-            println!("Creating table {}", vals.len());
+            //println!("Creating table {}", vals.len());
             vals.push(lua.create_table()?);
         }
         Ok(())

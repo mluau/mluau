@@ -1096,37 +1096,54 @@ impl RawLua {
             }
 
             ffi::LUA_TSTRING => {
-                check_stack(state, 1)?;
+                #[cfg(not(feature = "luau"))] // checkstack is needed on non-Luau where xpush takes 1 stack slot
+                {
+                    check_stack(state, 1)?;
+                }
+
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                ffi::lua_xpush(state, self.ref_thread(aux_thread), idx);
+                let ref_thread = self.ref_thread(aux_thread);
+                ffi::lua_xpush(state, ref_thread, idx);
                 if replace {
-                    ffi::lua_replace(self.ref_thread(aux_thread), idxs);
+                    ffi::lua_replace(ref_thread, idxs);
                 }
                 Ok(Value::String(String(self.new_value_ref(aux_thread, idxs))))
             }
 
             ffi::LUA_TTABLE => {
-                check_stack(state, 1)?;
+                #[cfg(not(feature = "luau"))] // checkstack is needed on non-Luau where xpush takes 1 stack slot
+                {
+                    check_stack(state, 1)?;
+                }
+
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                ffi::lua_xpush(state, self.ref_thread(aux_thread), idx);
+                let ref_thread = self.ref_thread(aux_thread);
+                ffi::lua_xpush(state, ref_thread, idx);
                 if replace {
-                    ffi::lua_replace(self.ref_thread(aux_thread), idxs);
+                    ffi::lua_replace(ref_thread, idxs);
                 }
                 Ok(Value::Table(Table(self.new_value_ref(aux_thread, idxs))))
             }
 
             ffi::LUA_TFUNCTION => {
-                check_stack(state, 1)?;
+                #[cfg(not(feature = "luau"))] // checkstack is needed on non-Luau where xpush takes 1 stack slot
+                {
+                    check_stack(state, 1)?;
+                }
+
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                ffi::lua_xpush(state, self.ref_thread(aux_thread), idx);
+                let ref_thread = self.ref_thread(aux_thread);
+                ffi::lua_xpush(state, ref_thread, idx);
                 if replace {
-                    ffi::lua_replace(self.ref_thread(aux_thread), idxs);
+                    ffi::lua_replace(ref_thread, idxs);
                 }
                 Ok(Value::Function(Function(self.new_value_ref(aux_thread, idxs))))
             }
-
             ffi::LUA_TUSERDATA => {
-                check_stack(state, 2)?;
+                #[cfg(not(feature = "luau"))] // checkstack is needed on non-Luau where xpush takes 1 stack slot
+                {
+                    check_stack(state, 1)?;
+                }
 
                 // If the userdata is `WrappedFailure`, process it as an error or panic.
                 let failure_mt_ptr = (*self.extra.get()).wrapped_failure_mt_ptr;
@@ -1141,10 +1158,11 @@ impl RawLua {
                     }
                     _ => {
                         let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                        ffi::lua_xpush(state, self.ref_thread(aux_thread), idx);
+                        let ref_thread = self.ref_thread(aux_thread);
+                        ffi::lua_xpush(state, ref_thread, idx);
                         if replace {
-                            ffi::lua_replace(self.ref_thread(aux_thread), idxs);
-                        }
+                            ffi::lua_replace(ref_thread, idxs);
+                        }        
 
                         Ok(Value::UserData(AnyUserData(self.new_value_ref(aux_thread, idxs))))
                     }
@@ -1152,12 +1170,17 @@ impl RawLua {
             }
 
             ffi::LUA_TTHREAD => {
-                check_stack(state, 1)?;
+                #[cfg(not(feature = "luau"))] // checkstack is needed on non-Luau where xpush takes 1 stack slot
+                {
+                    check_stack(state, 1)?;
+                }
+
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                ffi::lua_xpush(state, self.ref_thread(aux_thread), idx);
-                let thread_state = ffi::lua_tothread(self.ref_thread(aux_thread), -1);
+                let ref_thread = self.ref_thread(aux_thread);
+                ffi::lua_xpush(state, ref_thread, idx);
+                let thread_state = ffi::lua_tothread(ref_thread, -1);
                 if replace {
-                    ffi::lua_replace(self.ref_thread(aux_thread), idxs);
+                    ffi::lua_replace(ref_thread, idxs);
                 }
                 Ok(Value::Thread(Thread(
                     self.new_value_ref(aux_thread, idxs),
@@ -1168,18 +1191,25 @@ impl RawLua {
             #[cfg(feature = "luau")]
             ffi::LUA_TBUFFER => {
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                ffi::lua_xpush(state, self.ref_thread(aux_thread), idx);
+                let ref_thread = self.ref_thread(aux_thread);
+                ffi::lua_xpush(state, ref_thread, idx);
                 if replace {
-                    ffi::lua_replace(self.ref_thread(aux_thread), idxs);
+                    ffi::lua_replace(ref_thread, idxs);
                 }
                 Ok(Value::Buffer(crate::Buffer(self.new_value_ref(aux_thread, idxs))))
             }
 
             _ => {
+                #[cfg(not(feature = "luau"))] // checkstack is needed on non-Luau where xpush takes 1 stack slot
+                {
+                    check_stack(state, 1)?;
+                }
+
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                ffi::lua_xpush(state, self.ref_thread(aux_thread), idx);
+                let ref_thread = self.ref_thread(aux_thread);
+                ffi::lua_xpush(state, ref_thread, idx);
                 if replace {
-                    ffi::lua_replace(self.ref_thread(aux_thread), idxs);
+                    ffi::lua_replace(ref_thread, idxs);
                 }
                 Ok(Value::Other(self.new_value_ref(aux_thread, idxs)))
             }
