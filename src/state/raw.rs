@@ -1044,36 +1044,32 @@ impl RawLua {
     }
 
     /// Pops a value from the Lua stack.
-    ///
-    /// Uses 2 stack spaces, does not call `checkstack`.
-    pub(crate) unsafe fn pop_value_at(&self, state: *mut ffi::lua_State) -> Value {
-        let value = self.stack_value_at(-1, None, state);
+    pub(crate) unsafe fn pop_value_at(&self, state: *mut ffi::lua_State) -> Result<Value> {
+        let value = self.stack_value_at(-1, None, state)?;
         ffi::lua_pop(state, 1);
-        value
+        Ok(value)
     }
 
     /// Returns value at given stack index without popping it.
-    ///
-    /// Uses 2 stack spaces, does not call checkstack.
     pub(crate) unsafe fn stack_value_at(
         &self,
         idx: c_int,
         type_hint: Option<c_int>,
         state: *mut ffi::lua_State,
-    ) -> Value {
+    ) -> Result<Value> {
         match type_hint.unwrap_or_else(|| ffi::lua_type(state, idx)) {
-            ffi::LUA_TNIL => Nil,
+            ffi::LUA_TNIL => Ok(Nil),
 
-            ffi::LUA_TBOOLEAN => Value::Boolean(ffi::lua_toboolean(state, idx) != 0),
+            ffi::LUA_TBOOLEAN => Ok(Value::Boolean(ffi::lua_toboolean(state, idx) != 0)),
 
-            ffi::LUA_TLIGHTUSERDATA => Value::LightUserData(LightUserData(ffi::lua_touserdata(state, idx))),
+            ffi::LUA_TLIGHTUSERDATA => Ok(Value::LightUserData(LightUserData(ffi::lua_touserdata(state, idx)))),
 
             #[cfg(any(feature = "lua54", feature = "lua53"))]
             ffi::LUA_TNUMBER => {
                 if ffi::lua_isinteger(state, idx) != 0 {
-                    Value::Integer(ffi::lua_tointeger(state, idx))
+                    Ok(Value::Integer(ffi::lua_tointeger(state, idx)))
                 } else {
-                    Value::Number(ffi::lua_tonumber(state, idx))
+                    Ok(Value::Number(ffi::lua_tonumber(state, idx)))
                 }
             }
 
@@ -1083,8 +1079,8 @@ impl RawLua {
 
                 let n = ffi::lua_tonumber(state, idx);
                 match num_traits::cast(n) {
-                    Some(i) if (n - (i as Number)).abs() < Number::EPSILON => Value::Integer(i),
-                    _ => Value::Number(n),
+                    Some(i) if (n - (i as Number)).abs() < Number::EPSILON => Ok(Value::Integer(i)),
+                    _ => Ok(Value::Number(n)),
                 }
             }
 
@@ -1093,49 +1089,54 @@ impl RawLua {
                 let v = ffi::lua_tovector(state, idx);
                 mlua_debug_assert!(!v.is_null(), "vector is null");
                 #[cfg(not(feature = "luau-vector4"))]
-                return Value::Vector(crate::Vector([*v, *v.add(1), *v.add(2)]));
+                return Ok(Value::Vector(crate::Vector([*v, *v.add(1), *v.add(2)])));
                 #[cfg(feature = "luau-vector4")]
-                return Value::Vector(crate::Vector([*v, *v.add(1), *v.add(2), *v.add(3)]));
+                return Ok(Value::Vector(crate::Vector([*v, *v.add(1), *v.add(2), *v.add(3)])));
             }
 
             ffi::LUA_TSTRING => {
+                check_stack(state, 1)?;
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
                 ffi::lua_xpush(state, self.ref_thread(aux_thread), idx);
                 if replace {
                     ffi::lua_replace(self.ref_thread(aux_thread), idxs);
                 }
-                Value::String(String(self.new_value_ref(aux_thread, idxs)))
+                Ok(Value::String(String(self.new_value_ref(aux_thread, idxs))))
             }
 
             ffi::LUA_TTABLE => {
+                check_stack(state, 1)?;
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
                 ffi::lua_xpush(state, self.ref_thread(aux_thread), idx);
                 if replace {
                     ffi::lua_replace(self.ref_thread(aux_thread), idxs);
                 }
-                Value::Table(Table(self.new_value_ref(aux_thread, idxs)))
+                Ok(Value::Table(Table(self.new_value_ref(aux_thread, idxs))))
             }
 
             ffi::LUA_TFUNCTION => {
+                check_stack(state, 1)?;
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
                 ffi::lua_xpush(state, self.ref_thread(aux_thread), idx);
                 if replace {
                     ffi::lua_replace(self.ref_thread(aux_thread), idxs);
                 }
-                Value::Function(Function(self.new_value_ref(aux_thread, idxs)))
+                Ok(Value::Function(Function(self.new_value_ref(aux_thread, idxs))))
             }
 
             ffi::LUA_TUSERDATA => {
+                check_stack(state, 2)?;
+                
                 // If the userdata is `WrappedFailure`, process it as an error or panic.
                 let failure_mt_ptr = (*self.extra.get()).wrapped_failure_mt_ptr;
                 match get_internal_userdata::<WrappedFailure>(state, idx, failure_mt_ptr).as_mut() {
-                    Some(WrappedFailure::Error(err)) => Value::Error(Box::new(err.clone())),
+                    Some(WrappedFailure::Error(err)) => Ok(Value::Error(Box::new(err.clone()))),
                     Some(WrappedFailure::Panic(panic)) => {
                         if let Some(panic) = panic.take() {
                             resume_unwind(panic);
                         }
                         // Previously resumed panic?
-                        Value::Nil
+                        Ok(Value::Nil)
                     }
                     _ => {
                         let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
@@ -1144,19 +1145,20 @@ impl RawLua {
                             ffi::lua_replace(self.ref_thread(aux_thread), idxs);
                         }
 
-                        Value::UserData(AnyUserData(self.new_value_ref(aux_thread, idxs)))
+                        Ok(Value::UserData(AnyUserData(self.new_value_ref(aux_thread, idxs))))
                     }
                 }
             }
 
             ffi::LUA_TTHREAD => {
+                check_stack(state, 1)?;
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
                 ffi::lua_xpush(state, self.ref_thread(aux_thread), idx);
                 let thread_state = ffi::lua_tothread(self.ref_thread(aux_thread), -1);
                 if replace {
                     ffi::lua_replace(self.ref_thread(aux_thread), idxs);
                 }
-                Value::Thread(Thread(self.new_value_ref(aux_thread, idxs), thread_state))
+                Ok(Value::Thread(Thread(self.new_value_ref(aux_thread, idxs), thread_state)))
             }
 
             #[cfg(feature = "luau")]
@@ -1166,7 +1168,7 @@ impl RawLua {
                 if replace {
                     ffi::lua_replace(self.ref_thread(aux_thread), idxs);
                 }
-                Value::Buffer(crate::Buffer(self.new_value_ref(aux_thread, idxs)))
+                Ok(Value::Buffer(crate::Buffer(self.new_value_ref(aux_thread, idxs))))
             }
 
             _ => {
@@ -1175,7 +1177,7 @@ impl RawLua {
                 if replace {
                     ffi::lua_replace(self.ref_thread(aux_thread), idxs);
                 }
-                Value::Other(self.new_value_ref(aux_thread, idxs))
+                Ok(Value::Other(self.new_value_ref(aux_thread, idxs)))
             }
         }
     }

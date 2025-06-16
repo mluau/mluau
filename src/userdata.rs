@@ -760,7 +760,7 @@ impl AnyUserData {
             }
             ffi::lua_rawgeti(state, -1, n as ffi::lua_Integer);
 
-            V::from_lua(lua.pop_value_at(state), lua.lua())
+            V::from_lua(lua.pop_value_at(state)?, lua.lua())
         }
     }
 

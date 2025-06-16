@@ -34,9 +34,10 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
   - Removal of the `__gc` metamethod on userdata; although implemented by mlua, [should not be supported in Luau](https://luau.org/sandbox#__gc) due to memory safety and optimization considerations.
   - ``collectgarbage`` now limited to options ``"count"`` and ``"collect"`` for better sandboxing. Importantly, this disallows user code from purposely stopping the garbage collector, even when sandbox mode is disabled.
 - Removal of ``Lua::scope``, a feature we don't use that carried a slight performance penalty.
-- Integration with the [Lute](https://github.com/luau-lang/lute) runtime
+- Integration with the [Lute](https://github.com/luau-lang/lute) runtime and scheduler via the ``luau-lute`` feature flag. Note that crypto and net are disabled by default due to increasing compiler times and leading to large memory usage during linking, if you want to enable crypto and net, set the ``luau-lute-crypto`` and ``luau-lute-net`` flags respectively.
 - Support for getting metatable of non-mlua/non-Rust userdata via the unsafe ``AnyUserData::underlying_metatable`` method. This is useful for managing ``newproxy`` and (Luau only) Lute userdata.
-- ``Thread::pop_results`` unsafe function has been added to allow popping results directly from the thread's stack to a ``R`` which implements ``FromLua``. This is useful when trying to interoperate with Lute runtime
+- ``Thread::pop_results`` has been added to allow popping results directly from the thread's stack to a ``R`` which implements ``FromLua``. This is useful when trying to interoperate with Lute runtime but should not be needed much outside this in practice.
+- ``RawLua::stack_value`` correctly calls ``lua_checkstack`` to avoid a potential crash when there are no stack slots free when popping from the Lua stack (``from_lua`` etc.)
 
 ## Roadmap
 
