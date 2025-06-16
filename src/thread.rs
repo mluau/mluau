@@ -77,11 +77,11 @@ impl Thread {
     }
 
     /// Tries converting whatever is on the thread stack to ``R``.
-    /// 
+    ///
     /// Useful if you know the thread has something but cannot extract it directly.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// Note that while this method is usually safe to call, the results returned
     /// by this method could be used to induce memory unsafety. Note that all cases
     /// of this happening, however, are bugs in mluau.

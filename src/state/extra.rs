@@ -132,7 +132,8 @@ pub(crate) struct ExtraData {
     pub(crate) lute_handle: Option<LuteRuntimeHandle>,
 
     #[cfg(all(feature = "luau-lute", feature = "send"))]
-    pub(crate) lute_runtimeinitter: Option<Box<dyn Fn(&Lua, &Lua, LuteChildVmType) -> Result<()> + Send + Sync + 'static>>,
+    pub(crate) lute_runtimeinitter:
+        Option<Box<dyn Fn(&Lua, &Lua, LuteChildVmType) -> Result<()> + Send + Sync + 'static>>,
     #[cfg(all(feature = "luau-lute", not(feature = "send")))]
     pub(crate) lute_runtimeinitter: Option<Box<dyn Fn(&Lua, &Lua, LuteChildVmType) -> Result<()> + 'static>>,
 

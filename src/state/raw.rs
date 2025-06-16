@@ -51,7 +51,7 @@ use crate::{
 };
 
 #[cfg(feature = "luau-lute")]
-use crate::luau::lute::{LuteRuntimeHandle, LuteStdLib, LuteSchedulerRunOnceResult, LuteChildVmType};
+use crate::luau::lute::{LuteChildVmType, LuteRuntimeHandle, LuteSchedulerRunOnceResult, LuteStdLib};
 
 #[cfg(feature = "luau-lute")]
 use std::sync::LazyLock;
@@ -66,72 +66,63 @@ static SETUP_LUTE_RUNTIME_INITTER: LazyLock<()> = LazyLock::new(|| {
                     panic!("Parent Lua state is null");
                 }
 
-                callback_error_ext(
-                    parent,
-                    std::ptr::null_mut(),
-                    false,
-                    move |extra, _| {
-                        let parent_lua = (*extra).lua();
+                callback_error_ext(parent, std::ptr::null_mut(), false, move |extra, _| {
+                    let parent_lua = (*extra).lua();
 
-                        // Child VM: We cannot drop this state, it is owned by the Lute runtime
-                        let mut rawlua = RawLua::new_ext(StdLib::ALL_SAFE, &LuaOptions::default(), true);
-                        (*rawlua.lock().extra.get()).no_drop = true;
+                    // Child VM: We cannot drop this state, it is owned by the Lute runtime
+                    let mut rawlua = RawLua::new_ext(StdLib::ALL_SAFE, &LuaOptions::default(), true);
+                    (*rawlua.lock().extra.get()).no_drop = true;
 
-                        if !(*wrapper).runtime_to_set.is_null() {
-                            let lua = rawlua.lock();
-                            ffi::lua_setthreaddata(
-                                lua.main_state(),
-                                (*wrapper).runtime_to_set,
-                            );
-                        }
-
-                        let lua = Lua {
-                            raw: rawlua,
-                            collect_garbage: true,
-                        };
-                
-                        mlua_expect!(lua.configure_luau(), "Error configuring Luau"); 
-
-
-                        if let Some(lute_runtimeinitter) = &(*extra).lute_runtimeinitter {
-                            lute_runtimeinitter(parent_lua, &lua, LuteChildVmType::ChildVm)?;
-                        }
-
-                        // Lute expects the Lua state to be sandboxed
-                        lua.sandbox(true)?;       
-
-                        (*wrapper).L = lua.lock().main_state();
-
-                        // Data Copy VM: We cannot drop this state, it is owned by the Lute runtime
-                        // 
-                        // Unlike the child VM, we don't need to explicitly set a runtime on data copy VM.
-                        let mut rawlua_dc = RawLua::new_ext(StdLib::ALL_SAFE, &LuaOptions::default(), true);
-                        (*rawlua_dc.lock().extra.get()).no_drop = true;
-
-                        let dc_lua = Lua {
-                            raw: rawlua_dc,
-                            collect_garbage: true,
-                        };
-
-                        mlua_expect!(dc_lua.configure_luau(), "Error configuring Luau");
-
-                        if let Some(lute_runtimeinitter) = &(*extra).lute_runtimeinitter {
-                            lute_runtimeinitter(parent_lua, &dc_lua, LuteChildVmType::DataCopy)?;
-                        }
-
-                        // Lute does not expect the data copy VM to be sandboxed
-                        dc_lua.sandbox(false)?;
-
-                        (*wrapper).DC = dc_lua.lock().main_state();
-
-                        Ok(())
+                    if !(*wrapper).runtime_to_set.is_null() {
+                        let lua = rawlua.lock();
+                        ffi::lua_setthreaddata(lua.main_state(), (*wrapper).runtime_to_set);
                     }
-                )
+
+                    let lua = Lua {
+                        raw: rawlua,
+                        collect_garbage: true,
+                    };
+
+                    mlua_expect!(lua.configure_luau(), "Error configuring Luau");
+
+                    if let Some(lute_runtimeinitter) = &(*extra).lute_runtimeinitter {
+                        lute_runtimeinitter(parent_lua, &lua, LuteChildVmType::ChildVm)?;
+                    }
+
+                    // Lute expects the Lua state to be sandboxed
+                    lua.sandbox(true)?;
+
+                    (*wrapper).L = lua.lock().main_state();
+
+                    // Data Copy VM: We cannot drop this state, it is owned by the Lute runtime
+                    //
+                    // Unlike the child VM, we don't need to explicitly set a runtime on data copy VM.
+                    let mut rawlua_dc = RawLua::new_ext(StdLib::ALL_SAFE, &LuaOptions::default(), true);
+                    (*rawlua_dc.lock().extra.get()).no_drop = true;
+
+                    let dc_lua = Lua {
+                        raw: rawlua_dc,
+                        collect_garbage: true,
+                    };
+
+                    mlua_expect!(dc_lua.configure_luau(), "Error configuring Luau");
+
+                    if let Some(lute_runtimeinitter) = &(*extra).lute_runtimeinitter {
+                        lute_runtimeinitter(parent_lua, &dc_lua, LuteChildVmType::DataCopy)?;
+                    }
+
+                    // Lute does not expect the data copy VM to be sandboxed
+                    dc_lua.sandbox(false)?;
+
+                    (*wrapper).DC = dc_lua.lock().main_state();
+
+                    Ok(())
+                })
             }
-    
+
             (*config).setup_lua_state = setup_lua_state;
         }
-    
+
         let res = ffi::lutec_set_runtimeinitter(init_config);
         if res != 0 {
             panic!("internal error: runtimeinitter failed")
@@ -241,7 +232,7 @@ impl RawLua {
 
         unsafe {
             let state = self.main_state();
-            
+
             protect_lua!(state, 0, 0, |state| {
                 ffi::lutec_setup_runtime(state);
             })?;
@@ -335,7 +326,7 @@ impl RawLua {
     pub(crate) fn lute_handle(&self) -> Option<LuteRuntimeHandle> {
         // SAFETY: lute_handle is cloned so a double-mutable reference should
         // not be possible
-        unsafe { (*self.extra.get()).lute_handle.clone() } 
+        unsafe { (*self.extra.get()).lute_handle.clone() }
     }
 
     #[cfg(feature = "luau-lute")]
@@ -450,7 +441,7 @@ impl RawLua {
                     if replace {
                         ffi::lua_replace(rawlua.ref_thread(aux_thread), idxs);
                     }
-                    let th = Thread(self.new_value_ref(aux_thread, idxs), thread_state);       
+                    let th = Thread(self.new_value_ref(aux_thread, idxs), thread_state);
 
                     return Ok(LuteSchedulerRunOnceResult::Success(th));
                 }
@@ -511,7 +502,11 @@ impl RawLua {
         Self::new_ext(libs, options, true)
     }
 
-    pub(super) unsafe fn new_ext(libs: StdLib, options: &LuaOptions, owned: bool) -> XRc<ReentrantMutex<Self>> {
+    pub(super) unsafe fn new_ext(
+        libs: StdLib,
+        options: &LuaOptions,
+        owned: bool,
+    ) -> XRc<ReentrantMutex<Self>> {
         let mem_state: *mut MemoryState = Box::into_raw(Box::default());
         let mut state = ffi::lua_newstate(ALLOCATOR, mem_state as *mut c_void);
         // If state is null then switch to Lua internal allocator
@@ -1061,7 +1056,9 @@ impl RawLua {
 
             ffi::LUA_TBOOLEAN => Ok(Value::Boolean(ffi::lua_toboolean(state, idx) != 0)),
 
-            ffi::LUA_TLIGHTUSERDATA => Ok(Value::LightUserData(LightUserData(ffi::lua_touserdata(state, idx)))),
+            ffi::LUA_TLIGHTUSERDATA => Ok(Value::LightUserData(LightUserData(ffi::lua_touserdata(
+                state, idx,
+            )))),
 
             #[cfg(any(feature = "lua54", feature = "lua53"))]
             ffi::LUA_TNUMBER => {
@@ -1090,7 +1087,12 @@ impl RawLua {
                 #[cfg(not(feature = "luau-vector4"))]
                 return Ok(Value::Vector(crate::Vector([*v, *v.add(1), *v.add(2)])));
                 #[cfg(feature = "luau-vector4")]
-                return Ok(Value::Vector(crate::Vector([*v, *v.add(1), *v.add(2), *v.add(3)])));
+                return Ok(Value::Vector(crate::Vector([
+                    *v,
+                    *v.add(1),
+                    *v.add(2),
+                    *v.add(3),
+                ])));
             }
 
             ffi::LUA_TSTRING => {
@@ -1125,7 +1127,7 @@ impl RawLua {
 
             ffi::LUA_TUSERDATA => {
                 check_stack(state, 2)?;
-                
+
                 // If the userdata is `WrappedFailure`, process it as an error or panic.
                 let failure_mt_ptr = (*self.extra.get()).wrapped_failure_mt_ptr;
                 match get_internal_userdata::<WrappedFailure>(state, idx, failure_mt_ptr).as_mut() {
@@ -1157,7 +1159,10 @@ impl RawLua {
                 if replace {
                     ffi::lua_replace(self.ref_thread(aux_thread), idxs);
                 }
-                Ok(Value::Thread(Thread(self.new_value_ref(aux_thread, idxs), thread_state)))
+                Ok(Value::Thread(Thread(
+                    self.new_value_ref(aux_thread, idxs),
+                    thread_state,
+                )))
             }
 
             #[cfg(feature = "luau")]

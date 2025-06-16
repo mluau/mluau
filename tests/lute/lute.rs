@@ -25,9 +25,7 @@ fn test_lute_runtime() -> LuaResult<()> {
     // Load the lute runtime
     lua.lute()?.load_stdlib(LuaLuteStdLib::TIME)?;
     assert!(lua.lute()?.is_loaded()?);
-    let time = lua.lute()?
-        .time()?
-        .expect("Time library is not loaded");
+    let time = lua.lute()?.time()?.expect("Time library is not loaded");
 
     lua.lute()?.set_runtime_initter(|parent, child, vm_type| {
         let my_vec = vec![1, 2, 3, 4, 5];
@@ -37,11 +35,13 @@ fn test_lute_runtime() -> LuaResult<()> {
         println!("Parent Lua state memory limit set to 50 MB");
         parent.globals().set("parent_mlua_var", 42)?;
         println!("parent_mlua_var set to 42 in parent Lua state");
-        
+
         let th = child.create_thread(
-            child.load("return 'Hello from child Lua state!'").into_function()?,
+            child
+                .load("return 'Hello from child Lua state!'")
+                .into_function()?,
         )?;
-        
+
         child.set_memory_limit(1024 * 1024)?;
         println!("Child Lua state memory limit");
         child.globals().set("test_mluau_var", 132)?;
@@ -84,23 +84,23 @@ fn test_lute_runtime() -> LuaResult<()> {
     }
 
     lua.lute()?.load_stdlib(LuaLuteStdLib::VM)?;
-    let vm = lua.lute()?
-        .vm()?
-        .expect("VM library is not loaded");
+    let vm = lua.lute()?.vm()?.expect("VM library is not loaded");
     lua.globals().set("vm", vm)?;
 
     // Print current working directory
-    let res = lua.load("local a = vm.create('./mluau/tests/lute/test').l(); print(a); return a + _G.parent_mlua_var")
-    .set_name("=stdin")
-    .into_function()?;
+    let res = lua
+        .load("local a = vm.create('./mluau/tests/lute/test').l(); print(a); return a + _G.parent_mlua_var")
+        .set_name("=stdin")
+        .into_function()?;
 
     println!("res: {:?}", res);
 
     let th = lua.create_thread(res)?;
     let res = th.resume::<LuaMultiValue>(())?;
 
-    let child = lua.remove_app_data::<Lua>()
-    .expect("Child Lua state not set in parent Lua state");
+    let child = lua
+        .remove_app_data::<Lua>()
+        .expect("Child Lua state not set in parent Lua state");
 
     // Run VM scheduler until it has no work left
     println!("Running child scheduler until no work left...");

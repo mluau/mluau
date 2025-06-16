@@ -35,4 +35,7 @@ pub use crate::{
 };
 
 #[cfg(feature = "luau-lute")]
-pub use crate::luau::lute::{LuteRuntimeHandle as LuaLuteRuntimeHandle, LuteStdLib as LuaLuteStdLib, LuteChildVmType as LuaLuteChildVmType};
+pub use crate::luau::lute::{
+    LuteChildVmType as LuaLuteChildVmType, LuteRuntimeHandle as LuaLuteRuntimeHandle,
+    LuteStdLib as LuaLuteStdLib,
+};

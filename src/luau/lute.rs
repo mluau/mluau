@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
 use crate::state::RawLua;
-use crate::{Lua, WeakLua, Table, Function, Thread, FromLuaMulti};
+use crate::{FromLuaMulti, Function, Lua, Table, Thread, WeakLua};
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign};
 
 /// Flags describing the set of lute standard libraries to load.
@@ -61,9 +61,7 @@ impl LuteSchedulerRunOnceResult {
         R: FromLuaMulti,
     {
         match self {
-            LuteSchedulerRunOnceResult::Success(thread) => {
-                thread.pop_results::<R>() 
-            },
+            LuteSchedulerRunOnceResult::Success(thread) => thread.pop_results::<R>(),
             _ => Err(Error::RuntimeError("run_once was not successful".into())),
         }
     }
@@ -140,7 +138,7 @@ impl LuteRuntimeHandle {
             vm: None,
             system: None,
             time: None,
-            scheduler_run_once: rawlua.lute_run_once_lua()?
+            scheduler_run_once: rawlua.lute_run_once_lua()?,
         };
 
         Ok(handle)
@@ -152,7 +150,7 @@ pub struct Lute(pub(crate) WeakLua);
 impl Lute {
     pub(crate) fn new(lua: &Lua) -> Result<Self> {
         let lute = Self(lua.weak());
-        
+
         let lua = lua.lock();
         if !lua.is_lute_loaded()? {
             lua.setup_lute_runtime()?;
@@ -174,8 +172,8 @@ impl Lute {
 
     /// Sets a runtime initialization routine which will be called whenever lute
     /// runtime tries to make a new child VM with a lute runtime.
-    /// 
-    /// This is, for example, used in ``@lute/vm`` to setup the state of the child 
+    ///
+    /// This is, for example, used in ``@lute/vm`` to setup the state of the child
     /// VM.
     #[cfg(feature = "send")]
     pub fn set_runtime_initter<F>(&self, initter: F) -> Result<()>
@@ -192,8 +190,8 @@ impl Lute {
 
     /// Sets a runtime initialization routine which will be called whenever lute
     /// runtime tries to make a new child VM with a lute runtime.
-    /// 
-    /// This is, for example, used in ``@lute/vm`` to setup the state of the child 
+    ///
+    /// This is, for example, used in ``@lute/vm`` to setup the state of the child
     /// VM.
     #[cfg(not(feature = "send"))]
     pub fn set_runtime_initter<F>(&self, initter: F) -> Result<()>
@@ -249,7 +247,8 @@ impl Lute {
         };
 
         let lua = lua.lock();
-        let handle = lua.lute_handle()
+        let handle = lua
+            .lute_handle()
             .ok_or_else(|| Error::RuntimeError("Lute runtime is not loaded".into()))?;
 
         f(handle)
@@ -303,7 +302,7 @@ impl Lute {
     }
 
     /// Returns the ``scheduler_run_once`` function from the lute runtime, if it is loaded.
-    /// 
+    ///
     /// In most cases, you should use ``run_scheduler_once`` instead as it is both faster and
     /// more convenient to use.
     pub fn scheduler_run_once_lua(&self) -> Result<Function> {
@@ -321,9 +320,9 @@ impl Lute {
     }
 
     /// Returns a handle to the lute runtime, if it is loaded.
-    /// 
+    ///
     /// The handle will contain references to the loaded standard libraries.
-    /// 
+    ///
     /// Note that this will return a copy of the internal handle so updates
     /// via ``Lute::load_stdlib`` will not be reflected in this handle.
     pub fn handle(&self) -> Result<Option<LuteRuntimeHandle>> {
@@ -336,7 +335,7 @@ impl Lute {
     }
 
     /// Returns if a lute runtime is loaded into the client or not
-    /// 
+    ///
     /// This should always be true unless ``destroy_runtime`` has been called
     /// or the Lua state has been destroyed.
     pub fn is_loaded(&self) -> Result<bool> {
@@ -348,7 +347,7 @@ impl Lute {
     }
 
     /// Sets up the lute runtime if it is not already loaded.
-    /// 
+    ///
     /// Should not be needed in most cases as the runtime is automatically set up
     /// but could be useful if ``Lute::destroy_runtime`` has been called.
     pub fn setup_runtime(&self) -> Result<()> {
@@ -366,11 +365,11 @@ impl Lute {
 
     /// Destroys the lute runtime on the current Lua state. This internally destroys the auxiliary
     /// VM created to act as the data VM as well
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This is unsafe if user code is holding any references to code from Lute
-    /// 
+    ///
     /// Most user code will never need to call this as the runtime is automatically destroyed
     /// when the Lua state is destroyed.
     pub unsafe fn destroy_runtime(self) -> Result<bool> {
@@ -385,7 +384,7 @@ impl Lute {
 
 impl Lua {
     /// Returns a handle to the lute runtime
-    /// 
+    ///
     /// This will setup the lute runtime if it is not already loaded.
     pub fn lute(&self) -> Result<Lute> {
         Lute::new(self)

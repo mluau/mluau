@@ -206,10 +206,7 @@ impl Lua {
         #[cfg(feature = "luau-lute-autoload")]
         {
             // Autoload lute runtime here
-            mlua_expect!(
-                lua.lock().setup_lute_runtime(),
-                "Error loading lute runtime"
-            );
+            mlua_expect!(lua.lock().setup_lute_runtime(), "Error loading lute runtime");
         }
 
         Ok(lua)
@@ -914,7 +911,7 @@ impl Lua {
                 mem_state if !mem_state.is_null() => {
                     println!("Got memory limit: {}", (*mem_state).memory_limit());
                     Ok((*mem_state).set_memory_limit(limit))
-                },
+                }
                 _ => Err(Error::MemoryControlNotAvailable),
             }
         }
