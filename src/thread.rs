@@ -76,15 +76,27 @@ impl Thread {
         self.1
     }
 
-    /// Tries converting whatevers on the thread stack to ``R``.
-    pub unsafe fn pop_results<R>(&self) -> Result<R>
+    /// Tries converting whatever is on the thread stack to ``R``.
+    /// 
+    /// Useful if you know the thread has something but cannot extract it directly.
+    /// 
+    /// # Safety
+    /// 
+    /// Note that while this method is usually safe to call, the results returned
+    /// by this method could be used to induce memory unsafety. Note that all cases
+    /// of this happening, however, are bugs in mluau.
+    pub fn pop_results<R>(&self) -> Result<R>
     where
         R: FromLuaMulti,
     {
-        let lua = self.0.lua.lock();
-        let thread_state = self.state();
-        let nresults = ffi::lua_gettop(thread_state);
-        R::from_specified_stack_multi(nresults, &lua, thread_state)
+        unsafe {
+            let lua = self.0.lua.lock();
+            let thread_state = self.state();
+            let _sg = StackGuard::new(lua.state());
+            let _thread_sg = StackGuard::with_top(thread_state, 0);
+            let nresults = ffi::lua_gettop(thread_state);
+            R::from_specified_stack_multi(nresults, &lua, thread_state)
+        }
     }
 
     /// Resumes execution of this thread.

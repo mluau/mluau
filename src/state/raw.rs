@@ -51,10 +51,10 @@ use crate::{
 };
 
 #[cfg(feature = "luau-lute")]
-use crate::luau::lute::{LuteRuntimeHandle, LuteStdLib, LuteSchedulerRunOnceResult};
+use crate::luau::lute::{LuteRuntimeHandle, LuteStdLib, LuteSchedulerRunOnceResult, LuteChildVmType};
 
 #[cfg(feature = "luau-lute")]
-use std::{sync::LazyLock, panic::{catch_unwind, AssertUnwindSafe}};
+use std::sync::LazyLock;
 
 #[cfg(feature = "luau-lute")]
 static SETUP_LUTE_RUNTIME_INITTER: LazyLock<()> = LazyLock::new(|| {
@@ -73,9 +73,18 @@ static SETUP_LUTE_RUNTIME_INITTER: LazyLock<()> = LazyLock::new(|| {
                     move |extra, _| {
                         let parent_lua = (*extra).lua();
 
-                        // We cannot drop this state, it is owned by the Lute runtime
+                        // Child VM: We cannot drop this state, it is owned by the Lute runtime
                         let mut rawlua = RawLua::new_ext(StdLib::ALL_SAFE, &LuaOptions::default(), true);
                         (*rawlua.lock().extra.get()).no_drop = true;
+
+                        if !(*wrapper).runtime_to_set.is_null() {
+                            println!("Setting runtime data for child Lua state");
+                            let lua = rawlua.lock();
+                            ffi::lua_setthreaddata(
+                                lua.main_state(),
+                                (*wrapper).runtime_to_set,
+                            );
+                        }
 
                         let lua = Lua {
                             raw: rawlua,
@@ -86,13 +95,35 @@ static SETUP_LUTE_RUNTIME_INITTER: LazyLock<()> = LazyLock::new(|| {
 
 
                         if let Some(lute_runtimeinitter) = &(*extra).lute_runtimeinitter {
-                            lute_runtimeinitter(parent_lua, &lua)?;
+                            lute_runtimeinitter(parent_lua, &lua, LuteChildVmType::ChildVm)?;
                         }
 
                         // Lute expects the Lua state to be sandboxed
                         lua.sandbox(true)?;       
 
                         (*wrapper).L = lua.lock().main_state();
+
+                        // Data Copy VM: We cannot drop this state, it is owned by the Lute runtime
+                        // 
+                        // Unlike the child VM, we don't need to explicitly set a runtime on data copy VM.
+                        let mut rawlua_dc = RawLua::new_ext(StdLib::ALL_SAFE, &LuaOptions::default(), true);
+                        (*rawlua_dc.lock().extra.get()).no_drop = true;
+
+                        let dc_lua = Lua {
+                            raw: rawlua_dc,
+                            collect_garbage: true,
+                        };
+
+                        mlua_expect!(dc_lua.configure_luau(), "Error configuring Luau");
+
+                        if let Some(lute_runtimeinitter) = &(*extra).lute_runtimeinitter {
+                            lute_runtimeinitter(parent_lua, &dc_lua, LuteChildVmType::DataCopy)?;
+                        }
+
+                        // Lute does not expect the data copy VM to be sandboxed
+                        dc_lua.sandbox(false)?;
+
+                        (*wrapper).DC = dc_lua.lock().main_state();
 
                         Ok(())
                     }
@@ -205,8 +236,13 @@ impl RawLua {
 
     #[cfg(feature = "luau-lute")]
     pub(crate) fn setup_lute_runtime(&self) -> Result<()> {
+        if self.is_lute_loaded()? {
+            return Ok(()); // Runtime is already loaded
+        }
+
         unsafe {
             let state = self.main_state();
+            
             protect_lua!(state, 0, 0, |state| {
                 ffi::lutec_setup_runtime(state);
             })?;
@@ -304,7 +340,7 @@ impl RawLua {
     }
 
     #[cfg(feature = "luau-lute")]
-    pub(crate) fn destroy_lute_runtime(&self) -> Result<bool> {
+    pub(crate) unsafe fn destroy_lute_runtime(&self) -> Result<bool> {
         let mut has_destroyed = false;
         unsafe {
             let state = self.main_state();
@@ -324,7 +360,7 @@ impl RawLua {
     #[cfg(all(feature = "luau-lute", feature = "send"))]
     pub(crate) fn set_lute_runtime_initter<F>(&self, f: F)
     where
-        F: Fn(&Lua, &Lua) -> Result<()> + Send + Sync + 'static,
+        F: Fn(&Lua, &Lua, LuteChildVmType) -> Result<()> + Send + Sync + 'static,
     {
         unsafe {
             let extra = self.extra.get();
@@ -335,7 +371,7 @@ impl RawLua {
     #[cfg(all(feature = "luau-lute", not(feature = "send")))]
     pub(crate) fn set_lute_runtime_initter<F>(&self, f: F)
     where
-        F: Fn(&Lua, &Lua) -> Result<()> + 'static,
+        F: Fn(&Lua, &Lua, LuteChildVmType) -> Result<()> + 'static,
     {
         unsafe {
             let extra = self.extra.get();

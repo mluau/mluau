@@ -1,5 +1,5 @@
 use super::lua::lua_State;
-use core::ffi::c_int;
+use core::ffi::{c_int, c_void};
 
 extern "C" {
     //pub fn lutec_opencrypto(state: *mut lua_State);
@@ -41,7 +41,9 @@ pub struct RunOnceResult {
 #[repr(C)]
 pub struct lua_State_wrapper {
     pub parent: *mut lua_State, // Pointer to the parent lua_State (if any)
-    pub L: *mut lua_State,
+    pub L: *mut lua_State,  // Pointer to the child (must be filled in by mluau)
+    pub DC: *mut lua_State, // Pointer to the data copy (must be filled in by mluau)
+    pub runtime_to_set: *mut c_void, // Pointer to the runtime to set, if applicable
 }
 
 #[allow(non_camel_case_types)]
