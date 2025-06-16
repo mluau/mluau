@@ -19,7 +19,7 @@ use crate::{
 pub enum ContinuationStatus {
     Ok,
     Yielded,
-    Error,
+    Error(c_int),
 }
 
 impl ContinuationStatus {
@@ -28,7 +28,7 @@ impl ContinuationStatus {
         match status {
             ffi::LUA_YIELD => Self::Yielded,
             ffi::LUA_OK => Self::Ok,
-            _ => Self::Error,
+            s => Self::Error(s),
         }
     }
 }
@@ -52,7 +52,7 @@ pub enum ThreadStatus {
 ///
 /// The number in `New` and `Yielded` variants is the number of arguments pushed
 /// to the thread stack.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum ThreadStatusInner {
     New(c_int),
     Running,
@@ -380,7 +380,7 @@ impl Thread {
     #[cfg_attr(docsrs, doc(cfg(any(feature = "lua54", feature = "luau"))))]
     pub fn close(&self) -> Result<()> {
         let lua = self.0.lua.lock();
-        if self.status_inner(&lua) == ThreadStatus::Running {
+        if self.status_inner(&lua) == ThreadStatusInner::Running {
             return Err(Error::runtime("cannot reset a running thread"));
         }
 
