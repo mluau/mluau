@@ -1509,11 +1509,6 @@ impl RawLua {
         #[cfg(feature = "luau")]
         {
             if !registry.namecalls.is_empty() || registry.dynamic_method.is_some() {
-                println!("Creating {} namecalls with dynamic method: {} with keys: {:?}",
-                    registry.namecalls.len(),
-                    registry.dynamic_method.is_some(),
-                    registry.namecalls.keys().collect::<Vec<_>>()
-                );
                 // OPTIMIZATION: ``__namecall`` metamethod on the metatable
                 self.push_at(state, self.create_namecall_map(NamecallMap {
                     map: registry.namecalls,
@@ -1545,7 +1540,10 @@ impl RawLua {
             }
 
             for (k, m) in registry.functions {
-                self.push_at(state, self.create_callback(m)?)?;
+                #[cfg(not(feature = "luau"))]
+                self.push_at(state, self.create_callback(m)?)?; // without namecall support
+                #[cfg(feature = "luau")]
+                self.push_at(state, self.create_callback_namecall(m)?)?; // with namecall support
                 rawset_field(state, -2, &k)?;
             }
 
@@ -1767,36 +1765,20 @@ impl RawLua {
                         name
                     };
 
-                    println!("Calling namecall method `{}`", method);
-
                     let Some(ref data) = (*upvalue).data else {
                         return Err(Error::CallbackDestructed);
                     };
-
-                    if data.dynamic.is_none() {
-                        if let Some(func) = data.map.get(method) {
-                            // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
-                            // The lock must be already held as the callback is executed
-                            let rawlua = (*extra).raw_lua();
-                            println!("Calling namecall method `{}` from map", method);
-                            return (func)(rawlua, nargs);
-                        } else {
-                            return Err(Error::runtime(format!("Method `{}` not found", method)));
-                        }
-                    }
 
                     if let Some(func) = data.map.get(method) {
                         // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
                         // The lock must be already held as the callback is executed
                         let rawlua = (*extra).raw_lua();
-                        println!("Calling namecall method `{}` from map", method);
                         (func)(rawlua, nargs)
                     } else if let Some(dynamic_method) = &data.dynamic {
                         // If dynamic method is set, call it
                         let rawlua = (*extra).raw_lua();
                         (dynamic_method)(rawlua, method, nargs)
                     } else {
-                        println!("Method `{}` not found in namecall map", method);
                         Err(Error::runtime(format!("Method `{}` not found", method)))
                     }
                 },

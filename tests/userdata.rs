@@ -517,6 +517,7 @@ fn test_functions() -> Result<()> {
     Ok(())
 }
 
+// Small test to ensure a failed namecall works right
 #[test]
 #[cfg(feature = "luau")]
 fn test_methods_namecall() -> Result<()> {
@@ -543,12 +544,20 @@ fn test_methods_namecall() -> Result<()> {
         function get_it()
             return userdata:incr_and_error()
         end
+
+        function fail()
+            local np = newproxy(true)
+            return userdata.incr_and_error(np)
+        end
     "#,
     )
     .exec()?;
     let get = globals.get::<Function>("get_it")?;
-    let _ = get.call::<i64>(());
+    let e = get.call::<i64>(());
+    println!("get_it result: {:?}", e);
     assert!(userdata.borrow::<MyUserData>()?.0 == 43);
+    let fail = globals.get::<Function>("fail")?;
+    assert!(fail.call::<i64>(()).is_err());
 
     Ok(())
 }
@@ -680,7 +689,11 @@ fn test_metatable() -> Result<()> {
         .map(|kv: Result<(_, Value)>| Ok(kv?.0))
         .collect::<Result<Vec<_>>>()?;
     methods.sort();
+
+    #[cfg(not(feature = "luau"))]
     assert_eq!(methods, vec!["__index", MetaMethod::Type.name()]);
+    #[cfg(feature = "luau")]
+    assert_eq!(methods, vec!["__index", "__namecall", MetaMethod::Type.name()]);
 
     #[derive(Copy, Clone)]
     struct MyUserData2;

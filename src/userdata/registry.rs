@@ -42,7 +42,10 @@ pub(crate) struct RawUserDataRegistry {
     pub(crate) meta_fields: Vec<(String, Result<Value>)>,
 
     // Functions
+    #[cfg(not(feature = "luau"))] // luau has namecalls as a optimization for this
     pub(crate) functions: Vec<(String, Callback)>,
+    #[cfg(feature = "luau")]
+    pub(crate) functions: Vec<(String, NamecallCallback)>,
 
     // Methods
     #[cfg(not(feature = "luau"))] // luau has namecalls as a optimization for this
@@ -363,6 +366,21 @@ impl<T> UserDataRegistry<T> {
         })
     }
 
+    #[cfg(feature = "luau")]
+    fn box_function_namecall<F, A, R>(&self, name: &str, function: F) -> NamecallCallback
+    where
+        F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+        let name = get_function_name::<T>(name);
+        XRc::new(move |lua, nargs| unsafe {
+            let state = lua.state();
+            let args = A::from_specified_stack_args(nargs, 1, Some(&name), lua, state)?;
+            function(lua.lua(), args)?.push_into_specified_stack_multi(lua, state)
+        })
+    }
+
     fn box_function_mut<F, A, R>(&self, name: &str, function: F) -> Callback
     where
         F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
@@ -372,6 +390,25 @@ impl<T> UserDataRegistry<T> {
         let name = get_function_name::<T>(name);
         let function = RefCell::new(function);
         Box::new(move |lua, nargs| unsafe {
+            let function = &mut *function
+                .try_borrow_mut()
+                .map_err(|_| Error::RecursiveMutCallback)?;
+            let state = lua.state();
+            let args = A::from_specified_stack_args(nargs, 1, Some(&name), lua, state)?;
+            function(lua.lua(), args)?.push_into_specified_stack_multi(lua, state)
+        })
+    }
+
+    #[cfg(feature = "luau")]
+    fn box_function_namecall_mut<F, A, R>(&self, name: &str, function: F) -> NamecallCallback
+    where
+        F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+        let name = get_function_name::<T>(name);
+        let function = RefCell::new(function);
+        XRc::new(move |lua, nargs| unsafe {
             let function = &mut *function
                 .try_borrow_mut()
                 .map_err(|_| Error::RecursiveMutCallback)?;
@@ -573,9 +610,19 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti,
     {
-        let name = name.to_string();
-        let callback = self.box_function(&name, function);
-        self.raw.functions.push((name, callback));
+        #[cfg(feature = "luau")]
+        {
+            let name = name.to_string();
+            let callback = self.box_function_namecall(&name, function);
+            self.raw.functions.push((name.clone(), callback.clone()));
+            self.raw.namecalls.insert(name, callback);
+        }
+        #[cfg(not(feature = "luau"))]
+        {
+            let name = name.to_string();
+            let callback = self.box_function(&name, function);
+            self.raw.functions.push((name, callback));
+        }
     }
 
     fn add_function_mut<F, A, R>(&mut self, name: impl ToString, function: F)
@@ -584,9 +631,19 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti,
     {
-        let name = name.to_string();
-        let callback = self.box_function_mut(&name, function);
-        self.raw.functions.push((name, callback));
+        #[cfg(feature = "luau")]
+        {
+            let name = name.to_string();
+            let callback = self.box_function_namecall_mut(&name, function);
+            self.raw.functions.push((name.clone(), callback.clone()));
+            self.raw.namecalls.insert(name, callback);
+        }
+        #[cfg(not(feature = "luau"))]
+        {
+            let name = name.to_string();
+            let callback = self.box_function_mut(&name, function);
+            self.raw.functions.push((name, callback));
+        }
     }
 
     fn add_meta_method<M, A, R>(&mut self, name: impl ToString, method: M)
@@ -649,6 +706,7 @@ macro_rules! lua_userdata_impl {
                 (registry.raw.functions).extend(orig_registry.raw.functions);
                 (registry.raw.methods).extend(orig_registry.raw.methods);
                 (registry.raw.meta_methods).extend(orig_registry.raw.meta_methods);
+                (registry.raw.namecalls).extend(orig_registry.raw.namecalls);
             }
         }
     };
