@@ -1508,7 +1508,7 @@ impl RawLua {
 
         #[cfg(feature = "luau")]
         {
-            if !registry.namecalls.is_empty() || registry.dynamic_method.is_some() {
+            if (!registry.namecalls.is_empty() || registry.dynamic_method.is_some()) && !registry.disable_namecall_optimization {
                 // OPTIMIZATION: ``__namecall`` metamethod on the metatable
                 self.push_at(state, self.create_namecall_map(NamecallMap {
                     map: registry.namecalls,

@@ -65,6 +65,8 @@ pub(crate) struct RawUserDataRegistry {
     pub(crate) namecalls: HashMap<String, NamecallCallback>,
     #[cfg(feature = "luau")]
     pub(crate) dynamic_method: Option<DynamicCallback>,
+    #[cfg(feature = "luau")]
+    pub(crate) disable_namecall_optimization: bool,
 }
 
 impl UserDataType {
@@ -104,6 +106,8 @@ impl<T> UserDataRegistry<T> {
             namecalls: HashMap::new(),
             #[cfg(feature = "luau")]
             dynamic_method: None,
+            #[cfg(feature = "luau")]
+            disable_namecall_optimization: false,
         };
 
         UserDataRegistry {
@@ -461,7 +465,6 @@ impl<T> UserDataRegistry<T> {
         self.raw.dynamic_method = Some(callback);
     }
 
-    #[cfg(feature = "luau")]
     /// Sets dynamic mutable method for the userdata type.
     /// 
     /// The resulting dynamic method will recieve the userdata immutably, along with the method name
@@ -472,6 +475,7 @@ impl<T> UserDataRegistry<T> {
     /// 
     /// For best user-experience, you should also define a Index metamethod for the userdata type,
     /// which will allow the user to call the method with `data.method(data, ...)` syntax.
+    #[cfg(feature = "luau")]
     pub fn set_dynamic_method_mut<F, A, R>(&mut self, method: F)
     where
         F: FnMut(&Lua, &mut T, &str, A) -> Result<R> + MaybeSend + 'static,
@@ -480,6 +484,14 @@ impl<T> UserDataRegistry<T> {
     {
         let callback = self.box_dynamic_method_mut(method);
         self.raw.dynamic_method = Some(callback);
+    }
+
+    /// Disables namecall optimization for the userdata type.
+    ///
+    /// This will also disable the dynamic method for the userdata type, if it was set (as a side effect)
+    #[cfg(feature = "luau")]
+    pub fn disable_namecall_optimization(&mut self) {
+        self.raw.disable_namecall_optimization = true;
     }
 }
 
