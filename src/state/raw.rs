@@ -78,7 +78,6 @@ static SETUP_LUTE_RUNTIME_INITTER: LazyLock<()> = LazyLock::new(|| {
                         (*rawlua.lock().extra.get()).no_drop = true;
 
                         if !(*wrapper).runtime_to_set.is_null() {
-                            println!("Setting runtime data for child Lua state");
                             let lua = rawlua.lock();
                             ffi::lua_setthreaddata(
                                 lua.main_state(),
