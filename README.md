@@ -37,6 +37,7 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
 - Integration with the [Lute](https://github.com/luau-lang/lute) runtime and scheduler via the ``luau-lute`` feature flag. Note that crypto and net are disabled by default due to increasing compiler times and leading to large memory usage during linking, if you want to enable crypto and net, set the ``luau-lute-crypto`` and ``luau-lute-net`` flags respectively.
 - Support for getting metatable of non-mlua/non-Rust userdata via the unsafe ``AnyUserData::underlying_metatable`` method. This is useful for managing ``newproxy`` and (Luau only) Lute userdata.
 - ``Thread::pop_results`` has been added to allow popping results directly from the thread's stack to a ``R`` which implements ``FromLua``. This is useful when trying to interoperate with Lute runtime but should not be needed much outside this in practice.
+- [``Thread::close``](https://github.com/mlua-rs/mlua/pull/517) has been added to allow closing Lua threads
 - ``RawLua::stack_value`` correctly calls ``lua_checkstack`` to avoid a potential crash when there are no stack slots free when popping from the Lua stack (``from_lua`` etc.)
 
 ## Roadmap
@@ -45,7 +46,6 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
 - Integration with C++ tooling, most importantly Lute, the Luau language's official general purpose runtime for Luau.
   - Support for Luau AST, Compiler, etc. reflection through Lute.
 - Tagged userdata (performance optimization)
-- Removing Lua 5.1 -> 5.4 support to ease maintenance burden and allow us to focus solely on Luau.
 
 ## The below is `mlua`'s last README which should still be accurate or mostly accurate to `mluau`
 
