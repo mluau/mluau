@@ -1096,7 +1096,8 @@ impl RawLua {
             }
 
             ffi::LUA_TSTRING => {
-                #[cfg(not(feature = "luau"))] // checkstack is needed on non-Luau where xpush takes 1 stack slot
+                #[cfg(not(feature = "luau"))]
+                // checkstack is needed on non-Luau where xpush takes 1 stack slot
                 {
                     check_stack(state, 1)?;
                 }
@@ -1111,7 +1112,8 @@ impl RawLua {
             }
 
             ffi::LUA_TTABLE => {
-                #[cfg(not(feature = "luau"))] // checkstack is needed on non-Luau where xpush takes 1 stack slot
+                #[cfg(not(feature = "luau"))]
+                // checkstack is needed on non-Luau where xpush takes 1 stack slot
                 {
                     check_stack(state, 1)?;
                 }
@@ -1126,7 +1128,8 @@ impl RawLua {
             }
 
             ffi::LUA_TFUNCTION => {
-                #[cfg(not(feature = "luau"))] // checkstack is needed on non-Luau where xpush takes 1 stack slot
+                #[cfg(not(feature = "luau"))]
+                // checkstack is needed on non-Luau where xpush takes 1 stack slot
                 {
                     check_stack(state, 1)?;
                 }
@@ -1140,7 +1143,8 @@ impl RawLua {
                 Ok(Value::Function(Function(self.new_value_ref(aux_thread, idxs))))
             }
             ffi::LUA_TUSERDATA => {
-                #[cfg(not(feature = "luau"))] // checkstack is needed on non-Luau where xpush takes 1 stack slot
+                #[cfg(not(feature = "luau"))]
+                // checkstack is needed on non-Luau where xpush takes 1 stack slot
                 {
                     check_stack(state, 1)?;
                 }
@@ -1162,7 +1166,7 @@ impl RawLua {
                         ffi::lua_xpush(state, ref_thread, idx);
                         if replace {
                             ffi::lua_replace(ref_thread, idxs);
-                        }        
+                        }
 
                         Ok(Value::UserData(AnyUserData(self.new_value_ref(aux_thread, idxs))))
                     }
@@ -1170,7 +1174,8 @@ impl RawLua {
             }
 
             ffi::LUA_TTHREAD => {
-                #[cfg(not(feature = "luau"))] // checkstack is needed on non-Luau where xpush takes 1 stack slot
+                #[cfg(not(feature = "luau"))]
+                // checkstack is needed on non-Luau where xpush takes 1 stack slot
                 {
                     check_stack(state, 1)?;
                 }
@@ -1200,7 +1205,8 @@ impl RawLua {
             }
 
             _ => {
-                #[cfg(not(feature = "luau"))] // checkstack is needed on non-Luau where xpush takes 1 stack slot
+                #[cfg(not(feature = "luau"))]
+                // checkstack is needed on non-Luau where xpush takes 1 stack slot
                 {
                     check_stack(state, 1)?;
                 }
