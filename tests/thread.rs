@@ -307,7 +307,7 @@ fn test_thread_yield_args() -> Result<()> {
         .load(
             r#"
         local my_data = ...
-        return my_data:yield()
+        return my_data:yield(12345)
         "#,
         )
         .into_function()?;

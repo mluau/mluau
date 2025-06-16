@@ -466,12 +466,15 @@ fn test_functions() -> Result<()> {
 
     impl UserData for MyUserData {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_function("get_value", |_, ud: AnyUserData| Ok(ud.borrow::<MyUserData>()?.0));
-            methods.add_function_mut("set_value", |_, (ud, value): (AnyUserData, i64)| {
+            methods.add_function("get_value_fn", |_, ud: AnyUserData| Ok(ud.borrow::<MyUserData>()?.0));
+            methods.add_function_mut("set_value_fn", |_, (ud, value): (AnyUserData, i64)| {
                 ud.borrow_mut::<MyUserData>()?.0 = value;
                 Ok(())
             });
             methods.add_function("get_constant", |_, ()| Ok(7));
+            methods.add_function("not_me", |_, ud: AnyUserData| {
+                Ok(ud.borrow::<MyUserData>().is_err())
+            });
         }
     }
 
@@ -482,15 +485,20 @@ fn test_functions() -> Result<()> {
     lua.load(
         r#"
         function get_it()
-            return userdata:get_value()
+            return userdata:get_value_fn()
         end
 
         function set_it(i)
-            return userdata:set_value(i)
+            return userdata:set_value_fn(i)
         end
 
         function get_constant()
             return userdata.get_constant()
+        end
+
+        function not_me()
+            local s = newproxy(true)
+            return userdata.not_me(s)
         end
     "#,
     )
@@ -504,6 +512,43 @@ fn test_functions() -> Result<()> {
     set.call::<()>(100)?;
     assert_eq!(get.call::<i64>(())?, 100);
     assert_eq!(get_constant.call::<i64>(())?, 7);
+    assert!(globals.get::<Function>("not_me")?.call::<bool>(()).unwrap());
+    
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "luau")]
+fn test_methods_namecall() -> Result<()> {
+    struct MyUserData(i64);
+
+    impl UserData for MyUserData {
+        fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+            methods.add_method_mut("incr_and_error", |_, ud, _: ()| {
+                ud.0 += 1;
+                if false {
+                    return Ok(())
+                }
+                Err(mlua::Error::external("This is an error!"))
+            });
+        }
+    }
+
+    let lua = Lua::new();
+    let globals = lua.globals();
+    let userdata = lua.create_userdata(MyUserData(42))?;
+    globals.set("userdata", &userdata)?;
+    lua.load(
+        r#"
+        function get_it()
+            return userdata:incr_and_error()
+        end
+    "#,
+    )
+    .exec()?;
+    let get = globals.get::<Function>("get_it")?;
+    let _ = get.call::<i64>(());
+    assert!(userdata.borrow::<MyUserData>()?.0 == 43);
 
     Ok(())
 }

@@ -16,6 +16,11 @@ use crate::userdata::{
 use crate::util::short_type_name;
 use crate::value::Value;
 
+#[cfg(feature = "luau")]
+use std::collections::HashMap;
+#[cfg(feature = "luau")]
+use crate::types::{NamecallCallback, DynamicCallback, XRc};
+
 #[derive(Clone, Copy)]
 enum UserDataType {
     Shared(TypeIdHints),
@@ -36,13 +41,27 @@ pub(crate) struct RawUserDataRegistry {
     pub(crate) field_setters: Vec<(String, Callback)>,
     pub(crate) meta_fields: Vec<(String, Result<Value>)>,
 
+    // Functions
+    pub(crate) functions: Vec<(String, Callback)>,
+
     // Methods
+    #[cfg(not(feature = "luau"))] // luau has namecalls as a optimization for this
     pub(crate) methods: Vec<(String, Callback)>,
+    #[cfg(feature = "luau")]
+    pub(crate) methods: Vec<(String, NamecallCallback)>,
+
+    // Metamethods
     pub(crate) meta_methods: Vec<(String, Callback)>,
 
     pub(crate) destructor: ffi::lua_CFunction,
     pub(crate) type_id: Option<TypeId>,
     pub(crate) type_name: StdString,
+
+    // Namecalls + dynamic methods
+    #[cfg(feature = "luau")]
+    pub(crate) namecalls: HashMap<String, NamecallCallback>,
+    #[cfg(feature = "luau")]
+    pub(crate) dynamic_method: Option<DynamicCallback>,
 }
 
 impl UserDataType {
@@ -72,11 +91,16 @@ impl<T> UserDataRegistry<T> {
             field_getters: Vec::new(),
             field_setters: Vec::new(),
             meta_fields: Vec::new(),
+            functions: Vec::new(),
             methods: Vec::new(),
             meta_methods: Vec::new(),
             destructor: super::util::destroy_userdata_storage::<T>,
             type_id: r#type.type_id(),
             type_name: short_type_name::<T>(),
+            #[cfg(feature = "luau")]
+            namecalls: HashMap::new(),
+            #[cfg(feature = "luau")]
+            dynamic_method: None,
         };
 
         UserDataRegistry {
@@ -107,6 +131,46 @@ impl<T> UserDataRegistry<T> {
                 try_self_arg!(Err(err));
             }
             let state = rawlua.state();
+            // Find absolute "self" index before processing args
+            let self_index = ffi::lua_absindex(state, -nargs);
+            // Self was at position 1, so we pass 2 here
+            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
+
+            match target_type {
+                #[rustfmt::skip]
+                UserDataType::Shared(type_hints) => {
+                    let type_id = try_self_arg!(rawlua.get_userdata_type_id::<T>(state, self_index));
+                    try_self_arg!(borrow_userdata_scoped(state, self_index, type_id, type_hints, |ud| {
+                        method(rawlua.lua(), ud, args?)?.push_into_specified_stack_multi(rawlua, state)
+                    }))
+                }
+            }
+        })
+    }
+
+    #[cfg(feature = "luau")]
+    fn box_method_namecall<M, A, R>(&self, name: &str, method: M) -> NamecallCallback
+    where
+        M: Fn(&Lua, &T, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+        let name = get_function_name::<T>(name);
+        macro_rules! try_self_arg {
+            ($res:expr) => {
+                $res.map_err(|err| Error::bad_self_argument(&name, err))?
+            };
+        }
+
+        let target_type = self.r#type;
+        XRc::new(move |rawlua, nargs| unsafe {
+            if nargs == 0 {
+                let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                try_self_arg!(Err(err));
+            }
+
+            let state = rawlua.state();
+
             // Find absolute "self" index before processing args
             let self_index = ffi::lua_absindex(state, -nargs);
             // Self was at position 1, so we pass 2 here
@@ -157,6 +221,128 @@ impl<T> UserDataRegistry<T> {
                     let type_id = try_self_arg!(rawlua.get_userdata_type_id::<T>(state, self_index));
                     try_self_arg!(borrow_userdata_scoped_mut(state, self_index, type_id, type_hints, |ud| {
                         method(rawlua.lua(), ud, args?)?.push_into_specified_stack_multi(rawlua, state)
+                    }))
+                }
+            }
+        })
+    }
+
+    #[cfg(feature = "luau")]
+    fn box_method_mut_namecall<M, A, R>(&self, name: &str, method: M) -> NamecallCallback
+    where
+        M: FnMut(&Lua, &mut T, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+        let name = get_function_name::<T>(name);
+        macro_rules! try_self_arg {
+            ($res:expr) => {
+                $res.map_err(|err| Error::bad_self_argument(&name, err))?
+            };
+        }
+
+        let method = RefCell::new(method);
+        let target_type = self.r#type;
+        XRc::new(move |rawlua, nargs| unsafe {
+            let mut method = method.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
+            if nargs == 0 {
+                let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                try_self_arg!(Err(err));
+            }
+            let state = rawlua.state();
+            // Find absolute "self" index before processing args
+            let self_index = ffi::lua_absindex(state, -nargs);
+            // Self was at position 1, so we pass 2 here
+            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
+
+            match target_type {
+                #[rustfmt::skip]
+                UserDataType::Shared(type_hints) => {
+                    let type_id = try_self_arg!(rawlua.get_userdata_type_id::<T>(state, self_index));
+                    try_self_arg!(borrow_userdata_scoped_mut(state, self_index, type_id, type_hints, |ud| {
+                        method(rawlua.lua(), ud, args?)?.push_into_specified_stack_multi(rawlua, state)
+                    }))
+                }
+            }
+        })
+    }
+
+    #[cfg(feature = "luau")]
+    fn box_dynamic_method<M, A, R>(&self, method: M) -> DynamicCallback
+    where
+        M: Fn(&Lua, &T, &str, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+
+        let target_type = self.r#type;
+        XRc::new(move |rawlua, name, nargs| unsafe {
+            let name_ref = name;
+            macro_rules! try_self_arg {
+                ($res:expr) => {
+                    $res.map_err(|err| Error::bad_self_argument(&name_ref, err))?
+                };
+            }    
+
+            if nargs == 0 {
+                let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                try_self_arg!(Err(err));
+            }
+
+            let state = rawlua.state();
+            // Find absolute "self" index before processing args
+            let self_index = ffi::lua_absindex(state, -nargs);
+            // Self was at position 1, so we pass 2 here
+            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
+
+            match target_type {
+                #[rustfmt::skip]
+                UserDataType::Shared(type_hints) => {
+                    let type_id = try_self_arg!(rawlua.get_userdata_type_id::<T>(state, self_index));
+                    try_self_arg!(borrow_userdata_scoped(state, self_index, type_id, type_hints, |ud| {
+                        method(rawlua.lua(), ud, name, args?)?.push_into_specified_stack_multi(rawlua, state)
+                    }))
+                }
+            }
+        })
+    }
+
+    #[cfg(feature = "luau")]
+    fn box_dynamic_method_mut<M, A, R>(&self, method: M) -> DynamicCallback
+    where
+        M: FnMut(&Lua, &mut T, &str, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+
+        let method = RefCell::new(method);
+        let target_type = self.r#type;
+        XRc::new(move |rawlua, name, nargs| unsafe {
+            let name_ref = name;
+            macro_rules! try_self_arg {
+                ($res:expr) => {
+                    $res.map_err(|err| Error::bad_self_argument(&name_ref, err))?
+                };
+            }    
+
+            let mut method = method.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
+            if nargs == 0 {
+                let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                try_self_arg!(Err(err));
+            }
+
+            let state = rawlua.state();
+            // Find absolute "self" index before processing args
+            let self_index = ffi::lua_absindex(state, -nargs);
+            // Self was at position 1, so we pass 2 here
+            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
+
+            match target_type {
+                #[rustfmt::skip]
+                UserDataType::Shared(type_hints) => {
+                    let type_id = try_self_arg!(rawlua.get_userdata_type_id::<T>(state, self_index));
+                    try_self_arg!(borrow_userdata_scoped_mut(state, self_index, type_id, type_hints, |ud| {
+                        method(rawlua.lua(), ud, name, args?)?.push_into_specified_stack_multi(rawlua, state)
                     }))
                 }
             }
@@ -215,6 +401,48 @@ impl<T> UserDataRegistry<T> {
     #[inline(always)]
     pub(crate) fn into_raw(self) -> RawUserDataRegistry {
         self.raw
+    }
+    
+    /// Sets dynamic method for the userdata type.
+    /// 
+    /// The resulting dynamic method will recieve the userdata immutably, along with the method name
+    /// and the arguments passed to it.
+    /// 
+    /// This will only override the namecall method for the userdata type, and will 
+    /// only work with the `:method(...)` syntax, as it uses ``namecall`` under the hood.
+    /// 
+    /// For best user-experience, you should also define a Index metamethod for the userdata type,
+    /// which will allow the user to call the method with `data.method(data, ...)` syntax.
+    #[cfg(feature = "luau")]
+    pub fn set_dynamic_method<F, A, R>(&mut self, method: F)
+    where
+        F: Fn(&Lua, &T, &str, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+        let callback = self.box_dynamic_method(method);
+        self.raw.dynamic_method = Some(callback);
+    }
+
+    #[cfg(feature = "luau")]
+    /// Sets dynamic mutable method for the userdata type.
+    /// 
+    /// The resulting dynamic method will recieve the userdata immutably, along with the method name
+    /// and the arguments passed to it.
+    /// 
+    /// This will only override the namecall method for the userdata type, and will 
+    /// only work with the `:method(...)` syntax, as it uses ``namecall`` under the hood.
+    /// 
+    /// For best user-experience, you should also define a Index metamethod for the userdata type,
+    /// which will allow the user to call the method with `data.method(data, ...)` syntax.
+    pub fn set_dynamic_method_mut<F, A, R>(&mut self, method: F)
+    where
+        F: FnMut(&Lua, &mut T, &str, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+        let callback = self.box_dynamic_method_mut(method);
+        self.raw.dynamic_method = Some(callback);
     }
 }
 
@@ -302,8 +530,19 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         R: IntoLuaMulti,
     {
         let name = name.to_string();
-        let callback = self.box_method(&name, method);
-        self.raw.methods.push((name, callback));
+
+        #[cfg(feature = "luau")]
+        {
+            let callback = self.box_method_namecall(&name, method);
+            self.raw.methods.push((name.clone(), callback.clone()));
+            self.raw.namecalls.insert(name, callback);
+        }
+
+        #[cfg(not(feature = "luau"))]
+        {
+            let callback = self.box_method(&name, method);
+            self.raw.methods.push((name, callback));
+        }
     }
 
     fn add_method_mut<M, A, R>(&mut self, name: impl ToString, method: M)
@@ -313,8 +552,19 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         R: IntoLuaMulti,
     {
         let name = name.to_string();
-        let callback = self.box_method_mut(&name, method);
-        self.raw.methods.push((name, callback));
+
+        #[cfg(feature = "luau")]
+        {
+            let callback = self.box_method_mut_namecall(&name, method);
+            self.raw.methods.push((name.clone(), callback.clone()));
+            self.raw.namecalls.insert(name, callback);
+        }
+
+        #[cfg(not(feature = "luau"))]
+        {
+            let callback = self.box_method_mut(&name, method);
+            self.raw.methods.push((name, callback));
+        }
     }
 
     fn add_function<F, A, R>(&mut self, name: impl ToString, function: F)
@@ -325,7 +575,7 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
     {
         let name = name.to_string();
         let callback = self.box_function(&name, function);
-        self.raw.methods.push((name, callback));
+        self.raw.functions.push((name, callback));
     }
 
     fn add_function_mut<F, A, R>(&mut self, name: impl ToString, function: F)
@@ -336,7 +586,7 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
     {
         let name = name.to_string();
         let callback = self.box_function_mut(&name, function);
-        self.raw.methods.push((name, callback));
+        self.raw.functions.push((name, callback));
     }
 
     fn add_meta_method<M, A, R>(&mut self, name: impl ToString, method: M)
@@ -396,6 +646,7 @@ macro_rules! lua_userdata_impl {
                 (registry.raw.field_getters).extend(orig_registry.raw.field_getters);
                 (registry.raw.field_setters).extend(orig_registry.raw.field_setters);
                 (registry.raw.meta_fields).extend(orig_registry.raw.meta_fields);
+                (registry.raw.functions).extend(orig_registry.raw.functions);
                 (registry.raw.methods).extend(orig_registry.raw.methods);
                 (registry.raw.meta_methods).extend(orig_registry.raw.meta_methods);
             }

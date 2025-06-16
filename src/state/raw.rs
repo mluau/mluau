@@ -20,9 +20,14 @@ use crate::table::Table;
 use crate::thread::Thread;
 use crate::traits::IntoLua;
 use crate::types::{
-    AppDataRef, AppDataRefMut, Callback, CallbackUpvalue, DestructedUserdata, Integer, LightUserData,
+    AppDataRef, AppDataRefMut, Callback, CallbackUpvalue,
+    DestructedUserdata, Integer, LightUserData,
     MaybeSend, ReentrantMutex, RegistryKey, ValueRef, XRc,
 };
+
+#[cfg(feature = "luau")]
+use crate::types::{NamecallCallback, 
+    NamecallCallbackUpvalue, NamecallMapUpvalue, NamecallMap};
 
 #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 use crate::types::Continuation;
@@ -580,6 +585,10 @@ impl RawLua {
                 init_internal_metatable::<CallbackUpvalue>(state, None)?;
                 #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
                 init_internal_metatable::<ContinuationUpvalue>(state, None)?;
+                #[cfg(feature = "luau")]
+                init_internal_metatable::<NamecallCallbackUpvalue>(state, None)?;
+                #[cfg(feature = "luau")]
+                init_internal_metatable::<NamecallMapUpvalue>(state, None)?;
                 #[cfg(not(feature = "luau"))]
                 init_internal_metatable::<HookCallback>(state, None)?;
 
@@ -1497,8 +1506,25 @@ impl RawLua {
             field_setters_index = Some(ffi::lua_absindex(state, -1));
         }
 
+        #[cfg(feature = "luau")]
+        {
+            if !registry.namecalls.is_empty() || registry.dynamic_method.is_some() {
+                println!("Creating {} namecalls with dynamic method: {} with keys: {:?}",
+                    registry.namecalls.len(),
+                    registry.dynamic_method.is_some(),
+                    registry.namecalls.keys().collect::<Vec<_>>()
+                );
+                // OPTIMIZATION: ``__namecall`` metamethod on the metatable
+                self.push_at(state, self.create_namecall_map(NamecallMap {
+                    map: registry.namecalls,
+                    dynamic: registry.dynamic_method,
+                })?)?;
+                rawset_field(state, -2, "__namecall")?;
+            }
+        }
+
         let mut methods_index = None;
-        let methods_nrec = registry.methods.len();
+        let methods_nrec = registry.methods.len() + registry.functions.len();
         if methods_nrec > 0 {
             // If `__index` is a table then update it in-place
             let index_type = ffi::lua_getfield(state, metatable_index, cstr!("__index"));
@@ -1511,9 +1537,18 @@ impl RawLua {
                 }
             }
             for (k, m) in registry.methods {
+                #[cfg(not(feature = "luau"))]
+                self.push_at(state, self.create_callback(m)?)?; // without namecall support
+                #[cfg(feature = "luau")]
+                self.push_at(state, self.create_callback_namecall(m)?)?; // with namecall support
+                rawset_field(state, -2, &k)?;
+            }
+
+            for (k, m) in registry.functions {
                 self.push_at(state, self.create_callback(m)?)?;
                 rawset_field(state, -2, &k)?;
             }
+
             match index_type {
                 ffi::LUA_TTABLE => {
                     ffi::lua_pop(state, 1); // All done
@@ -1527,6 +1562,7 @@ impl RawLua {
                 }
             }
         }
+
 
         #[cfg(not(feature = "luau"))]
         {
@@ -1650,6 +1686,133 @@ impl RawLua {
             let extra = XRc::clone(&self.extra);
             let protect = !self.unlikely_memory_error();
             push_internal_userdata(state, CallbackUpvalue { data: func, extra }, protect)?;
+            if protect {
+                protect_lua!(state, 1, 1, fn(state) {
+                    ffi::lua_pushcclosure(state, call_callback, 1);
+                })?;
+            } else {
+                ffi::lua_pushcclosure(state, call_callback, 1);
+            }
+
+            Ok(Function(self.pop_ref()))
+        }
+    }
+
+    #[cfg(feature = "luau")]
+    // Creates a Function out of a NamecallCallback containing a 'static Fn.
+    pub(crate) fn create_callback_namecall(&self, func: NamecallCallback) -> Result<Function> {
+        unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
+            let upvalue = get_userdata::<NamecallCallbackUpvalue>(state, ffi::lua_upvalueindex(1));
+            callback_error_ext_yieldable(
+                state,
+                (*upvalue).extra.get(),
+                true,
+                |extra, nargs| {
+                    // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
+                    // The lock must be already held as the callback is executed
+                    let rawlua = (*extra).raw_lua();
+                    match (*upvalue).data {
+                        Some(ref func) => func(rawlua, nargs),
+                        None => Err(Error::CallbackDestructed),
+                    }
+                },
+                false,
+            )
+        }
+
+        let state = self.state();
+        unsafe {
+            let _sg = StackGuard::new(state);
+            check_stack(state, 4)?;
+
+            let func = Some(func);
+            let extra = XRc::clone(&self.extra);
+            let protect = !self.unlikely_memory_error();
+            push_internal_userdata(state, NamecallCallbackUpvalue { data: func, extra }, protect)?;
+            if protect {
+                protect_lua!(state, 1, 1, fn(state) {
+                    ffi::lua_pushcclosure(state, call_callback, 1);
+                })?;
+            } else {
+                ffi::lua_pushcclosure(state, call_callback, 1);
+            }
+
+            Ok(Function(self.pop_ref()))
+        }
+    }
+
+    #[cfg(feature = "luau")]
+    // Handles namecalls in userdata
+    pub(crate) fn create_namecall_map(&self, map: NamecallMap) -> Result<Function> {
+        unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
+            let upvalue = get_userdata::<NamecallMapUpvalue>(state, ffi::lua_upvalueindex(1));
+            callback_error_ext_yieldable(
+                state,
+                (*upvalue).extra.get(),
+                true,
+                |extra, nargs| {
+                    // Get namecall method name
+                    let method = unsafe {
+                        let name = ffi::lua_namecallatom(state, std::ptr::null_mut());
+                        if name.is_null() {
+                            return Err(Error::runtime("Namecall method is not set"));
+                        }
+
+                        let name = CStr::from_ptr(name);
+                        let name = name.to_str().map_err(|_| Error::runtime("Invalid namecall method"))?;
+                        if name.is_empty() {
+                            return Err(Error::runtime("Namecall method is empty"));
+                        }
+
+                        name
+                    };
+
+                    println!("Calling namecall method `{}`", method);
+
+                    let Some(ref data) = (*upvalue).data else {
+                        return Err(Error::CallbackDestructed);
+                    };
+
+                    if data.dynamic.is_none() {
+                        if let Some(func) = data.map.get(method) {
+                            // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
+                            // The lock must be already held as the callback is executed
+                            let rawlua = (*extra).raw_lua();
+                            println!("Calling namecall method `{}` from map", method);
+                            return (func)(rawlua, nargs);
+                        } else {
+                            return Err(Error::runtime(format!("Method `{}` not found", method)));
+                        }
+                    }
+
+                    if let Some(func) = data.map.get(method) {
+                        // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
+                        // The lock must be already held as the callback is executed
+                        let rawlua = (*extra).raw_lua();
+                        println!("Calling namecall method `{}` from map", method);
+                        (func)(rawlua, nargs)
+                    } else if let Some(dynamic_method) = &data.dynamic {
+                        // If dynamic method is set, call it
+                        let rawlua = (*extra).raw_lua();
+                        (dynamic_method)(rawlua, method, nargs)
+                    } else {
+                        println!("Method `{}` not found in namecall map", method);
+                        Err(Error::runtime(format!("Method `{}` not found", method)))
+                    }
+                },
+                false,
+            )
+        }
+
+        let state = self.state();
+        unsafe {
+            let _sg = StackGuard::new(state);
+            check_stack(state, 4)?;
+
+            let func = Some(map);
+            let extra = XRc::clone(&self.extra);
+            let protect = !self.unlikely_memory_error();
+            push_internal_userdata(state, NamecallMapUpvalue { data: func, extra }, protect)?;
             if protect {
                 protect_lua!(state, 1, 1, fn(state) {
                     ffi::lua_pushcclosure(state, call_callback, 1);

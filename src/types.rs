@@ -14,6 +14,9 @@ pub use either::Either;
 pub use registry_key::RegistryKey;
 pub(crate) use value_ref::ValueRef;
 
+#[cfg(feature = "luau")]
+use std::collections::HashMap;
+
 /// Type of Lua integer numbers.
 pub type Integer = ffi::lua_Integer;
 /// Type of Lua floating point numbers.
@@ -30,14 +33,23 @@ unsafe impl Sync for LightUserData {}
 
 #[cfg(feature = "send")]
 pub(crate) type Callback = Box<dyn Fn(&RawLua, c_int) -> Result<c_int> + Send + 'static>;
-
 #[cfg(not(feature = "send"))]
 pub(crate) type Callback = Box<dyn Fn(&RawLua, c_int) -> Result<c_int> + 'static>;
+
 #[cfg(all(feature = "send", not(feature = "lua51"), not(feature = "luajit")))]
 pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> Result<c_int> + Send + 'static>;
-
 #[cfg(all(not(feature = "send"), not(feature = "lua51"), not(feature = "luajit")))]
 pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> Result<c_int> + 'static>;
+
+#[cfg(all(feature = "luau", feature = "send"))]
+pub(crate) type NamecallCallback = XRc<dyn Fn(&RawLua, c_int) -> Result<c_int> + Send + 'static>;
+#[cfg(all(feature = "luau", not(feature = "send")))]
+pub(crate) type NamecallCallback = XRc<dyn Fn(&RawLua, c_int) -> Result<c_int> + 'static>;
+
+#[cfg(all(feature = "luau", feature = "send"))]
+pub(crate) type DynamicCallback = XRc<dyn Fn(&RawLua, &str, c_int) -> Result<c_int> + Send + 'static>;
+#[cfg(all(feature = "luau", not(feature = "send")))]
+pub(crate) type DynamicCallback = XRc<dyn Fn(&RawLua, &str, c_int) -> Result<c_int> + 'static>;
 
 pub(crate) struct Upvalue<T> {
     pub(crate) data: T,
@@ -47,6 +59,17 @@ pub(crate) struct Upvalue<T> {
 pub(crate) type CallbackUpvalue = Upvalue<Option<Callback>>;
 #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 pub(crate) type ContinuationUpvalue = Upvalue<Option<(Callback, Continuation)>>;
+#[cfg(feature = "luau")]
+pub(crate) type NamecallCallbackUpvalue = Upvalue<Option<NamecallCallback>>;
+
+#[cfg(feature = "luau")]
+pub struct NamecallMap {
+    pub(crate) map: HashMap<String, NamecallCallback>,
+    pub(crate) dynamic: Option<DynamicCallback>,
+}
+
+#[cfg(feature = "luau")]
+pub(crate) type NamecallMapUpvalue = Upvalue<Option<NamecallMap>>;
 
 /// Type to set next Lua VM action after executing interrupt or hook function.
 pub enum VmState {
