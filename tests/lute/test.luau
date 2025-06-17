@@ -10,6 +10,6 @@ return {
 
         print("mlua var", _G.test_mluau_var)
 
-        return 13 * 6 + _G.test_mluau_var
+        return 13 * 6 + _G.test_mluau_var + _G.my_ud.value
     end,
 }

@@ -32,6 +32,7 @@ luau-vector4 = ["luau"]
 luau-lute = ["lute-src-rs"]
 luau-lute-crypto = ["luau-lute"]
 luau-lute-net = ["luau-lute"]
+luau-lute-prebuilt = ["luau-lute", "lute-src-rs/prebuilt"]
 vendored = ["lua-src", "luajit-src"]
 module = []
 

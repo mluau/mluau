@@ -50,6 +50,7 @@ fn test_lute_runtime() -> LuaResult<()> {
             parent.set_app_data::<Lua>(child.clone());
         }
         println!("Child Lua state created");
+        child.globals().set("my_ud", A { v: 2 })?;
         Ok(())
     })?;
 
@@ -89,14 +90,14 @@ fn test_lute_runtime() -> LuaResult<()> {
 
     // Print current working directory
     let res = lua
-        .load("local a = vm.create('./mluau/tests/lute/test').l(); print(a); return a + _G.parent_mlua_var")
+        .load("local b = ...; local a = vm.create('./mluau/tests/lute/test').l(); print(a); return a + _G.parent_mlua_var + b.value")
         .set_name("=stdin")
         .into_function()?;
 
     println!("res: {:?}", res);
 
     let th = lua.create_thread(res)?;
-    let res = th.resume::<LuaMultiValue>(())?;
+    let res = th.resume::<LuaMultiValue>(A { v: 1 })?;
 
     let child = lua
         .remove_app_data::<Lua>()
@@ -123,7 +124,7 @@ fn test_lute_runtime() -> LuaResult<()> {
         if res.is_success() {
             let res = res.results::<i32>()?;
             println!("Scheduler returned: {:?}", res);
-            assert_eq!(res, 78 + 42 + 132);
+            assert_eq!(res, 78 + 42 + 132 + 2 + 1);
             passed = true;
         }
 

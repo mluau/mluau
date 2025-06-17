@@ -39,6 +39,10 @@ luau-lute-autoload = [
 ] # Useful for if you want Lute runtime to be loaded automatically on Lua state creation.
 luau-lute-crypto = ["luau-lute", "ffi/luau-lute-crypto"]
 luau-lute-net = ["luau-lute", "ffi/luau-lute-net"]
+luau-lute-prebuilt = [
+    "luau-lute",
+    "ffi/luau-lute-prebuilt",
+] # Useful for if you want to use prebuilt Lute runtime.
 vendored = ["ffi/vendored"]
 module = ["mlua_derive", "ffi/module"]
 send = ["error-send"]
