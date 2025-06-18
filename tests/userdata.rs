@@ -512,6 +512,8 @@ fn test_functions() -> Result<()> {
     set.call::<()>(100)?;
     assert_eq!(get.call::<i64>(())?, 100);
     assert_eq!(get_constant.call::<i64>(())?, 7);
+
+    #[cfg(feature = "luau")]
     assert!(globals.get::<Function>("not_me")?.call::<bool>(()).unwrap());
     
     Ok(())
