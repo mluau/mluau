@@ -468,9 +468,9 @@ impl Function {
                 let ref_thread_internal = lua.ref_thread_internal();
                 check_stack(ref_thread_internal, 4)?; // 3+1
                 lua.push_ref_at(&self.0, ref_thread_internal);
-                protect_lua!(ref_thread_internal, 1, 1, move |ref_thread_internal| ffi::lua_clonefunction(
-                    ref_thread_internal, -1
-                ))?;
+                protect_lua!(ref_thread_internal, 1, 1, move |ref_thread_internal| {
+                    ffi::lua_clonefunction(ref_thread_internal, -1)
+                })?;
 
                 // Get the real next spot
                 let (aux_thread, index, replace) = get_next_spot(lua.extra());
