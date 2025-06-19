@@ -13,4 +13,4 @@ luajit = ["mlua/luajit"]
 vendored = ["mlua/vendored"]
 
 [dependencies]
-mlua = { path = "../../.." }
+mlua = { path = "../../..", default-features = false }

@@ -8,9 +8,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [workspace]
-members = [
-    "loader",
-]
+members = ["loader"]
 
 [features]
 lua54 = ["mlua/lua54"]
@@ -20,4 +18,4 @@ lua51 = ["mlua/lua51"]
 luajit = ["mlua/luajit"]
 
 [dependencies]
-mlua = { path = "../..", features = ["module"] }
+mlua = { path = "../..", features = ["module"], default-features = false }
