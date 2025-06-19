@@ -30,7 +30,8 @@ pub fn probe_lua() {
             compile_error!("lute runtime does not support vector4 builds");
         }
 
-        if cfg!(feature = "luau-lute-prebuilt") {
+        #[cfg(feature = "luau-lute-prebuilt")]
+        {
             #[cfg(feature = "luau-lute-crypto")]
             {
                 compile_error!("Prebuilt lute runtime does not support crypto feature");
@@ -43,9 +44,12 @@ pub fn probe_lua() {
             {
                 compile_error!("Prebuilt lute runtime does not support native code generation yet (to be supported in the future)");
             }
-
+            
             lute_prebuilts_chooser::integrate();
-        } else {
+        } 
+    
+        #[cfg(not(feature = "luau-lute-prebuilt"))]
+        {
             let lcfg = lute_src_rs::LConfig {
                 disable_crypto: if cfg!(feature = "luau-lute-crypto") {
                     false
