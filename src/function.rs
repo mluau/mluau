@@ -447,23 +447,18 @@ impl Function {
         let ref_thread = lua.ref_thread(self.0.aux_thread);
         unsafe {
             let _sg = StackGuard::new(state);
-            check_stack(state, 2)?;
+            check_stack(ref_thread, 1)?;
 
             if ffi::lua_iscfunction(ref_thread, self.0.index) != 0 {
                 return Ok(self.clone());
             }
 
-            if check_stack(ref_thread, 1).is_ok() {
-                if lua.unlikely_memory_error() {
-                    ffi::lua_clonefunction(ref_thread, self.0.index);
-                } else {
-                    let idx = self.0.index;
-                    protect_lua!(ref_thread, 1, 1, move |ref_thread| ffi::lua_clonefunction(ref_thread, idx))?;
-                }
+            if lua.unlikely_memory_error() {
+                ffi::lua_clonefunction(ref_thread, self.0.index);
 
                 // Get the real next spot
                 let (aux_thread, index, replace) = get_next_spot(lua.extra());
-                ffi::lua_xmove(ref_thread, lua.ref_thread(aux_thread), -1);
+                ffi::lua_xmove(ref_thread, lua.ref_thread(aux_thread), 1);
                 if replace {
                     ffi::lua_replace(lua.ref_thread(aux_thread), index);
                 }
@@ -471,17 +466,15 @@ impl Function {
                 Ok(Function(lua.new_value_ref(aux_thread, index)))
             } else {
                 let ref_thread_internal = lua.ref_thread_internal();
-                check_stack(ref_thread_internal, 2)?;
+                check_stack(ref_thread_internal, 4)?; // 3+1
                 lua.push_ref_at(&self.0, ref_thread_internal);
-                if lua.unlikely_memory_error() {
-                    ffi::lua_clonefunction(ref_thread_internal, -1);
-                } else {
-                    protect_lua!(ref_thread_internal, 1, 1, move |ref_thread_internal| ffi::lua_clonefunction(ref_thread_internal, -1))?;
-                }
+                protect_lua!(ref_thread_internal, 1, 1, move |ref_thread_internal| ffi::lua_clonefunction(
+                    ref_thread_internal, -1
+                ))?;
 
                 // Get the real next spot
                 let (aux_thread, index, replace) = get_next_spot(lua.extra());
-                ffi::lua_xmove(ref_thread_internal, lua.ref_thread(aux_thread), -1);
+                ffi::lua_xmove(ref_thread_internal, lua.ref_thread(aux_thread), 1);
                 if replace {
                     ffi::lua_replace(lua.ref_thread(aux_thread), index);
                 }
