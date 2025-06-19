@@ -30,7 +30,7 @@ use crate::luau::lute::{LuteChildVmType, LuteRuntimeHandle};
 static EXTRA_REGISTRY_KEY: u8 = 0;
 
 const WRAPPED_FAILURE_POOL_DEFAULT_CAPACITY: usize = 64;
-const REF_STACK_RESERVE: c_int = 2;
+const REF_STACK_RESERVE: c_int = 3;
 
 pub(crate) struct RefThread {
     pub(super) ref_thread: *mut ffi::lua_State,

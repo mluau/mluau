@@ -485,7 +485,6 @@ impl RawLua {
     }
 
     #[inline(always)]
-    #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
     pub(crate) fn ref_thread_internal(&self) -> *mut ffi::lua_State {
         unsafe { (*self.extra.get()).ref_thread_internal.ref_thread }
     }
@@ -1044,7 +1043,6 @@ impl RawLua {
         Ok(())
     }
 
-    /// Pops a value from the Lua stack.
     pub(crate) unsafe fn pop_value_at(&self, state: *mut ffi::lua_State) -> Result<Value> {
         let value = self.stack_value_at(-1, None, state)?;
         ffi::lua_pop(state, 1);
@@ -1253,7 +1251,6 @@ impl RawLua {
     }
 
     /// Same as pop_ref but allows specifying state
-    #[inline]
     pub(crate) unsafe fn pop_ref_at(&self, state: *mut ffi::lua_State) -> ValueRef {
         let (aux_thread, idx, replace) = get_next_spot(self.extra.get());
         ffi::lua_xmove(state, self.ref_thread(aux_thread), 1);
