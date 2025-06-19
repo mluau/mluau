@@ -466,7 +466,9 @@ fn test_functions() -> Result<()> {
 
     impl UserData for MyUserData {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_function("get_value_fn", |_, ud: AnyUserData| Ok(ud.borrow::<MyUserData>()?.0));
+            methods.add_function("get_value_fn", |_, ud: AnyUserData| {
+                Ok(ud.borrow::<MyUserData>()?.0)
+            });
             methods.add_function_mut("set_value_fn", |_, (ud, value): (AnyUserData, i64)| {
                 ud.borrow_mut::<MyUserData>()?.0 = value;
                 Ok(())
@@ -515,7 +517,7 @@ fn test_functions() -> Result<()> {
 
     #[cfg(feature = "luau")]
     assert!(globals.get::<Function>("not_me")?.call::<bool>(()).unwrap());
-    
+
     Ok(())
 }
 
@@ -530,7 +532,7 @@ fn test_methods_namecall() -> Result<()> {
             methods.add_method_mut("incr_and_error", |_, ud, _: ()| {
                 ud.0 += 1;
                 if false {
-                    return Ok(())
+                    return Ok(());
                 }
                 Err(mlua::Error::external("This is an error!"))
             });

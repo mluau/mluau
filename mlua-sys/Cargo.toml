@@ -32,7 +32,7 @@ luau-vector4 = ["luau"]
 luau-lute = ["lute-src-rs"]
 luau-lute-crypto = ["luau-lute"]
 luau-lute-net = ["luau-lute"]
-luau-lute-prebuilt = ["luau-lute", "lute-src-rs/prebuilt"]
+luau-lute-prebuilt = ["luau-lute", "lute-prebuilts-chooser"]
 vendored = ["lua-src", "luajit-src"]
 module = []
 
@@ -46,6 +46,7 @@ lua-src = { version = ">= 548.1.0, < 548.2.0", optional = true }
 luajit-src = { version = ">= 210.6.0, < 210.7.0", optional = true }
 luau0-src = { version = "0.15.0", optional = true }
 lute-src-rs = { git = "https://github.com/mluau/lute-src-rs", optional = true }
+lute-prebuilts-chooser = { git = "https://github.com/mluau/lute-prebuilts-chooser", optional = true }
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(raw_dylib)'] }

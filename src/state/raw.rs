@@ -20,14 +20,12 @@ use crate::table::Table;
 use crate::thread::Thread;
 use crate::traits::IntoLua;
 use crate::types::{
-    AppDataRef, AppDataRefMut, Callback, CallbackUpvalue,
-    DestructedUserdata, Integer, LightUserData,
+    AppDataRef, AppDataRefMut, Callback, CallbackUpvalue, DestructedUserdata, Integer, LightUserData,
     MaybeSend, ReentrantMutex, RegistryKey, ValueRef, XRc,
 };
 
 #[cfg(feature = "luau")]
-use crate::types::{NamecallCallback, 
-    NamecallCallbackUpvalue, NamecallMapUpvalue, NamecallMap};
+use crate::types::{NamecallCallback, NamecallCallbackUpvalue, NamecallMap, NamecallMapUpvalue};
 
 #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 use crate::types::Continuation;
@@ -1508,12 +1506,17 @@ impl RawLua {
 
         #[cfg(feature = "luau")]
         {
-            if (!registry.namecalls.is_empty() || registry.dynamic_method.is_some()) && !registry.disable_namecall_optimization {
+            if (!registry.namecalls.is_empty() || registry.dynamic_method.is_some())
+                && !registry.disable_namecall_optimization
+            {
                 // OPTIMIZATION: ``__namecall`` metamethod on the metatable
-                self.push_at(state, self.create_namecall_map(NamecallMap {
-                    map: registry.namecalls,
-                    dynamic: registry.dynamic_method,
-                })?)?;
+                self.push_at(
+                    state,
+                    self.create_namecall_map(NamecallMap {
+                        map: registry.namecalls,
+                        dynamic: registry.dynamic_method,
+                    })?,
+                )?;
                 rawset_field(state, -2, "__namecall")?;
             }
         }
@@ -1560,7 +1563,6 @@ impl RawLua {
                 }
             }
         }
-
 
         #[cfg(not(feature = "luau"))]
         {
@@ -1757,7 +1759,9 @@ impl RawLua {
                         }
 
                         let name = CStr::from_ptr(name);
-                        let name = name.to_str().map_err(|_| Error::runtime("Invalid namecall method"))?;
+                        let name = name
+                            .to_str()
+                            .map_err(|_| Error::runtime("Invalid namecall method"))?;
                         if name.is_empty() {
                             return Err(Error::runtime("Namecall method is empty"));
                         }
@@ -1770,8 +1774,9 @@ impl RawLua {
                     };
 
                     if let Some(func) = data.map.get(method) {
-                        // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
-                        // The lock must be already held as the callback is executed
+                        // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
+                        // arguments) The lock must be already held as the callback is
+                        // executed
                         let rawlua = (*extra).raw_lua();
                         (func)(rawlua, nargs)
                     } else if let Some(dynamic_method) = &data.dynamic {

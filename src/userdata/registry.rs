@@ -17,9 +17,9 @@ use crate::util::short_type_name;
 use crate::value::Value;
 
 #[cfg(feature = "luau")]
-use std::collections::HashMap;
+use crate::types::{DynamicCallback, NamecallCallback, XRc};
 #[cfg(feature = "luau")]
-use crate::types::{NamecallCallback, DynamicCallback, XRc};
+use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
 enum UserDataType {
@@ -281,7 +281,6 @@ impl<T> UserDataRegistry<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti,
     {
-
         let target_type = self.r#type;
         XRc::new(move |rawlua, name, nargs| unsafe {
             let name_ref = name;
@@ -289,7 +288,7 @@ impl<T> UserDataRegistry<T> {
                 ($res:expr) => {
                     $res.map_err(|err| Error::bad_self_argument(&name_ref, err))?
                 };
-            }    
+            }
 
             if nargs == 0 {
                 let err = Error::from_lua_conversion("missing argument", "userdata", None);
@@ -321,7 +320,6 @@ impl<T> UserDataRegistry<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti,
     {
-
         let method = RefCell::new(method);
         let target_type = self.r#type;
         XRc::new(move |rawlua, name, nargs| unsafe {
@@ -330,7 +328,7 @@ impl<T> UserDataRegistry<T> {
                 ($res:expr) => {
                     $res.map_err(|err| Error::bad_self_argument(&name_ref, err))?
                 };
-            }    
+            }
 
             let mut method = method.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
             if nargs == 0 {
@@ -443,15 +441,15 @@ impl<T> UserDataRegistry<T> {
     pub(crate) fn into_raw(self) -> RawUserDataRegistry {
         self.raw
     }
-    
+
     /// Sets dynamic method for the userdata type.
-    /// 
+    ///
     /// The resulting dynamic method will recieve the userdata immutably, along with the method name
     /// and the arguments passed to it.
-    /// 
-    /// This will only override the namecall method for the userdata type, and will 
+    ///
+    /// This will only override the namecall method for the userdata type, and will
     /// only work with the `:method(...)` syntax, as it uses ``namecall`` under the hood.
-    /// 
+    ///
     /// For best user-experience, you should also define a Index metamethod for the userdata type,
     /// which will allow the user to call the method with `data.method(data, ...)` syntax.
     #[cfg(feature = "luau")]
@@ -466,13 +464,13 @@ impl<T> UserDataRegistry<T> {
     }
 
     /// Sets dynamic mutable method for the userdata type.
-    /// 
+    ///
     /// The resulting dynamic method will recieve the userdata immutably, along with the method name
     /// and the arguments passed to it.
-    /// 
-    /// This will only override the namecall method for the userdata type, and will 
+    ///
+    /// This will only override the namecall method for the userdata type, and will
     /// only work with the `:method(...)` syntax, as it uses ``namecall`` under the hood.
-    /// 
+    ///
     /// For best user-experience, you should also define a Index metamethod for the userdata type,
     /// which will allow the user to call the method with `data.method(data, ...)` syntax.
     #[cfg(feature = "luau")]
@@ -488,7 +486,8 @@ impl<T> UserDataRegistry<T> {
 
     /// Disables namecall optimization for the userdata type.
     ///
-    /// This will also disable the dynamic method for the userdata type, if it was set (as a side effect)
+    /// This will also disable the dynamic method for the userdata type, if it was set (as a side
+    /// effect)
     #[cfg(feature = "luau")]
     pub fn disable_namecall_optimization(&mut self) {
         self.raw.disable_namecall_optimization = true;

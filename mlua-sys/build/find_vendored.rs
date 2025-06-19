@@ -29,20 +29,31 @@ pub fn probe_lua() {
         {
             compile_error!("lute runtime does not support vector4 builds");
         }
-        let lcfg = lute_src_rs::LConfig {
-            disable_crypto: if cfg!(feature = "luau-lute-crypto") {
-                false
-            } else {
-                true
-            },
-            disable_net: if cfg!(feature = "luau-lute-net") {
-                false
-            } else {
-                true
-            },
-            ..Default::default()
-        };
-        lute_src_rs::build_lute(lcfg);
+
+        if cfg!(feature = "luau-lute-prebuilt") {
+            if cfg!(feature = "luau-lute-crypto") {
+                compile_error!("Prebuilt lute runtime does not support crypto feature");
+            } else if cfg!(feature = "luau-lute-net") {
+                compile_error!("Prebuilt lute runtime does not support net feature");
+            }
+
+            lute_prebuilts_chooser::integrate();
+        } else {
+            let lcfg = lute_src_rs::LConfig {
+                disable_crypto: if cfg!(feature = "luau-lute-crypto") {
+                    false
+                } else {
+                    true
+                },
+                disable_net: if cfg!(feature = "luau-lute-net") {
+                    false
+                } else {
+                    true
+                },
+                ..Default::default()
+            };
+            lute_src_rs::build_lute(lcfg);
+        }
     }
     #[cfg(not(feature = "luau-lute"))]
     {
