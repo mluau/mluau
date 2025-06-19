@@ -31,9 +31,11 @@ pub fn probe_lua() {
         }
 
         if cfg!(feature = "luau-lute-prebuilt") {
-            if cfg!(feature = "luau-lute-crypto") {
+            #[cfg(not(feature = "luau-lute-crypto"))]
+            {
                 compile_error!("Prebuilt lute runtime does not support crypto feature");
-            } else if cfg!(feature = "luau-lute-net") {
+            #[cfg(not(feature = "luau-lute-net"))]
+            {
                 compile_error!("Prebuilt lute runtime does not support net feature");
             }
 
