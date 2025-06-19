@@ -40,6 +40,7 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
 - [``Thread::close``](https://github.com/mlua-rs/mlua/pull/517) has been added to allow closing Lua threads
 - ``RawLua::stack_value`` correctly calls ``lua_checkstack`` to avoid a potential crash when there are no stack slots free when popping from the Lua stack (``from_lua`` etc.)
 - Namecall optimization on Luau: for methods/functions on userdata, the ``namecall`` metamethod is now defined. This allows for more efficient method calls on userdata, as it avoids the need to check for the ``__index`` metamethod on every call. This is particularly useful for performance-critical code that relies heavily on userdata methods. This optimization is enabled by default, but can be disabled using ``UserDataRegistry::disable_namecall_optimization()`` if needed.
+- Due to namcall, ``RawUserDataRegistry`` is not ``Send``.
 
 ## Roadmap
 

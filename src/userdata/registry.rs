@@ -69,6 +69,16 @@ pub(crate) struct RawUserDataRegistry {
     pub(crate) disable_namecall_optimization: bool,
 }
 
+#[cfg(all(feature = "luau", feature = "send"))]
+// SAFETY: The only reason for the non-send is the needed
+// clone of the method to both namecalls and methods/functions
+//
+// This is perfectly safe as we only register within a single
+// thread and we do not implement Clone on RawUserDataRegistry
+// making it impossible to clone the registry or access its
+// methods unsafely
+unsafe impl Send for RawUserDataRegistry {}
+
 impl UserDataType {
     #[inline]
     pub(crate) fn type_id(&self) -> Option<TypeId> {
@@ -444,7 +454,7 @@ impl<T> UserDataRegistry<T> {
 
     /// Sets dynamic method for the userdata type.
     ///
-    /// The resulting dynamic method will recieve the userdata immutably, along with the method name
+    /// The resulting dynamic method will receive the userdata immutably, along with the method name
     /// and the arguments passed to it.
     ///
     /// This will only override the namecall method for the userdata type, and will
@@ -465,7 +475,7 @@ impl<T> UserDataRegistry<T> {
 
     /// Sets dynamic mutable method for the userdata type.
     ///
-    /// The resulting dynamic method will recieve the userdata immutably, along with the method name
+    /// The resulting dynamic method will receive the userdata immutably, along with the method name
     /// and the arguments passed to it.
     ///
     /// This will only override the namecall method for the userdata type, and will
@@ -754,5 +764,5 @@ lua_userdata_impl!(std::sync::Arc<parking_lot::RwLock<T>>);
 #[cfg(test)]
 mod assertions {
     #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(super::RawUserDataRegistry: Send);
+    static_assertions::assert_impl_all!(super::UserDataRegistry<String>: Send);
 }

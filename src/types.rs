@@ -57,6 +57,7 @@ pub(crate) struct Upvalue<T> {
 }
 
 pub(crate) type CallbackUpvalue = Upvalue<Option<Callback>>;
+
 #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 pub(crate) type ContinuationUpvalue = Upvalue<Option<(Callback, Continuation)>>;
 #[cfg(feature = "luau")]
