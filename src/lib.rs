@@ -37,14 +37,6 @@
 //!
 //! Requires `feature = "serde"`.
 //!
-//! # Async/await support
-//!
-//! The [`Lua::create_async_function`] allows creating non-blocking functions that returns
-//! [`Future`]. Lua code with async capabilities can be executed by [`Function::call_async`] family
-//! of functions or polling [`AsyncThread`] using any runtime (eg. Tokio).
-//!
-//! Requires `feature = "async"`.
-//!
 //! # `Send` and `Sync` support
 //!
 //! By default `mlua` is `!Send`. This can be changed by enabling `feature = "send"` that adds
@@ -82,7 +74,6 @@ mod hook;
 mod luau;
 mod memory;
 mod multi;
-mod scope;
 mod state;
 mod stdlib;
 mod string;
@@ -105,12 +96,11 @@ pub use crate::error::{Error, ErrorContext, ExternalError, ExternalResult, Resul
 pub use crate::function::{Function, FunctionInfo};
 pub use crate::hook::{Debug, DebugEvent, DebugNames, DebugSource, DebugStack};
 pub use crate::multi::{MultiValue, Variadic};
-pub use crate::scope::Scope;
 pub use crate::state::{GCMode, Lua, LuaOptions, WeakLua};
 pub use crate::stdlib::StdLib;
 pub use crate::string::{BorrowedBytes, BorrowedStr, String};
 pub use crate::table::{Table, TablePairs, TableSequence};
-pub use crate::thread::{Thread, ThreadStatus};
+pub use crate::thread::{ContinuationStatus, Thread, ThreadStatus};
 pub use crate::traits::{
     FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, LuaNativeFn, LuaNativeFnMut, ObjectLike,
 };
@@ -135,10 +125,6 @@ pub use crate::{
     luau::{NavigateError, Require, TextRequirer},
     vector::Vector,
 };
-
-#[cfg(feature = "async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-pub use crate::{thread::AsyncThread, traits::LuaNativeAsyncFn};
 
 #[cfg(feature = "serde")]
 #[doc(inline)]

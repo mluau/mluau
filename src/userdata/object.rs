@@ -7,9 +7,6 @@ use crate::userdata::AnyUserData;
 use crate::value::Value;
 use crate::Function;
 
-#[cfg(feature = "async")]
-use futures_util::future::{self, Either, Future};
-
 impl ObjectLike for AnyUserData {
     #[inline]
     fn get<V: FromLua>(&self, key: impl IntoLua) -> Result<V> {
@@ -33,29 +30,12 @@ impl ObjectLike for AnyUserData {
         Function(self.0.copy()).call(args)
     }
 
-    #[cfg(feature = "async")]
-    #[inline]
-    fn call_async<R>(&self, args: impl IntoLuaMulti) -> impl Future<Output = Result<R>>
-    where
-        R: FromLuaMulti,
-    {
-        Function(self.0.copy()).call_async(args)
-    }
-
     #[inline]
     fn call_method<R>(&self, name: &str, args: impl IntoLuaMulti) -> Result<R>
     where
         R: FromLuaMulti,
     {
         self.call_function(name, (self, args))
-    }
-
-    #[cfg(feature = "async")]
-    fn call_async_method<R>(&self, name: &str, args: impl IntoLuaMulti) -> impl Future<Output = Result<R>>
-    where
-        R: FromLuaMulti,
-    {
-        self.call_async_function(name, (self, args))
     }
 
     fn call_function<R>(&self, name: &str, args: impl IntoLuaMulti) -> Result<R>
@@ -68,21 +48,6 @@ impl ObjectLike for AnyUserData {
                 let msg = format!("attempt to call a {} value (function '{name}')", val.type_name());
                 Err(Error::RuntimeError(msg))
             }
-        }
-    }
-
-    #[cfg(feature = "async")]
-    fn call_async_function<R>(&self, name: &str, args: impl IntoLuaMulti) -> impl Future<Output = Result<R>>
-    where
-        R: FromLuaMulti,
-    {
-        match self.get(name) {
-            Ok(Value::Function(func)) => Either::Left(func.call_async(args)),
-            Ok(val) => {
-                let msg = format!("attempt to call a {} value (function '{name}')", val.type_name());
-                Either::Right(future::ready(Err(Error::RuntimeError(msg))))
-            }
-            Err(err) => Either::Right(future::ready(Err(err))),
         }
     }
 

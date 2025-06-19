@@ -14,17 +14,24 @@ use crate::{
     types::HookKind,
 };
 
-#[cfg(feature = "async")]
-use {
-    futures_util::stream::Stream,
-    std::{
-        future::Future,
-        marker::PhantomData,
-        pin::Pin,
-        ptr::NonNull,
-        task::{Context, Poll, Waker},
-    },
-};
+/// Continuation thread status. Can either be Ok, Yielded (rare, but can happen) or Error
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ContinuationStatus {
+    Ok,
+    Yielded,
+    Error(c_int),
+}
+
+impl ContinuationStatus {
+    #[allow(dead_code)]
+    pub(crate) fn from_status(status: c_int) -> Self {
+        match status {
+            ffi::LUA_YIELD => Self::Yielded,
+            ffi::LUA_OK => Self::Ok,
+            s => Self::Error(s),
+        }
+    }
+}
 
 /// Status of a Lua thread (coroutine).
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -45,27 +52,13 @@ pub enum ThreadStatus {
 ///
 /// The number in `New` and `Yielded` variants is the number of arguments pushed
 /// to the thread stack.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum ThreadStatusInner {
     New(c_int),
     Running,
     Yielded(c_int),
     Finished,
     Error,
-}
-
-impl ThreadStatusInner {
-    #[cfg(feature = "async")]
-    #[inline(always)]
-    fn is_resumable(self) -> bool {
-        matches!(self, ThreadStatusInner::New(_) | ThreadStatusInner::Yielded(_))
-    }
-
-    #[cfg(feature = "async")]
-    #[inline(always)]
-    fn is_yielded(self) -> bool {
-        matches!(self, ThreadStatusInner::Yielded(_))
-    }
 }
 
 /// Handle to an internal Lua thread (coroutine).
@@ -77,23 +70,33 @@ unsafe impl Send for Thread {}
 #[cfg(feature = "send")]
 unsafe impl Sync for Thread {}
 
-/// Thread (coroutine) representation as an async [`Future`] or [`Stream`].
-///
-/// [`Future`]: std::future::Future
-/// [`Stream`]: futures_util::stream::Stream
-#[cfg(feature = "async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-#[must_use = "futures do nothing unless you `.await` or poll them"]
-pub struct AsyncThread<R> {
-    thread: Thread,
-    ret: PhantomData<R>,
-    recycle: bool,
-}
-
 impl Thread {
     #[inline(always)]
     fn state(&self) -> *mut ffi::lua_State {
         self.1
+    }
+
+    /// Tries converting whatever is on the thread stack to ``R``.
+    ///
+    /// Useful if you know the thread has something but cannot extract it directly.
+    ///
+    /// # Safety
+    ///
+    /// Note that while this method is usually safe to call, the results returned
+    /// by this method could be used to induce memory unsafety. Note that all cases
+    /// of this happening, however, are bugs in mluau.
+    pub fn pop_results<R>(&self) -> Result<R>
+    where
+        R: FromLuaMulti,
+    {
+        unsafe {
+            let lua = self.0.lua.lock();
+            let thread_state = self.state();
+            let _sg = StackGuard::new(lua.state());
+            let _thread_sg = StackGuard::with_top(thread_state, 0);
+            let nresults = ffi::lua_gettop(thread_state);
+            R::from_specified_stack_multi(nresults, &lua, thread_state)
+        }
     }
 
     /// Resumes execution of this thread.
@@ -156,18 +159,12 @@ impl Thread {
             let _sg = StackGuard::new(state);
             let _thread_sg = StackGuard::with_top(thread_state, 0);
 
-            let nargs = args.push_into_stack_multi(&lua)?;
-            if nargs > 0 {
-                check_stack(thread_state, nargs)?;
-                ffi::lua_xmove(state, thread_state, nargs);
-                pushed_nargs += nargs;
-            }
+            let nargs = args.push_into_specified_stack_multi(&lua, thread_state)?;
+            pushed_nargs += nargs;
 
             let (_, nresults) = self.resume_inner(&lua, pushed_nargs)?;
-            check_stack(state, nresults + 1)?;
-            ffi::lua_xmove(thread_state, state, nresults);
 
-            R::from_stack_multi(nresults, &lua)
+            R::from_specified_stack_multi(nresults, &lua, thread_state)
         }
     }
 
@@ -192,15 +189,12 @@ impl Thread {
             let _sg = StackGuard::new(state);
             let _thread_sg = StackGuard::with_top(thread_state, 0);
 
-            check_stack(state, 1)?;
-            error.push_into_stack(&lua)?;
-            ffi::lua_xmove(state, thread_state, 1);
+            check_stack(thread_state, 1)?;
+            error.push_into_specified_stack(&lua, thread_state)?;
 
             let (_, nresults) = self.resume_inner(&lua, ffi::LUA_RESUMEERROR)?;
-            check_stack(state, nresults + 1)?;
-            ffi::lua_xmove(thread_state, state, nresults);
 
-            R::from_stack_multi(nresults, &lua)
+            R::from_specified_stack_multi(nresults, &lua, thread_state)
         }
     }
 
@@ -215,6 +209,7 @@ impl Thread {
         let ret = ffi::lua_resume(thread_state, state, nargs, &mut nresults as *mut c_int);
         #[cfg(feature = "luau")]
         let ret = ffi::lua_resumex(thread_state, state, nargs, &mut nresults as *mut c_int);
+
         match ret {
             ffi::LUA_OK => Ok((ThreadStatusInner::Finished, nresults)),
             ffi::LUA_YIELD => Ok((ThreadStatusInner::Yielded(0), nresults)),
@@ -248,11 +243,19 @@ impl Thread {
             return ThreadStatusInner::Running;
         }
         let status = unsafe { ffi::lua_status(thread_state) };
-        let top = unsafe { ffi::lua_gettop(thread_state) };
         match status {
-            ffi::LUA_YIELD => ThreadStatusInner::Yielded(top),
-            ffi::LUA_OK if top > 0 => ThreadStatusInner::New(top - 1),
-            ffi::LUA_OK => ThreadStatusInner::Finished,
+            ffi::LUA_YIELD => {
+                let top = unsafe { ffi::lua_gettop(thread_state) };
+                ThreadStatusInner::Yielded(top)
+            }
+            ffi::LUA_OK => {
+                let top = unsafe { ffi::lua_gettop(thread_state) };
+                if top > 0 {
+                    ThreadStatusInner::New(top - 1)
+                } else {
+                    ThreadStatusInner::Finished
+                }
+            }
             _ => ThreadStatusInner::Error,
         }
     }
@@ -312,7 +315,7 @@ impl Thread {
             self.reset_inner(status)?;
 
             // Push function to the top of the thread stack
-            ffi::lua_xpush(lua.ref_thread(), thread_state, func.0.index);
+            ffi::lua_xpush(lua.ref_thread(func.0.aux_thread), thread_state, func.0.index);
 
             #[cfg(feature = "luau")]
             {
@@ -361,79 +364,39 @@ impl Thread {
         }
     }
 
-    /// Converts [`Thread`] to an [`AsyncThread`] which implements [`Future`] and [`Stream`] traits.
+    /// Closes a thread and marks it as finished.
     ///
-    /// Only resumable threads can be converted to [`AsyncThread`].
+    /// In [Lua 5.4]: cleans its call stack and closes all pending to-be-closed variables.
+    /// Returns a error in case of either the original error that stopped the thread or errors
+    /// in closing methods.
     ///
-    /// `args` are pushed to the thread stack and will be used when the thread is resumed.
-    /// The object calls [`resume`] while polling and also allow to run Rust futures
-    /// to completion using an executor.
+    /// In Luau: resets to the initial state of a newly created Lua thread.
+    /// Lua threads in arbitrary states (like yielded or errored) can be reset properly.
     ///
-    /// Using [`AsyncThread`] as a [`Stream`] allow to iterate through [`coroutine.yield`]
-    /// values whereas [`Future`] version discards that values and poll until the final
-    /// one (returned from the thread function).
+    /// Requires `feature = "lua54"` OR `feature = "luau"`.
     ///
-    /// [`Future`]: std::future::Future
-    /// [`Stream`]: futures_util::stream::Stream
-    /// [`resume`]: https://www.lua.org/manual/5.4/manual.html#lua_resume
-    /// [`coroutine.yield`]: https://www.lua.org/manual/5.4/manual.html#pdf-coroutine.yield
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use mlua::{Lua, Result, Thread};
-    /// use futures_util::stream::TryStreamExt;
-    /// # #[tokio::main]
-    /// # async fn main() -> Result<()> {
-    /// # let lua = Lua::new();
-    /// let thread: Thread = lua.load(r#"
-    ///     coroutine.create(function (sum)
-    ///         for i = 1,10 do
-    ///             sum = sum + i
-    ///             coroutine.yield(sum)
-    ///         end
-    ///         return sum
-    ///     end)
-    /// "#).eval()?;
-    ///
-    /// let mut stream = thread.into_async::<i64>(1)?;
-    /// let mut sum = 0;
-    /// while let Some(n) = stream.try_next().await? {
-    ///     sum += n;
-    /// }
-    ///
-    /// assert_eq!(sum, 286);
-    ///
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub fn into_async<R>(self, args: impl IntoLuaMulti) -> Result<AsyncThread<R>>
-    where
-        R: FromLuaMulti,
-    {
+    /// [Lua 5.4]: https://www.lua.org/manual/5.4/manual.html#lua_closethread
+    #[cfg(any(feature = "lua54", feature = "luau"))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "lua54", feature = "luau"))))]
+    pub fn close(&self) -> Result<()> {
         let lua = self.0.lua.lock();
-        if !self.status_inner(&lua).is_resumable() {
-            return Err(Error::CoroutineUnresumable);
+        if self.status_inner(&lua) == ThreadStatusInner::Running {
+            return Err(Error::runtime("cannot reset a running thread"));
         }
 
-        let state = lua.state();
         let thread_state = self.state();
         unsafe {
-            let _sg = StackGuard::new(state);
-
-            let nargs = args.push_into_stack_multi(&lua)?;
-            if nargs > 0 {
-                check_stack(thread_state, nargs)?;
-                ffi::lua_xmove(state, thread_state, nargs);
+            #[cfg(all(feature = "lua54", not(feature = "vendored")))]
+            let status = ffi::lua_resetthread(thread_state);
+            #[cfg(all(feature = "lua54", feature = "vendored"))]
+            let status = ffi::lua_closethread(thread_state, lua.state());
+            #[cfg(feature = "lua54")]
+            if status != ffi::LUA_OK {
+                return Err(pop_error(thread_state, status));
             }
-
-            Ok(AsyncThread {
-                thread: self,
-                ret: PhantomData,
-                recycle: false,
-            })
+            #[cfg(feature = "luau")]
+            ffi::lua_resetthread(thread_state);
+            Ok(())
         }
     }
 
@@ -510,145 +473,6 @@ impl LuaType for Thread {
     const TYPE_ID: c_int = ffi::LUA_TTHREAD;
 }
 
-#[cfg(feature = "async")]
-impl<R> AsyncThread<R> {
-    #[inline(always)]
-    pub(crate) fn set_recyclable(&mut self, recyclable: bool) {
-        self.recycle = recyclable;
-    }
-}
-
-#[cfg(feature = "async")]
-impl<R> Drop for AsyncThread<R> {
-    fn drop(&mut self) {
-        if self.recycle {
-            if let Some(lua) = self.thread.0.lua.try_lock() {
-                unsafe {
-                    let mut status = self.thread.status_inner(&lua);
-                    if matches!(status, ThreadStatusInner::Yielded(0)) {
-                        // The thread is dropped while yielded, resume it with the "terminate" signal
-                        ffi::lua_pushlightuserdata(self.thread.1, crate::Lua::poll_terminate().0);
-                        if let Ok((new_status, _)) = self.thread.resume_inner(&lua, 1) {
-                            // `new_status` should always be `ThreadStatusInner::Yielded(0)`
-                            status = new_status;
-                        }
-                    }
-
-                    // For Lua 5.4 this also closes all pending to-be-closed variables
-                    if self.thread.reset_inner(status).is_ok() {
-                        lua.recycle_thread(&mut self.thread);
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[cfg(feature = "async")]
-impl<R: FromLuaMulti> Stream for AsyncThread<R> {
-    type Item = Result<R>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let lua = self.thread.0.lua.lock();
-        let nargs = match self.thread.status_inner(&lua) {
-            ThreadStatusInner::New(nargs) | ThreadStatusInner::Yielded(nargs) => nargs,
-            _ => return Poll::Ready(None),
-        };
-
-        let state = lua.state();
-        let thread_state = self.thread.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            let _thread_sg = StackGuard::with_top(thread_state, 0);
-            let _wg = WakerGuard::new(&lua, cx.waker());
-
-            let (status, nresults) = (self.thread).resume_inner(&lua, nargs)?;
-
-            if status.is_yielded() {
-                if nresults == 1 && is_poll_pending(thread_state) {
-                    return Poll::Pending;
-                }
-                // Continue polling
-                cx.waker().wake_by_ref();
-            }
-
-            check_stack(state, nresults + 1)?;
-            ffi::lua_xmove(thread_state, state, nresults);
-
-            Poll::Ready(Some(R::from_stack_multi(nresults, &lua)))
-        }
-    }
-}
-
-#[cfg(feature = "async")]
-impl<R: FromLuaMulti> Future for AsyncThread<R> {
-    type Output = Result<R>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let lua = self.thread.0.lua.lock();
-        let nargs = match self.thread.status_inner(&lua) {
-            ThreadStatusInner::New(nargs) | ThreadStatusInner::Yielded(nargs) => nargs,
-            _ => return Poll::Ready(Err(Error::CoroutineUnresumable)),
-        };
-
-        let state = lua.state();
-        let thread_state = self.thread.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            let _thread_sg = StackGuard::with_top(thread_state, 0);
-            let _wg = WakerGuard::new(&lua, cx.waker());
-
-            let (status, nresults) = self.thread.resume_inner(&lua, nargs)?;
-
-            if status.is_yielded() {
-                if !(nresults == 1 && is_poll_pending(thread_state)) {
-                    // Ignore value returned via yield()
-                    cx.waker().wake_by_ref();
-                }
-                return Poll::Pending;
-            }
-
-            check_stack(state, nresults + 1)?;
-            ffi::lua_xmove(thread_state, state, nresults);
-
-            Poll::Ready(R::from_stack_multi(nresults, &lua))
-        }
-    }
-}
-
-#[cfg(feature = "async")]
-#[inline(always)]
-unsafe fn is_poll_pending(state: *mut ffi::lua_State) -> bool {
-    ffi::lua_tolightuserdata(state, -1) == crate::Lua::poll_pending().0
-}
-
-#[cfg(feature = "async")]
-struct WakerGuard<'lua, 'a> {
-    lua: &'lua RawLua,
-    prev: NonNull<Waker>,
-    _phantom: PhantomData<&'a ()>,
-}
-
-#[cfg(feature = "async")]
-impl<'lua, 'a> WakerGuard<'lua, 'a> {
-    #[inline]
-    pub fn new(lua: &'lua RawLua, waker: &'a Waker) -> Result<WakerGuard<'lua, 'a>> {
-        let prev = unsafe { lua.set_waker(NonNull::from(waker)) };
-        Ok(WakerGuard {
-            lua,
-            prev,
-            _phantom: PhantomData,
-        })
-    }
-}
-
-#[cfg(feature = "async")]
-impl Drop for WakerGuard<'_, '_> {
-    fn drop(&mut self) {
-        unsafe { self.lua.set_waker(self.prev) };
-    }
-}
-
 #[cfg(test)]
 mod assertions {
     use super::*;
@@ -657,8 +481,4 @@ mod assertions {
     static_assertions::assert_not_impl_any!(Thread: Send);
     #[cfg(feature = "send")]
     static_assertions::assert_impl_all!(Thread: Send, Sync);
-    #[cfg(all(feature = "async", not(feature = "send")))]
-    static_assertions::assert_not_impl_any!(AsyncThread<()>: Send);
-    #[cfg(all(feature = "async", feature = "send"))]
-    static_assertions::assert_impl_all!(AsyncThread<()>: Send, Sync);
 }

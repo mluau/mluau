@@ -3,6 +3,8 @@ use std::os::raw::{c_int, c_void};
 use std::{mem, ptr, slice};
 
 use crate::error::{Error, Result};
+#[cfg(feature = "luau")]
+use crate::state::util::get_next_spot;
 use crate::state::Lua;
 use crate::table::Table;
 use crate::traits::{FromLuaMulti, IntoLua, IntoLuaMulti, LuaNativeFn, LuaNativeFnMut};
@@ -11,16 +13,6 @@ use crate::util::{
     assert_stack, check_stack, linenumber_to_usize, pop_error, ptr_to_lossy_str, ptr_to_str, StackGuard,
 };
 use crate::value::Value;
-
-#[cfg(feature = "async")]
-use {
-    crate::thread::AsyncThread,
-    crate::traits::LuaNativeAsyncFn,
-    crate::types::AsyncCallback,
-    std::future::{self, Future},
-    std::pin::Pin,
-    std::task::{Context, Poll},
-};
 
 /// Handle to an internal Lua function.
 #[derive(Clone, Debug, PartialEq)]
@@ -112,11 +104,11 @@ impl Function {
             check_stack(state, 2)?;
 
             // Push error handler
-            lua.push_error_traceback();
+            lua.push_error_traceback_at(state);
             let stack_start = ffi::lua_gettop(state);
             // Push function and the arguments
-            lua.push_ref(&self.0);
-            let nargs = args.push_into_stack_multi(&lua)?;
+            lua.push_ref_at(&self.0, state);
+            let nargs = args.push_into_specified_stack_multi(&lua, state)?;
             // Call the function
             let ret = ffi::lua_pcall(state, nargs, ffi::LUA_MULTRET, stack_start);
             if ret != ffi::LUA_OK {
@@ -124,51 +116,8 @@ impl Function {
             }
             // Get the results
             let nresults = ffi::lua_gettop(state) - stack_start;
-            R::from_stack_multi(nresults, &lua)
+            R::from_specified_stack_multi(nresults, &lua, state)
         }
-    }
-
-    /// Returns a future that, when polled, calls `self`, passing `args` as function arguments,
-    /// and drives the execution.
-    ///
-    /// Internally it wraps the function to an [`AsyncThread`]. The returned type implements
-    /// `Future<Output = Result<R>>` and can be awaited.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::time::Duration;
-    /// # use mlua::{Lua, Result};
-    /// # #[tokio::main]
-    /// # async fn main() -> Result<()> {
-    /// # let lua = Lua::new();
-    ///
-    /// let sleep = lua.create_async_function(move |_lua, n: u64| async move {
-    ///     tokio::time::sleep(Duration::from_millis(n)).await;
-    ///     Ok(())
-    /// })?;
-    ///
-    /// sleep.call_async::<()>(10).await?;
-    ///
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// [`AsyncThread`]: crate::AsyncThread
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub fn call_async<R>(&self, args: impl IntoLuaMulti) -> AsyncCallFuture<R>
-    where
-        R: FromLuaMulti,
-    {
-        let lua = self.0.lua.lock();
-        AsyncCallFuture(unsafe {
-            lua.create_recycled_thread(self).and_then(|th| {
-                let mut th = th.into_async(args)?;
-                th.set_recyclable(true);
-                Ok(th)
-            })
-        })
     }
 
     /// Returns a function that, when called, calls `self`, passing `args` as the first set of
@@ -234,7 +183,7 @@ impl Function {
 
             ffi::lua_pushinteger(state, nargs as ffi::lua_Integer);
             for arg in &args {
-                lua.push_value(arg)?;
+                lua.push_value_at(arg, state)?;
             }
             protect_lua!(state, nargs + 1, 1, fn(state) {
                 ffi::lua_pushcclosure(state, args_wrapper_impl, ffi::lua_gettop(state));
@@ -269,7 +218,7 @@ impl Function {
             let _sg = StackGuard::new(state);
             assert_stack(state, 1);
 
-            lua.push_ref(&self.0);
+            lua.push_ref_at(&self.0, state);
             if ffi::lua_iscfunction(state, -1) != 0 {
                 return None;
             }
@@ -306,14 +255,14 @@ impl Function {
             let _sg = StackGuard::new(state);
             check_stack(state, 2)?;
 
-            lua.push_ref(&self.0);
+            lua.push_ref_at(&self.0, state);
             if ffi::lua_iscfunction(state, -1) != 0 {
                 return Ok(false);
             }
 
             #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
             {
-                lua.push_ref(&env.0);
+                lua.push_ref_at(&env.0, state);
                 ffi::lua_setfenv(state, -2);
             }
             #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
@@ -329,7 +278,7 @@ impl Function {
                             .set_environment(env)
                             .try_cache()
                             .into_function()?;
-                        lua.push_ref(&f_with_env.0);
+                        lua.push_ref_at(&f_with_env.0, state);
                         ffi::lua_upvaluejoin(state, -2, i, -1, 1);
                         break;
                     }
@@ -354,7 +303,7 @@ impl Function {
             assert_stack(state, 1);
 
             let mut ar: ffi::lua_Debug = mem::zeroed();
-            lua.push_ref(&self.0);
+            lua.push_ref_at(&self.0, state);
             #[cfg(not(feature = "luau"))]
             let res = ffi::lua_getinfo(state, cstr!(">Sn"), &mut ar);
             #[cfg(feature = "luau")]
@@ -415,7 +364,7 @@ impl Function {
             let _sg = StackGuard::new(state);
             assert_stack(state, 1);
 
-            lua.push_ref(&self.0);
+            lua.push_ref_at(&self.0, state);
             let data_ptr = &mut data as *mut Vec<u8> as *mut c_void;
             ffi::lua_dump(state, writer, data_ptr, strip as i32);
             ffi::lua_pop(state, 1);
@@ -469,7 +418,7 @@ impl Function {
             let _sg = StackGuard::new(state);
             assert_stack(state, 1);
 
-            lua.push_ref(&self.0);
+            lua.push_ref_at(&self.0, state);
             let func_ptr = &mut func as *mut F as *mut c_void;
             ffi::lua_getcoverage(state, -1, func_ptr, callback::<F>);
         }
@@ -495,29 +444,48 @@ impl Function {
     pub fn deep_clone(&self) -> Result<Self> {
         let lua = self.0.lua.lock();
         let state = lua.state();
+        let ref_thread = lua.ref_thread(self.0.aux_thread);
         unsafe {
             let _sg = StackGuard::new(state);
-            check_stack(state, 2)?;
+            check_stack(ref_thread, 1)?;
 
-            lua.push_ref(&self.0);
-            if ffi::lua_iscfunction(state, -1) != 0 {
+            if ffi::lua_iscfunction(ref_thread, self.0.index) != 0 {
                 return Ok(self.clone());
             }
 
             if lua.unlikely_memory_error() {
-                ffi::lua_clonefunction(state, -1);
+                ffi::lua_clonefunction(ref_thread, self.0.index);
+
+                // Get the real next spot
+                let (aux_thread, index, replace) = get_next_spot(lua.extra());
+                ffi::lua_xmove(ref_thread, lua.ref_thread(aux_thread), 1);
+                if replace {
+                    ffi::lua_replace(lua.ref_thread(aux_thread), index);
+                }
+
+                Ok(Function(lua.new_value_ref(aux_thread, index)))
             } else {
-                protect_lua!(state, 1, 1, fn(state) ffi::lua_clonefunction(state, -1))?;
+                let ref_thread_internal = lua.ref_thread_internal();
+                check_stack(ref_thread_internal, 4)?; // 3+1
+                lua.push_ref_at(&self.0, ref_thread_internal);
+                protect_lua!(ref_thread_internal, 1, 1, move |ref_thread_internal| {
+                    ffi::lua_clonefunction(ref_thread_internal, -1)
+                })?;
+
+                // Get the real next spot
+                let (aux_thread, index, replace) = get_next_spot(lua.extra());
+                ffi::lua_xmove(ref_thread_internal, lua.ref_thread(aux_thread), 1);
+                if replace {
+                    ffi::lua_replace(lua.ref_thread(aux_thread), index);
+                }
+
+                Ok(Function(lua.new_value_ref(aux_thread, index)))
             }
-            Ok(Function(lua.pop_ref()))
         }
     }
 }
 
 struct WrappedFunction(pub(crate) Callback);
-
-#[cfg(feature = "async")]
-struct WrappedAsyncFunction(pub(crate) AsyncCallback);
 
 impl Function {
     /// Wraps a Rust function or closure, returning an opaque type that implements [`IntoLua`]
@@ -530,8 +498,9 @@ impl Function {
         R: IntoLuaMulti,
     {
         WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let args = A::from_stack_args(nargs, 1, None, lua)?;
-            func.call(args)?.push_into_stack_multi(lua)
+            let state = lua.state();
+            let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
+            func.call(args)?.push_into_specified_stack_multi(lua, state)
         }))
     }
 
@@ -545,8 +514,9 @@ impl Function {
         let func = RefCell::new(func);
         WrappedFunction(Box::new(move |lua, nargs| unsafe {
             let mut func = func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
-            let args = A::from_stack_args(nargs, 1, None, lua)?;
-            func.call(args)?.push_into_stack_multi(lua)
+            let state = lua.state();
+            let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
+            func.call(args)?.push_into_specified_stack_multi(lua, state)
         }))
     }
 
@@ -562,8 +532,9 @@ impl Function {
         A: FromLuaMulti,
     {
         WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let args = A::from_stack_args(nargs, 1, None, lua)?;
-            func.call(args).push_into_stack_multi(lua)
+            let state = lua.state();
+            let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
+            func.call(args).push_into_specified_stack_multi(lua, state)
         }))
     }
 
@@ -580,52 +551,9 @@ impl Function {
         let func = RefCell::new(func);
         WrappedFunction(Box::new(move |lua, nargs| unsafe {
             let mut func = func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
-            let args = A::from_stack_args(nargs, 1, None, lua)?;
-            func.call(args).push_into_stack_multi(lua)
-        }))
-    }
-
-    /// Wraps a Rust async function or closure, returning an opaque type that implements [`IntoLua`]
-    /// trait.
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub fn wrap_async<F, A, R>(func: F) -> impl IntoLua
-    where
-        F: LuaNativeAsyncFn<A, Output = Result<R>> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        WrappedAsyncFunction(Box::new(move |rawlua, nargs| unsafe {
-            let args = match A::from_stack_args(nargs, 1, None, rawlua) {
-                Ok(args) => args,
-                Err(e) => return Box::pin(future::ready(Err(e))),
-            };
-            let lua = rawlua.lua();
-            let fut = func.call(args);
-            Box::pin(async move { fut.await?.push_into_stack_multi(lua.raw_lua()) })
-        }))
-    }
-
-    /// Wraps a Rust async function or closure, returning an opaque type that implements [`IntoLua`]
-    /// trait.
-    ///
-    /// This function is similar to [`Function::wrap_async`] but any returned `Result` will be
-    /// converted to a `ok, err` tuple without throwing an exception.
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub fn wrap_raw_async<F, A>(func: F) -> impl IntoLua
-    where
-        F: LuaNativeAsyncFn<A> + MaybeSend + 'static,
-        A: FromLuaMulti,
-    {
-        WrappedAsyncFunction(Box::new(move |rawlua, nargs| unsafe {
-            let args = match A::from_stack_args(nargs, 1, None, rawlua) {
-                Ok(args) => args,
-                Err(e) => return Box::pin(future::ready(Err(e))),
-            };
-            let lua = rawlua.lua();
-            let fut = func.call(args);
-            Box::pin(async move { fut.await.push_into_stack_multi(lua.raw_lua()) })
+            let state = lua.state();
+            let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
+            func.call(args).push_into_specified_stack_multi(lua, state)
         }))
     }
 }
@@ -637,37 +565,8 @@ impl IntoLua for WrappedFunction {
     }
 }
 
-#[cfg(feature = "async")]
-impl IntoLua for WrappedAsyncFunction {
-    #[inline]
-    fn into_lua(self, lua: &Lua) -> Result<Value> {
-        lua.lock().create_async_callback(self.0).map(Value::Function)
-    }
-}
-
 impl LuaType for Function {
     const TYPE_ID: c_int = ffi::LUA_TFUNCTION;
-}
-
-#[cfg(feature = "async")]
-#[must_use = "futures do nothing unless you `.await` or poll them"]
-pub struct AsyncCallFuture<R: FromLuaMulti>(Result<AsyncThread<R>>);
-
-#[cfg(feature = "async")]
-impl<R: FromLuaMulti> Future for AsyncCallFuture<R> {
-    type Output = Result<R>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // Safety: We're not moving any pinned data
-        let this = unsafe { self.get_unchecked_mut() };
-        match &mut this.0 {
-            Ok(thread) => {
-                let pinned_thread = unsafe { Pin::new_unchecked(thread) };
-                pinned_thread.poll(cx)
-            }
-            Err(err) => Poll::Ready(Err(err.clone())),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -678,7 +577,4 @@ mod assertions {
     static_assertions::assert_not_impl_any!(Function: Send);
     #[cfg(feature = "send")]
     static_assertions::assert_impl_all!(Function: Send, Sync);
-
-    #[cfg(all(feature = "async", feature = "send"))]
-    static_assertions::assert_impl_all!(AsyncCallFuture<()>: Send);
 }
