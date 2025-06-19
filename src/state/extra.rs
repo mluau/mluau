@@ -13,22 +13,62 @@ use crate::error::Result;
 use crate::state::RawLua;
 use crate::stdlib::StdLib;
 use crate::types::{AppData, ReentrantMutex, XRc};
+
 use crate::userdata::RawUserDataRegistry;
 use crate::util::{get_internal_metatable, push_internal_userdata, TypeKey, WrappedFailure};
 
 #[cfg(any(feature = "luau", doc))]
 use crate::chunk::Compiler;
-
-#[cfg(feature = "async")]
-use {futures_util::task::noop_waker_ref, std::ptr::NonNull, std::task::Waker};
+use crate::MultiValue;
 
 use super::{Lua, WeakLua};
+
+#[cfg(feature = "luau-lute")]
+use crate::luau::lute::{LuteChildVmType, LuteRuntimeHandle};
 
 // Unique key to store `ExtraData` in the registry
 static EXTRA_REGISTRY_KEY: u8 = 0;
 
 const WRAPPED_FAILURE_POOL_DEFAULT_CAPACITY: usize = 64;
 const REF_STACK_RESERVE: c_int = 3;
+
+pub(crate) struct RefThread {
+    pub(super) ref_thread: *mut ffi::lua_State,
+    pub(super) stack_size: c_int,
+    pub(super) stack_top: c_int,
+    pub(super) free: Vec<c_int>,
+}
+
+impl RefThread {
+    #[inline(always)]
+    pub(crate) unsafe fn new(state: *mut ffi::lua_State) -> Self {
+        // Create ref stack thread and place it in the registry to prevent it
+        // from being garbage collected.
+        let ref_thread = mlua_expect!(
+            protect_lua!(state, 0, 0, |state| {
+                let thread = ffi::lua_newthread(state);
+                ffi::luaL_ref(state, ffi::LUA_REGISTRYINDEX);
+                thread
+            }),
+            "Error while creating ref thread",
+        );
+
+        // Store `error_traceback` function on the ref stack
+        #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
+        {
+            ffi::lua_pushcfunction(ref_thread, crate::util::error_traceback);
+            assert_eq!(ffi::lua_gettop(ref_thread), ExtraData::ERROR_TRACEBACK_IDX);
+        }
+
+        RefThread {
+            ref_thread,
+            // We need some reserved stack space to move values in and out of the ref stack.
+            stack_size: ffi::LUA_MINSTACK - REF_STACK_RESERVE,
+            stack_top: ffi::lua_gettop(ref_thread),
+            free: Vec::new(),
+        }
+    }
+}
 
 /// Data associated with the Lua state.
 pub(crate) struct ExtraData {
@@ -37,6 +77,7 @@ pub(crate) struct ExtraData {
     pub(super) owned: bool,
 
     pub(super) pending_userdata_reg: FxHashMap<TypeId, RawUserDataRegistry>,
+    pub(super) registered_userdata_dtors: FxHashMap<TypeId, ffi::lua_CFunction>,
     pub(super) registered_userdata_t: FxHashMap<TypeId, c_int>,
     pub(super) registered_userdata_mt: FxHashMap<*const c_void, Option<TypeId>>,
     pub(super) last_checked_userdata_mt: (*const c_void, Option<TypeId>),
@@ -53,25 +94,17 @@ pub(crate) struct ExtraData {
     // Used in module mode
     pub(super) skip_memory_check: bool,
 
-    // Auxiliary thread to store references
-    pub(super) ref_thread: *mut ffi::lua_State,
-    pub(super) ref_stack_size: c_int,
-    pub(super) ref_stack_top: c_int,
-    pub(super) ref_free: Vec<c_int>,
+    // Auxiliary threads to store references
+    pub(super) ref_thread: Vec<RefThread>,
+    // Special auxiliary thread for mlua internal use
+    pub(super) ref_thread_internal: RefThread,
 
     // Pool of `WrappedFailure` enums in the ref thread (as userdata)
     pub(super) wrapped_failure_pool: Vec<c_int>,
     pub(super) wrapped_failure_top: usize,
-    // Pool of `Thread`s (coroutines) for async execution
-    #[cfg(feature = "async")]
-    pub(super) thread_pool: Vec<c_int>,
 
     // Address of `WrappedFailure` metatable
     pub(super) wrapped_failure_mt_ptr: *const c_void,
-
-    // Waker for polling futures
-    #[cfg(feature = "async")]
-    pub(super) waker: NonNull<Waker>,
 
     #[cfg(not(feature = "luau"))]
     pub(super) hook_callback: Option<crate::types::HookCallback>,
@@ -94,6 +127,22 @@ pub(crate) struct ExtraData {
     pub(super) compiler: Option<Compiler>,
     #[cfg(feature = "luau-jit")]
     pub(super) enable_jit: bool,
+
+    #[cfg(feature = "luau-lute")]
+    pub(crate) lute_handle: Option<LuteRuntimeHandle>,
+
+    #[cfg(all(feature = "luau-lute", feature = "send"))]
+    pub(crate) lute_runtimeinitter:
+        Option<Box<dyn Fn(&Lua, &Lua, LuteChildVmType) -> Result<()> + Send + Sync + 'static>>,
+    #[cfg(all(feature = "luau-lute", not(feature = "send")))]
+    pub(crate) lute_runtimeinitter: Option<Box<dyn Fn(&Lua, &Lua, LuteChildVmType) -> Result<()> + 'static>>,
+
+    // Child lua VM's may not be dropped from mluau
+    #[cfg(feature = "luau-lute")]
+    pub(crate) no_drop: bool,
+
+    // Values currently being yielded from Lua.yield()
+    pub(super) yielded_values: Option<MultiValue>,
 }
 
 impl Drop for ExtraData {
@@ -124,17 +173,6 @@ impl ExtraData {
     pub(super) const ERROR_TRACEBACK_IDX: c_int = 1;
 
     pub(super) unsafe fn init(state: *mut ffi::lua_State, owned: bool) -> XRc<UnsafeCell<Self>> {
-        // Create ref stack thread and place it in the registry to prevent it
-        // from being garbage collected.
-        let ref_thread = mlua_expect!(
-            protect_lua!(state, 0, 0, |state| {
-                let thread = ffi::lua_newthread(state);
-                ffi::luaL_ref(state, ffi::LUA_REGISTRYINDEX);
-                thread
-            }),
-            "Error while creating ref thread",
-        );
-
         let wrapped_failure_mt_ptr = {
             get_internal_metatable::<WrappedFailure>(state);
             let ptr = ffi::lua_topointer(state, -1);
@@ -142,19 +180,13 @@ impl ExtraData {
             ptr
         };
 
-        // Store `error_traceback` function on the ref stack
-        #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
-        {
-            ffi::lua_pushcfunction(ref_thread, crate::util::error_traceback);
-            assert_eq!(ffi::lua_gettop(ref_thread), Self::ERROR_TRACEBACK_IDX);
-        }
-
         #[allow(clippy::arc_with_non_send_sync)]
         let extra = XRc::new(UnsafeCell::new(ExtraData {
             lua: MaybeUninit::uninit(),
             weak: MaybeUninit::uninit(),
             owned,
             pending_userdata_reg: FxHashMap::default(),
+            registered_userdata_dtors: FxHashMap::default(),
             registered_userdata_t: FxHashMap::default(),
             registered_userdata_mt: FxHashMap::default(),
             last_checked_userdata_mt: (ptr::null(), None),
@@ -164,18 +196,11 @@ impl ExtraData {
             safe: false,
             libs: StdLib::NONE,
             skip_memory_check: false,
-            ref_thread,
-            // We need some reserved stack space to move values in and out of the ref stack.
-            ref_stack_size: ffi::LUA_MINSTACK - REF_STACK_RESERVE,
-            ref_stack_top: ffi::lua_gettop(ref_thread),
-            ref_free: Vec::new(),
+            ref_thread: vec![RefThread::new(state)],
+            ref_thread_internal: RefThread::new(state),
             wrapped_failure_pool: Vec::with_capacity(WRAPPED_FAILURE_POOL_DEFAULT_CAPACITY),
             wrapped_failure_top: 0,
-            #[cfg(feature = "async")]
-            thread_pool: Vec::new(),
             wrapped_failure_mt_ptr,
-            #[cfg(feature = "async")]
-            waker: NonNull::from(noop_waker_ref()),
             #[cfg(not(feature = "luau"))]
             hook_callback: None,
             #[cfg(not(feature = "luau"))]
@@ -196,6 +221,13 @@ impl ExtraData {
             enable_jit: true,
             #[cfg(feature = "luau")]
             running_gc: false,
+            #[cfg(feature = "luau-lute")]
+            lute_handle: None,
+            #[cfg(feature = "luau-lute")]
+            lute_runtimeinitter: None,
+            #[cfg(feature = "luau-lute")]
+            no_drop: false,
+            yielded_values: None,
         }));
 
         // Store it in the registry
@@ -260,31 +292,8 @@ impl ExtraData {
         self.weak.assume_init_ref()
     }
 
-    /// Pops a reference from top of the auxiliary stack and move it to a first free slot.
-    pub(super) unsafe fn ref_stack_pop(&mut self) -> c_int {
-        if let Some(free) = self.ref_free.pop() {
-            ffi::lua_replace(self.ref_thread, free);
-            return free;
-        }
-
-        // Try to grow max stack size
-        if self.ref_stack_top >= self.ref_stack_size {
-            let mut inc = self.ref_stack_size; // Try to double stack size
-            while inc > 0 && ffi::lua_checkstack(self.ref_thread, inc) == 0 {
-                inc /= 2;
-            }
-            if inc == 0 {
-                // Pop item on top of the stack to avoid stack leaking and successfully run destructors
-                // during unwinding.
-                ffi::lua_pop(self.ref_thread, 1);
-                let top = self.ref_stack_top;
-                // It is a user error to create too many references to exhaust the Lua max stack size
-                // for the ref thread.
-                panic!("cannot create a Lua reference, out of auxiliary stack space (used {top} slots)");
-            }
-            self.ref_stack_size += inc;
-        }
-        self.ref_stack_top += 1;
-        self.ref_stack_top
+    #[inline(always)]
+    pub(crate) unsafe fn get_userdata_dtor(&self, type_id: TypeId) -> Option<ffi::lua_CFunction> {
+        self.registered_userdata_dtors.get(&type_id).copied()
     }
 }
