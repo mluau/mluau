@@ -31,12 +31,17 @@ pub fn probe_lua() {
         }
 
         if cfg!(feature = "luau-lute-prebuilt") {
-            #[cfg(not(feature = "luau-lute-crypto"))]
+            #[cfg(feature = "luau-lute-crypto")]
             {
                 compile_error!("Prebuilt lute runtime does not support crypto feature");
-            #[cfg(not(feature = "luau-lute-net"))]
+            }
+            #[cfg(feature = "luau-lute-net")]
             {
                 compile_error!("Prebuilt lute runtime does not support net feature");
+            }
+            #[cfg(feature = "luau-jit")]
+            {
+                compile_error!("Prebuilt lute runtime does not support native code generation yet (to be supported in the future)");
             }
 
             lute_prebuilts_chooser::integrate();

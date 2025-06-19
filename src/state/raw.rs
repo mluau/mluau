@@ -73,7 +73,7 @@ static SETUP_LUTE_RUNTIME_INITTER: LazyLock<()> = LazyLock::new(|| {
                     let parent_lua = (*extra).lua();
 
                     // Child VM: We cannot drop this state, it is owned by the Lute runtime
-                    let mut rawlua = RawLua::new_ext(StdLib::ALL_SAFE, &LuaOptions::default(), true);
+                    let rawlua = RawLua::new_ext(StdLib::ALL_SAFE, &LuaOptions::default(), true);
                     (*rawlua.lock().extra.get()).no_drop = true;
 
                     if !(*wrapper).runtime_to_set.is_null() {
@@ -100,7 +100,7 @@ static SETUP_LUTE_RUNTIME_INITTER: LazyLock<()> = LazyLock::new(|| {
                     // Data Copy VM: We cannot drop this state, it is owned by the Lute runtime
                     //
                     // Unlike the child VM, we don't need to explicitly set a runtime on data copy VM.
-                    let mut rawlua_dc = RawLua::new_ext(StdLib::ALL_SAFE, &LuaOptions::default(), true);
+                    let rawlua_dc = RawLua::new_ext(StdLib::ALL_SAFE, &LuaOptions::default(), true);
                     (*rawlua_dc.lock().extra.get()).no_drop = true;
 
                     let dc_lua = Lua {
@@ -274,7 +274,7 @@ impl RawLua {
             // SAFETY: is_lute_loaded() ensures that lute_handle is Some()
             // and no one should be calling load_lute_stdlib while holding a
             // mutable reference to the lute handle.
-            let mut handle = (*extra).lute_handle.as_mut().unwrap_unchecked();
+            let handle = (*extra).lute_handle.as_mut().unwrap_unchecked();
 
             let state = self.main_state();
             let _sg = StackGuard::new(state);
