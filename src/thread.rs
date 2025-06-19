@@ -19,7 +19,7 @@ use crate::{
 pub enum ContinuationStatus {
     Ok,
     Yielded,
-    Error,
+    Error(c_int),
 }
 
 impl ContinuationStatus {
@@ -28,7 +28,7 @@ impl ContinuationStatus {
         match status {
             ffi::LUA_YIELD => Self::Yielded,
             ffi::LUA_OK => Self::Ok,
-            _ => Self::Error,
+            s => Self::Error(s),
         }
     }
 }
@@ -52,7 +52,7 @@ pub enum ThreadStatus {
 ///
 /// The number in `New` and `Yielded` variants is the number of arguments pushed
 /// to the thread stack.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum ThreadStatusInner {
     New(c_int),
     Running,
@@ -74,6 +74,29 @@ impl Thread {
     #[inline(always)]
     fn state(&self) -> *mut ffi::lua_State {
         self.1
+    }
+
+    /// Tries converting whatever is on the thread stack to ``R``.
+    ///
+    /// Useful if you know the thread has something but cannot extract it directly.
+    ///
+    /// # Safety
+    ///
+    /// Note that while this method is usually safe to call, the results returned
+    /// by this method could be used to induce memory unsafety. Note that all cases
+    /// of this happening, however, are bugs in mluau.
+    pub fn pop_results<R>(&self) -> Result<R>
+    where
+        R: FromLuaMulti,
+    {
+        unsafe {
+            let lua = self.0.lua.lock();
+            let thread_state = self.state();
+            let _sg = StackGuard::new(lua.state());
+            let _thread_sg = StackGuard::with_top(thread_state, 0);
+            let nresults = ffi::lua_gettop(thread_state);
+            R::from_specified_stack_multi(nresults, &lua, thread_state)
+        }
     }
 
     /// Resumes execution of this thread.
@@ -338,6 +361,42 @@ impl Thread {
 
                 Ok(())
             }
+        }
+    }
+
+    /// Closes a thread and marks it as finished.
+    ///
+    /// In [Lua 5.4]: cleans its call stack and closes all pending to-be-closed variables.
+    /// Returns a error in case of either the original error that stopped the thread or errors
+    /// in closing methods.
+    ///
+    /// In Luau: resets to the initial state of a newly created Lua thread.
+    /// Lua threads in arbitrary states (like yielded or errored) can be reset properly.
+    ///
+    /// Requires `feature = "lua54"` OR `feature = "luau"`.
+    ///
+    /// [Lua 5.4]: https://www.lua.org/manual/5.4/manual.html#lua_closethread
+    #[cfg(any(feature = "lua54", feature = "luau"))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "lua54", feature = "luau"))))]
+    pub fn close(&self) -> Result<()> {
+        let lua = self.0.lua.lock();
+        if self.status_inner(&lua) == ThreadStatusInner::Running {
+            return Err(Error::runtime("cannot reset a running thread"));
+        }
+
+        let thread_state = self.state();
+        unsafe {
+            #[cfg(all(feature = "lua54", not(feature = "vendored")))]
+            let status = ffi::lua_resetthread(thread_state);
+            #[cfg(all(feature = "lua54", feature = "vendored"))]
+            let status = ffi::lua_closethread(thread_state, lua.state());
+            #[cfg(feature = "lua54")]
+            if status != ffi::LUA_OK {
+                return Err(pop_error(thread_state, status));
+            }
+            #[cfg(feature = "luau")]
+            ffi::lua_resetthread(thread_state);
+            Ok(())
         }
     }
 

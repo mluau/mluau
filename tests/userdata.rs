@@ -466,12 +466,17 @@ fn test_functions() -> Result<()> {
 
     impl UserData for MyUserData {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_function("get_value", |_, ud: AnyUserData| Ok(ud.borrow::<MyUserData>()?.0));
-            methods.add_function_mut("set_value", |_, (ud, value): (AnyUserData, i64)| {
+            methods.add_function("get_value_fn", |_, ud: AnyUserData| {
+                Ok(ud.borrow::<MyUserData>()?.0)
+            });
+            methods.add_function_mut("set_value_fn", |_, (ud, value): (AnyUserData, i64)| {
                 ud.borrow_mut::<MyUserData>()?.0 = value;
                 Ok(())
             });
             methods.add_function("get_constant", |_, ()| Ok(7));
+            methods.add_function("not_me", |_, ud: AnyUserData| {
+                Ok(ud.borrow::<MyUserData>().is_err())
+            });
         }
     }
 
@@ -482,15 +487,20 @@ fn test_functions() -> Result<()> {
     lua.load(
         r#"
         function get_it()
-            return userdata:get_value()
+            return userdata:get_value_fn()
         end
 
         function set_it(i)
-            return userdata:set_value(i)
+            return userdata:set_value_fn(i)
         end
 
         function get_constant()
             return userdata.get_constant()
+        end
+
+        function not_me()
+            local s = newproxy(true)
+            return userdata.not_me(s)
         end
     "#,
     )
@@ -504,6 +514,54 @@ fn test_functions() -> Result<()> {
     set.call::<()>(100)?;
     assert_eq!(get.call::<i64>(())?, 100);
     assert_eq!(get_constant.call::<i64>(())?, 7);
+
+    #[cfg(feature = "luau")]
+    assert!(globals.get::<Function>("not_me")?.call::<bool>(()).unwrap());
+
+    Ok(())
+}
+
+// Small test to ensure a failed namecall works right
+#[test]
+#[cfg(feature = "luau")]
+fn test_methods_namecall() -> Result<()> {
+    struct MyUserData(i64);
+
+    impl UserData for MyUserData {
+        fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+            methods.add_method_mut("incr_and_error", |_, ud, _: ()| {
+                ud.0 += 1;
+                if false {
+                    return Ok(());
+                }
+                Err(mlua::Error::external("This is an error!"))
+            });
+        }
+    }
+
+    let lua = Lua::new();
+    let globals = lua.globals();
+    let userdata = lua.create_userdata(MyUserData(42))?;
+    globals.set("userdata", &userdata)?;
+    lua.load(
+        r#"
+        function get_it()
+            return userdata:incr_and_error()
+        end
+
+        function fail()
+            local np = newproxy(true)
+            return userdata.incr_and_error(np)
+        end
+    "#,
+    )
+    .exec()?;
+    let get = globals.get::<Function>("get_it")?;
+    let e = get.call::<i64>(());
+    println!("get_it result: {:?}", e);
+    assert!(userdata.borrow::<MyUserData>()?.0 == 43);
+    let fail = globals.get::<Function>("fail")?;
+    assert!(fail.call::<i64>(()).is_err());
 
     Ok(())
 }
@@ -635,7 +693,11 @@ fn test_metatable() -> Result<()> {
         .map(|kv: Result<(_, Value)>| Ok(kv?.0))
         .collect::<Result<Vec<_>>>()?;
     methods.sort();
+
+    #[cfg(not(feature = "luau"))]
     assert_eq!(methods, vec!["__index", MetaMethod::Type.name()]);
+    #[cfg(feature = "luau")]
+    assert_eq!(methods, vec!["__index", "__namecall", MetaMethod::Type.name()]);
 
     #[derive(Copy, Clone)]
     struct MyUserData2;
@@ -664,6 +726,16 @@ fn test_metatable() -> Result<()> {
     let ud = lua.create_userdata(MyUserData3)?;
     let metatable = ud.metatable()?;
     assert_eq!(metatable.get::<String>(MetaMethod::Type)?.to_str()?, "CustomName");
+
+    unsafe {
+        let underlying_metatable = ud.underlying_metatable()?;
+        assert_eq!(
+            underlying_metatable
+                .get::<String>(MetaMethod::Type.to_string())?
+                .to_str()?,
+            "CustomName"
+        );
+    }
 
     Ok(())
 }

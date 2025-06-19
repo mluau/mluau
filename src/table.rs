@@ -834,7 +834,7 @@ where
             let len = ffi::lua_rawlen(state, -1);
             for i in 0..len {
                 ffi::lua_rawgeti(state, -1, (i + 1) as _);
-                let val = lua.pop_value_at(state);
+                let val = lua.pop_value_at(state).unwrap_or(Nil);
                 if val == Nil {
                     return i == other.len();
                 }
@@ -1067,7 +1067,7 @@ where
                 // a permitted operation.
                 // It fails only if the key is not found (never existed) which seems impossible scenario.
                 if ffi::lua_next(state, -2) != 0 {
-                    let key = lua.stack_value_at(-2, None, state);
+                    let key = lua.stack_value_at(-2, None, state)?;
                     Ok(Some((
                         key.clone(),
                         K::from_lua(key, lua.lua())?,
