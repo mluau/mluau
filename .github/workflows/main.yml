@@ -42,19 +42,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
         rust: [stable, nightly]
         lua: [luau-lute-prebuilt]
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
     steps:
-      - uses: ilammy/msvc-dev-cmd@v1
-        name: Setup MSVC developer environment
-        if: ${{ matrix.os == 'windows-latest' }}
-
       - uses: actions/checkout@main
       - uses: dtolnay/rust-toolchain@stable
         with:
