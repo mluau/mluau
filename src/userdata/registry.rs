@@ -764,5 +764,5 @@ lua_userdata_impl!(std::sync::Arc<parking_lot::RwLock<T>>);
 #[cfg(test)]
 mod assertions {
     #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(super::UserDataRegistry<String>: Send);
+    static_assertions::assert_impl_all!(super::RawUserDataRegistry: Send);
 }
