@@ -59,9 +59,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run ${{ matrix.lua }} tests
         run: |
-          cargo test --no-default-features --features "${{ matrix.lua }},vendored"
-          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers"
-          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send"
+          cargo test --no-default-features --features "${{ matrix.lua }},vendored" --release
+          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers" --release 
+          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send" --release
         shell: bash
 
   test_with_sanitizer:
