@@ -28,7 +28,7 @@ use super::{Lua, WeakLua};
 static EXTRA_REGISTRY_KEY: u8 = 0;
 
 const WRAPPED_FAILURE_POOL_DEFAULT_CAPACITY: usize = 64;
-const REF_STACK_RESERVE: c_int = 2;
+const REF_STACK_RESERVE: c_int = 3;
 
 /// Data associated with the Lua state.
 pub(crate) struct ExtraData {
@@ -258,5 +258,33 @@ impl ExtraData {
     #[inline(always)]
     pub(super) unsafe fn weak(&self) -> &WeakLua {
         self.weak.assume_init_ref()
+    }
+
+    /// Pops a reference from top of the auxiliary stack and move it to a first free slot.
+    pub(super) unsafe fn ref_stack_pop(&mut self) -> c_int {
+        if let Some(free) = self.ref_free.pop() {
+            ffi::lua_replace(self.ref_thread, free);
+            return free;
+        }
+
+        // Try to grow max stack size
+        if self.ref_stack_top >= self.ref_stack_size {
+            let mut inc = self.ref_stack_size; // Try to double stack size
+            while inc > 0 && ffi::lua_checkstack(self.ref_thread, inc) == 0 {
+                inc /= 2;
+            }
+            if inc == 0 {
+                // Pop item on top of the stack to avoid stack leaking and successfully run destructors
+                // during unwinding.
+                ffi::lua_pop(self.ref_thread, 1);
+                let top = self.ref_stack_top;
+                // It is a user error to create too many references to exhaust the Lua max stack size
+                // for the ref thread.
+                panic!("cannot create a Lua reference, out of auxiliary stack space (used {top} slots)");
+            }
+            self.ref_stack_size += inc;
+        }
+        self.ref_stack_top += 1;
+        self.ref_stack_top
     }
 }

@@ -11,7 +11,7 @@ use crate::chunk::ChunkMode;
 use crate::error::{Error, Result};
 use crate::function::Function;
 use crate::memory::{MemoryState, ALLOCATOR};
-use crate::state::util::{callback_error_ext, ref_stack_pop};
+use crate::state::util::callback_error_ext;
 use crate::stdlib::StdLib;
 use crate::string::String;
 use crate::table::Table;
@@ -694,7 +694,7 @@ impl RawLua {
 
     /// Pops a value from the Lua stack.
     ///
-    /// Uses 2 stack spaces, does not call `checkstack`.
+    /// Uses up to 1 stack spaces, does not call `checkstack`.
     pub(crate) unsafe fn pop_value(&self) -> Value {
         let value = self.stack_value(-1, None);
         ffi::lua_pop(self.state(), 1);
@@ -702,6 +702,8 @@ impl RawLua {
     }
 
     /// Returns value at given stack index without popping it.
+    ///
+    /// Uses up to 1 stack spaces, does not call `checkstack`.
     pub(crate) unsafe fn stack_value(&self, idx: c_int, type_hint: Option<c_int>) -> Value {
         let state = self.state();
         match type_hint.unwrap_or_else(|| ffi::lua_type(state, idx)) {
@@ -757,25 +759,21 @@ impl RawLua {
             }
 
             ffi::LUA_TUSERDATA => {
-                let ref_thread = self.ref_thread();
-                ffi::lua_xpush(state, ref_thread, idx);
-
                 // If the userdata is `WrappedFailure`, process it as an error or panic.
                 let failure_mt_ptr = (*self.extra.get()).wrapped_failure_mt_ptr;
-                match get_internal_userdata::<WrappedFailure>(ref_thread, -1, failure_mt_ptr).as_mut() {
-                    Some(WrappedFailure::Error(err)) => {
-                        ffi::lua_pop(ref_thread, 1);
-                        Value::Error(Box::new(err.clone()))
-                    }
+                match get_internal_userdata::<WrappedFailure>(state, idx, failure_mt_ptr).as_mut() {
+                    Some(WrappedFailure::Error(err)) => Value::Error(Box::new(err.clone())),
                     Some(WrappedFailure::Panic(panic)) => {
-                        ffi::lua_pop(ref_thread, 1);
                         if let Some(panic) = panic.take() {
                             resume_unwind(panic);
                         }
                         // Previously resumed panic?
                         Value::Nil
                     }
-                    _ => Value::UserData(AnyUserData(self.pop_ref_thread())),
+                    _ => {
+                        ffi::lua_xpush(state, self.ref_thread(), idx);
+                        Value::UserData(AnyUserData(self.pop_ref_thread()))
+                    }
                 }
             }
 
@@ -818,21 +816,21 @@ impl RawLua {
     #[inline]
     pub(crate) unsafe fn pop_ref(&self) -> ValueRef {
         ffi::lua_xmove(self.state(), self.ref_thread(), 1);
-        let index = ref_stack_pop(self.extra.get());
+        let index = (*self.extra.get()).ref_stack_pop();
         ValueRef::new(self, index)
     }
 
     // Same as `pop_ref` but assumes the value is already on the reference thread
     #[inline]
     pub(crate) unsafe fn pop_ref_thread(&self) -> ValueRef {
-        let index = ref_stack_pop(self.extra.get());
+        let index = (*self.extra.get()).ref_stack_pop();
         ValueRef::new(self, index)
     }
 
     #[inline]
     pub(crate) unsafe fn clone_ref(&self, vref: &ValueRef) -> ValueRef {
         ffi::lua_pushvalue(self.ref_thread(), vref.index);
-        let index = ref_stack_pop(self.extra.get());
+        let index = (*self.extra.get()).ref_stack_pop();
         ValueRef::new(self, index)
     }
 
@@ -1264,7 +1262,7 @@ impl RawLua {
                 if nargs == 1 && ffi::lua_tolightuserdata(state, -1) == Lua::poll_terminate().0 {
                     // Destroy the future and terminate the Lua thread
                     (*upvalue).data.take();
-                    ffi::lua_pushinteger(state, 0);
+                    ffi::lua_pushinteger(state, -1);
                     return Ok(1);
                 }
 
@@ -1349,6 +1347,10 @@ impl RawLua {
                         return res
                     elseif nres == 2 then
                         return res, res2
+                    elseif nres < 0 then
+                        -- Negative `nres` means that the future is terminated
+                        -- It must stay yielded and never be resumed again
+                        yield()
                     else
                         return unpack(res, nres)
                     end
