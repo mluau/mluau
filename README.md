@@ -5,7 +5,7 @@
 [![Build Status]][github-actions] [![API Documentation]][docs.rs] ![MSRV]
 
 [Build Status]: https://github.com/mluau/mluau/workflows/CI/badge.svg 
-[github-actions]: https://github.com/mluau/mluau/actions
+[github-actions]: https://github.com/mluau/mluau/actions 
 
 <!-- [Latest Version]: https://img.shields.io/crates/v/mlua.svg
 [crates.io]: https://crates.io/crates/mlua -->
