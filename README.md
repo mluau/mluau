@@ -1,16 +1,21 @@
 # mluau
+
 <!-- [![Build Status]][github-actions] [![Latest Version]][crates.io] [![API Documentation]][docs.rs] [![Coverage Status]][codecov.io] ![MSRV] -->
 
 [![Build Status]][github-actions] [![API Documentation]][docs.rs] ![MSRV]
 
 [Build Status]: https://github.com/mluau/mluau/workflows/CI/badge.svg
 [github-actions]: https://github.com/mluau/mluau/actions
+
 <!-- [Latest Version]: https://img.shields.io/crates/v/mlua.svg
 [crates.io]: https://crates.io/crates/mlua -->
+
 [API Documentation]: https://docs.rs/mlua/badge.svg
 [docs.rs]: https://docs.rs/mlua
+
 <!-- [Coverage Status]: https://codecov.io/gh/mluau/mluau/branch/main/graph/badge.svg?token=99339FS1CG
 [codecov.io]: https://codecov.io/gh/mluau/mlua -->
+
 [MSRV]: https://img.shields.io/badge/rust-1.79+-brightgreen.svg?&logo=rust
 
 [Guided Tour] | [Benchmarks] | [FAQ]
@@ -27,20 +32,20 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
 - Thread stack optimizations and bug fixes:
   - Removes unnecessary copies of the main thread stack to improve resume/yield performance.
   - Uses an auxiliary thread list to prevent panicking if user code makes more than 1 million references to Rust-side code.
-- *Removal of async support.*
+- _Removal of async support._
   - `mlua`'s async implementation is prone to freezes and deadlocks, and doesn't fit in as well as we'd like with Luau and the Luau ecosystem in mind.
   - Not to worry! We're looking to replace it with a dedicated Luau-focused scheduler in the future, and are working on making sure it's rock solid just like the rest of Luau.
 - Improved adherence to Luau spec to minimize UB and allow for a more easily sandboxed Luau environment:
   - Removal of the `__gc` metamethod on userdata; although implemented by mlua, [should not be supported in Luau](https://luau.org/sandbox#__gc) due to memory safety and optimization considerations.
-  - ``collectgarbage`` now limited to options ``"count"`` and ``"collect"`` for better sandboxing. Importantly, this disallows user code from purposely stopping the garbage collector, even when sandbox mode is disabled.
-- Removal of ``Lua::scope``, a feature we don't use that carried a slight performance penalty.
-- Integration with the [Lute](https://github.com/luau-lang/lute) runtime and scheduler via the ``luau-lute`` feature flag. Note that crypto and net are disabled by default due to increasing compiler times and leading to large memory usage during linking, if you want to enable crypto and net, set the ``luau-lute-crypto`` and ``luau-lute-net`` flags respectively.
-- Support for getting metatable of non-mlua/non-Rust userdata via the unsafe ``AnyUserData::underlying_metatable`` method. This is useful for managing ``newproxy`` and (Luau only) Lute userdata.
-- ``Thread::pop_results`` has been added to allow popping results directly from the thread's stack to a ``R`` which implements ``FromLua``. This is useful when trying to interoperate with Lute runtime but should not be needed much outside this in practice.
-- [``Thread::close``](https://github.com/mlua-rs/mlua/pull/517) has been added to allow closing Lua threads
-- ``RawLua::stack_value`` correctly calls ``lua_checkstack`` to avoid a potential crash when there are no stack slots free when popping from the Lua stack (``from_lua`` etc.)
-- Namecall optimization on Luau: for methods/functions on userdata, the ``namecall`` metamethod is now defined. This allows for more efficient method calls on userdata, as it avoids the need to check for the ``__index`` metamethod on every call. This is particularly useful for performance-critical code that relies heavily on userdata methods. This optimization is enabled by default, but can be disabled using ``UserDataRegistry::disable_namecall_optimization()`` if needed.
-- Due to namcall, ``RawUserDataRegistry`` is not ``Send``.
+  - `collectgarbage` now limited to options `"count"` and `"collect"` for better sandboxing. Importantly, this disallows user code from purposely stopping the garbage collector, even when sandbox mode is disabled.
+- Removal of `Lua::scope`, a feature we don't use that carried a slight performance penalty.
+- Integration with the [Lute](https://github.com/luau-lang/lute) runtime and scheduler via the `luau-lute` feature flag. Note that crypto and net are disabled by default due to increasing compiler times and leading to large memory usage during linking, if you want to enable crypto and net, set the `luau-lute-crypto` and `luau-lute-net` flags respectively.
+- Support for getting metatable of non-mlua/non-Rust userdata via the unsafe `AnyUserData::underlying_metatable` method. This is useful for managing `newproxy` and (Luau only) Lute userdata.
+- `Thread::pop_results` has been added to allow popping results directly from the thread's stack to a `R` which implements `FromLua`. This is useful when trying to interoperate with Lute runtime but should not be needed much outside this in practice.
+- [`Thread::close`](https://github.com/mlua-rs/mlua/pull/517) has been added to allow closing Lua threads
+- `RawLua::stack_value` correctly calls `lua_checkstack` to avoid a potential crash when there are no stack slots free when popping from the Lua stack (`from_lua` etc.)
+- Namecall optimization on Luau: for methods/functions on userdata, the `namecall` metamethod is now defined. This allows for more efficient method calls on userdata, as it avoids the need to check for the `__index` metamethod on every call. This is particularly useful for performance-critical code that relies heavily on userdata methods. This optimization is enabled by default, but can be disabled using `UserDataRegistry::disable_namecall_optimization()` if needed.
+- Due to namcall, `RawUserDataRegistry` is not `Send`.
 
 ## Roadmap
 
@@ -56,7 +61,7 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
 > See v0.10 [release notes](https://github.com/mlua/mlua/blob/main/docs/release_notes/v0.10.md).
 
 `mlua` is a set of bindings to the [Lua](https://www.lua.org) programming language for Rust with a goal to provide a
-*safe* (as much as possible), high level, easy to use, practical and flexible API.
+_safe_ (as much as possible), high level, easy to use, practical and flexible API.
 
 Started as an `rlua` fork, `mlua` supports Lua 5.4, 5.3, 5.2, 5.1 (including LuaJIT) and [Luau] and allows writing native Lua modules in Rust as well as using Lua in a standalone mode.
 
@@ -124,7 +129,7 @@ To achieve this, mlua supports the `LUA_LIB`, `LUA_LIB_NAME` and `LUA_LINK` envi
 
 An example of how to use them:
 
-``` sh
+```sh
 my_project $ LUA_LIB=$HOME/tmp/lua-5.2.4/src LUA_LIB_NAME=lua LUA_LINK=static cargo build
 ```
 
@@ -138,14 +143,14 @@ In standalone mode, `mlua` allows adding scripting support to your application w
 
 Add to `Cargo.toml`:
 
-``` toml
+```toml
 [dependencies]
 mlua = { version = "0.10", features = ["lua54", "vendored"] }
 ```
 
 `main.rs`
 
-``` rust
+```rust
 use mlua::prelude::*;
 
 fn main() -> LuaResult<()> {
@@ -171,7 +176,7 @@ In module mode, `mlua` allows creating a compiled Lua module that can be loaded 
 
 Add to `Cargo.toml`:
 
-``` toml
+```toml
 [lib]
 crate-type = ["cdylib"]
 
@@ -181,7 +186,7 @@ mlua = { version = "0.10", features = ["lua54", "module"] }
 
 `lib.rs`:
 
-``` rust
+```rust
 use mlua::prelude::*;
 
 fn hello(_: &Lua, name: String) -> LuaResult<()> {
@@ -199,7 +204,7 @@ fn my_module(lua: &Lua) -> LuaResult<LuaTable> {
 
 And then (**macOS** example):
 
-``` sh
+```sh
 $ cargo rustc -- -C link-arg=-undefined -C link-arg=dynamic_lookup
 $ ln -s ./target/debug/libmy_module.dylib ./my_module.so
 $ lua5.4 -e 'require("my_module").hello("world")'
@@ -208,7 +213,7 @@ hello, world!
 
 On macOS, you need to set additional linker arguments. One option is to compile with `cargo rustc --release -- -C link-arg=-undefined -C link-arg=dynamic_lookup`, the other is to create a `.cargo/config.toml` with the following content:
 
-``` toml
+```toml
 [target.x86_64-apple-darwin]
 rustflags = [
   "-C", "link-arg=-undefined",
@@ -234,6 +239,7 @@ Module builds don't require Lua binaries or headers to be installed on the syste
 There is a LuaRocks build backend for mlua modules: [`luarocks-build-rust-mlua`].
 
 Modules written in Rust and published to luarocks:
+
 - [`decasify`](https://github.com/alerque/decasify)
 - [`lua-ryaml`](https://github.com/khvzak/lua-ryaml)
 - [`tiktoken_core`](https://github.com/gptlang/lua-tiktoken)
@@ -244,7 +250,7 @@ Modules written in Rust and published to luarocks:
 
 ## Safety
 
-One of `mlua`'s goals is to provide a *safe* API between Rust and Lua.
+One of `mlua`'s goals is to provide a _safe_ API between Rust and Lua.
 Every place where the Lua C API may trigger an error longjmp is protected by `lua_pcall`,
 and the user of the library is protected from directly interacting with unsafe things like the Lua stack.
 There is overhead associated with this safety.
@@ -260,7 +266,7 @@ resumed by returning or propagating the Lua error to Rust code.
 
 For example:
 
-``` rust
+```rust
 let lua = Lua::new();
 let f = lua.create_function(|_, ()| -> LuaResult<()> {
     panic!("test panic");
@@ -288,13 +294,13 @@ using panics for general error handling.
 Below is a list of `mlua` behaviors that should be considered a bug.
 If you encounter them, a bug report would be very welcome:
 
-  - If you can cause UB with `mlua` without typing the word "unsafe", this is a bug.
+- If you can cause UB with `mlua` without typing the word "unsafe", this is a bug.
 
-  - If your program panics with a message that contains the string "mlua internal error", this is a bug.
+- If your program panics with a message that contains the string "mlua internal error", this is a bug.
 
-  - Lua C API errors are handled by longjmp. All instances where the Lua C API would otherwise longjmp over calling stack frames should be guarded against, except in internal callbacks where this is intentional. If you detect that `mlua` is triggering a longjmp over your Rust stack frames, this is a bug!
+- Lua C API errors are handled by longjmp. All instances where the Lua C API would otherwise longjmp over calling stack frames should be guarded against, except in internal callbacks where this is intentional. If you detect that `mlua` is triggering a longjmp over your Rust stack frames, this is a bug!
 
-  - If you detect that, after catching a panic or during a Drop triggered from a panic, a `Lua` or handle method is triggering other bugs or there is a Lua stack space leak, this is a bug. `mlua` instances are supposed to remain fully usable in the face of user generated panics. This guarantee does not extend to panics marked with "mlua internal error" simply because that is already indicative of a separate bug.
+- If you detect that, after catching a panic or during a Drop triggered from a panic, a `Lua` or handle method is triggering other bugs or there is a Lua stack space leak, this is a bug. `mlua` instances are supposed to remain fully usable in the face of user generated panics. This guarantee does not extend to panics marked with "mlua internal error" simply because that is already indicative of a separate bug.
 
 ## Sandboxing
 
