@@ -1,7 +1,7 @@
 use std::error::Error as _;
 use std::{fmt, io};
 
-use mlua::{Error, ErrorContext, Lua, Result};
+use mlua::{Error, ErrorContext, Lua, LuaOptions, Result};
 
 #[test]
 fn test_error_context() -> Result<()> {
@@ -96,6 +96,63 @@ fn test_error_anyhow() -> Result<()> {
     assert!(err.is_error());
     let err = err.as_error().unwrap();
     assert!(matches!(err, Error::RuntimeError(msg) if msg == "runtime error"));
+
+    Ok(())
+}
+
+#[test]
+fn test_disable_error_userdata() -> Result<()> {
+    let lua = Lua::new_with(
+        mlua::StdLib::ALL_SAFE,
+        LuaOptions::new().disable_error_userdata(true),
+    )?;
+
+    let func =
+        lua.create_function(|_, ()| Err::<(), _>(Error::runtime("runtime error")).context("some context"))?;
+    lua.globals().set("func", func)?;
+
+    let msg = lua
+        .load("local _, err = pcall(func); return tostring(err)")
+        .eval::<String>()?;
+    assert!(msg.contains("some context"));
+    assert!(msg.contains("runtime error"));
+
+    let func2 = lua.create_function(|lua, ()| {
+        lua.globals()
+            .get::<String>("nonextant")
+            .with_context(|_| "failed to find global")
+    })?;
+    lua.globals().set("func2", func2)?;
+
+    let msg2 = lua
+        .load("local _, err = pcall(func2); return tostring(err)")
+        .eval::<String>()?;
+    assert!(msg2.contains("failed to find global"));
+    assert!(msg2.contains("error converting Lua nil to String"));
+
+    // Rewrite context message and test `downcast_ref`
+    let func3 = lua.create_function(|_, ()| {
+        Err::<(), _>(Error::external(io::Error::new(io::ErrorKind::Other, "other")))
+            .context("some context")
+            .context("some new context")
+    })?;
+    let err = func3.call::<()>(()).unwrap_err();
+    assert!(!err.to_string().contains("some context"));
+    assert!(err.to_string().contains("some new context"));
+
+    lua.set_memory_limit(1000)?;
+
+    // Force a memory error
+    for i in 0..10000 {
+        match lua.load(format!("return string.rep('a', {})", i)).exec() {
+            Ok(_) => {}
+            Err(mlua::Error::MemoryError { .. }) => {
+                // Memory error is expected, we can stop here
+                break;
+            }
+            Err(e) => panic!("Unexpected error: {}", e),
+        }
+    }
 
     Ok(())
 }

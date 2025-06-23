@@ -13,11 +13,15 @@ use crate::function::Function;
 use crate::hook::Debug;
 use crate::memory::MemoryState;
 use crate::multi::MultiValue;
-use crate::scope::Scope;
+use crate::state::util::get_next_spot;
 use crate::stdlib::StdLib;
 use crate::string::String;
 use crate::table::Table;
 use crate::thread::Thread;
+
+#[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
+use crate::thread::ContinuationStatus;
+
 use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaMulti};
 use crate::types::{
     AppDataRef, AppDataRefMut, ArcReentrantMutexGuard, Integer, LuaType, MaybeSend, Number, ReentrantMutex,
@@ -32,12 +36,6 @@ use crate::{hook::HookTriggers, types::HookKind};
 
 #[cfg(any(feature = "luau", doc))]
 use crate::{buffer::Buffer, chunk::Compiler};
-
-#[cfg(feature = "async")]
-use {
-    crate::types::LightUserData,
-    std::future::{self, Future},
-};
 
 #[cfg(feature = "serde")]
 use serde::Serialize;
@@ -95,14 +93,13 @@ pub struct LuaOptions {
     /// [`xpcall`]: https://www.lua.org/manual/5.4/manual.html#pdf-xpcall
     pub catch_rust_panics: bool,
 
-    /// Max size of thread (coroutine) object pool used to execute asynchronous functions.
+    /// Disables use of the ``Error`` userdata in lua_error calls.
     ///
-    /// Default: **0** (disabled)
+    /// This also disables rich error typings being returned to Rust-side code
+    /// as all errors will be stringified when passed to Lua.
     ///
-    /// [`lua_resetthread`]: https://www.lua.org/manual/5.4/manual.html#lua_resetthread
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub thread_pool_size: usize,
+    /// Overrides ``catch_rust_panics`` option if set to ``false``.
+    pub disable_error_userdata: bool,
 }
 
 impl Default for LuaOptions {
@@ -116,8 +113,7 @@ impl LuaOptions {
     pub const fn new() -> Self {
         LuaOptions {
             catch_rust_panics: true,
-            #[cfg(feature = "async")]
-            thread_pool_size: 0,
+            disable_error_userdata: false,
         }
     }
 
@@ -130,14 +126,12 @@ impl LuaOptions {
         self
     }
 
-    /// Sets [`thread_pool_size`] option.
+    /// Sets [`disable_error_userdata`] option.
     ///
-    /// [`thread_pool_size`]: #structfield.thread_pool_size
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
+    ///  [`disable_error_userdata`]: #structfield.disable_error_userdata
     #[must_use]
-    pub const fn thread_pool_size(mut self, size: usize) -> Self {
-        self.thread_pool_size = size;
+    pub const fn disable_error_userdata(mut self, enabled: bool) -> Self {
+        self.disable_error_userdata = enabled;
         self
     }
 }
@@ -226,6 +220,12 @@ impl Lua {
             mlua_expect!(lua.disable_c_modules(), "Error disabling C modules");
         }
         lua.lock().mark_safe();
+
+        #[cfg(feature = "luau-lute-autoload")]
+        {
+            // Autoload lute runtime here
+            mlua_expect!(lua.lock().setup_lute_runtime(), "Error loading lute runtime");
+        }
 
         Ok(lua)
     }
@@ -329,11 +329,11 @@ impl Lua {
         let state = lua.state();
         let _sg = StackGuard::new(state);
         let stack_start = ffi::lua_gettop(state);
-        let nargs = args.push_into_stack_multi(&lua)?;
+        let nargs = args.push_into_specified_stack_multi(&lua, state)?;
         check_stack(state, 3)?;
         protect_lua_closure::<_, ()>(state, nargs, ffi::LUA_MULTRET, f)?;
         let nresults = ffi::lua_gettop(state) - stack_start;
-        R::from_stack_multi(nresults, &lua)
+        R::from_specified_stack_multi(nresults, &lua, state)
     }
 
     /// Loads the specified subset of the standard libraries into an existing Lua state.
@@ -453,8 +453,8 @@ impl Lua {
 
         callback_error_ext(state, ptr::null_mut(), true, move |extra, nargs| {
             let rawlua = (*extra).raw_lua();
-            let args = A::from_stack_args(nargs, 1, None, rawlua)?;
-            func(rawlua.lua(), args)?.push_into_stack(rawlua)?;
+            let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state)?;
+            func(rawlua.lua(), args)?.push_into_specified_stack(rawlua, state)?;
             Ok(1)
         })
     }
@@ -523,7 +523,7 @@ impl Lua {
                         ffi::luaL_sandboxthread(state);
                     } else {
                         // Restore original `LUA_GLOBALSINDEX`
-                        ffi::lua_xpush(lua.ref_thread(), state, ffi::LUA_GLOBALSINDEX);
+                        ffi::lua_xpush(lua.ref_thread_internal(), state, ffi::LUA_GLOBALSINDEX);
                         ffi::lua_replace(state, ffi::LUA_GLOBALSINDEX);
                         ffi::luaL_sandbox(state, 0);
                     }
@@ -763,8 +763,12 @@ impl Lua {
                 return; // Don't allow recursion
             }
             ffi::lua_pushthread(child);
-            ffi::lua_xmove(child, (*extra).ref_thread, 1);
-            let value = Thread((*extra).raw_lua().pop_ref_thread(), child);
+            let (aux_thread, index, replace) = get_next_spot(extra);
+            ffi::lua_xmove(child, (*extra).raw_lua().ref_thread(aux_thread), 1);
+            if replace {
+                ffi::lua_replace((*extra).raw_lua().ref_thread(aux_thread), index);
+            }
+            let value = Thread((*extra).raw_lua().new_value_ref(aux_thread, index), child);
             callback_error_ext(parent, extra, false, move |extra, _| {
                 callback((*extra).lua(), value)
             })
@@ -922,7 +926,10 @@ impl Lua {
         let lua = self.lock();
         unsafe {
             match MemoryState::get(lua.state()) {
-                mem_state if !mem_state.is_null() => Ok((*mem_state).set_memory_limit(limit)),
+                mem_state if !mem_state.is_null() => {
+                    println!("Got memory limit: {}", (*mem_state).memory_limit());
+                    Ok((*mem_state).set_memory_limit(limit))
+                }
                 _ => Err(Error::MemoryControlNotAvailable),
             }
         }
@@ -1261,9 +1268,50 @@ impl Lua {
         R: IntoLuaMulti,
     {
         (self.lock()).create_callback(Box::new(move |rawlua, nargs| unsafe {
-            let args = A::from_stack_args(nargs, 1, None, rawlua)?;
-            func(rawlua.lua(), args)?.push_into_stack_multi(rawlua)
+            let state = rawlua.state();
+            let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state)?;
+            func(rawlua.lua(), args)?.push_into_specified_stack_multi(rawlua, state)
         }))
+    }
+
+    /// Same as ``create_function`` but with an added continuation function.
+    ///
+    /// The values passed to the continuation will be the yielded arguments
+    /// from the function for the initial continuation call. If yielding from a
+    /// continuation, the yielded results will be returned to the ``Thread::resume`` caller. The
+    /// arguments passed in the next ``Thread::resume`` call will then be the arguments passed
+    /// to the yielding continuation upon resumption.
+    ///
+    /// Returning a value from a continuation without setting yield
+    /// arguments will then be returned as the final return value of the Lua function call.
+    /// Values returned in a function in which there is also yielding will be ignored
+    #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
+    pub fn create_function_with_continuation<F, FC, A, AC, R, RC>(
+        &self,
+        func: F,
+        cont: FC,
+    ) -> Result<Function>
+    where
+        F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        FC: Fn(&Lua, ContinuationStatus, AC) -> Result<RC> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        AC: FromLuaMulti,
+        R: IntoLuaMulti,
+        RC: IntoLuaMulti,
+    {
+        (self.lock()).create_callback_with_continuation(
+            Box::new(move |rawlua, nargs| unsafe {
+                let state = rawlua.state();
+                let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state)?;
+                func(rawlua.lua(), args)?.push_into_specified_stack_multi(rawlua, state)
+            }),
+            Box::new(move |rawlua, nargs, status| unsafe {
+                let state = rawlua.state();
+                let args = AC::from_specified_stack_args(nargs, 1, None, rawlua, state)?;
+                let status = ContinuationStatus::from_status(status);
+                cont(rawlua.lua(), status, args)?.push_into_specified_stack_multi(rawlua, state)
+            }),
+        )
     }
 
     /// Wraps a Rust mutable closure, creating a callable Lua function handle to it.
@@ -1287,66 +1335,13 @@ impl Lua {
     /// This function is unsafe because provides a way to execute unsafe C function.
     pub unsafe fn create_c_function(&self, func: ffi::lua_CFunction) -> Result<Function> {
         let lua = self.lock();
-        ffi::lua_pushcfunction(lua.ref_thread(), func);
-        Ok(Function(lua.pop_ref_thread()))
-    }
+        let (aux_thread, idx, replace) = get_next_spot(lua.extra());
+        ffi::lua_pushcfunction(lua.ref_thread(aux_thread), func);
+        if replace {
+            ffi::lua_replace(lua.ref_thread(aux_thread), idx);
+        }
 
-    /// Wraps a Rust async function or closure, creating a callable Lua function handle to it.
-    ///
-    /// While executing the function Rust will poll the Future and if the result is not ready,
-    /// call `yield()` passing internal representation of a `Poll::Pending` value.
-    ///
-    /// The function must be called inside Lua coroutine ([`Thread`]) to be able to suspend its
-    /// execution. An executor should be used to poll [`AsyncThread`] and mlua will take a provided
-    /// Waker in that case. Otherwise noop waker will be used if try to call the function outside of
-    /// Rust executors.
-    ///
-    /// The family of `call_async()` functions takes care about creating [`Thread`].
-    ///
-    /// # Examples
-    ///
-    /// Non blocking sleep:
-    ///
-    /// ```
-    /// use std::time::Duration;
-    /// use mlua::{Lua, Result};
-    ///
-    /// async fn sleep(_lua: Lua, n: u64) -> Result<&'static str> {
-    ///     tokio::time::sleep(Duration::from_millis(n)).await;
-    ///     Ok("done")
-    /// }
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<()> {
-    ///     let lua = Lua::new();
-    ///     lua.globals().set("sleep", lua.create_async_function(sleep)?)?;
-    ///     let res: String = lua.load("return sleep(...)").call_async(100).await?; // Sleep 100ms
-    ///     assert_eq!(res, "done");
-    ///     Ok(())
-    /// }
-    /// ```
-    ///
-    /// [`AsyncThread`]: crate::AsyncThread
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    pub fn create_async_function<F, A, FR, R>(&self, func: F) -> Result<Function>
-    where
-        F: Fn(Lua, A) -> FR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        FR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti,
-    {
-        // In future we should switch to async closures when they are stable to capture `&Lua`
-        // See https://rust-lang.github.io/rfcs/3668-async-closures.html
-        (self.lock()).create_async_callback(Box::new(move |rawlua, nargs| unsafe {
-            let args = match A::from_stack_args(nargs, 1, None, rawlua) {
-                Ok(args) => args,
-                Err(e) => return Box::pin(future::ready(Err(e))),
-            };
-            let lua = rawlua.lua();
-            let fut = func(lua.clone(), args);
-            Box::pin(async move { fut.await?.push_into_stack_multi(lua.raw_lua()) })
-        }))
+        Ok(Function(lua.new_value_ref(aux_thread, idx)))
     }
 
     /// Wraps a Lua function into a new thread (or coroutine).
@@ -1516,7 +1511,7 @@ impl Lua {
                     ffi::lua_pushstring(state, b"\0" as *const u8 as *const _);
                 }
                 ffi::LUA_TFUNCTION => match self.load("function() end").eval::<Function>() {
-                    Ok(func) => lua.push_ref(&func.0),
+                    Ok(func) => lua.push_ref_at(&func.0, state),
                     Err(_) => return,
                 },
                 ffi::LUA_TTHREAD => {
@@ -1529,7 +1524,7 @@ impl Lua {
                 _ => return,
             }
             match metatable {
-                Some(metatable) => lua.push_ref(&metatable.0),
+                Some(metatable) => lua.push_ref_at(&metatable.0, state),
                 None => ffi::lua_pushnil(state),
             }
             ffi::lua_setmetatable(state, -2);
@@ -1566,23 +1561,6 @@ impl Lua {
         }
     }
 
-    /// Calls the given function with a [`Scope`] parameter, giving the function the ability to
-    /// create userdata and callbacks from Rust types that are `!Send` or non-`'static`.
-    ///
-    /// The lifetime of any function or userdata created through [`Scope`] lasts only until the
-    /// completion of this method call, on completion all such created values are automatically
-    /// dropped and Lua references to them are invalidated. If a script accesses a value created
-    /// through [`Scope`] outside of this method, a Lua error will result. Since we can ensure the
-    /// lifetime of values created through [`Scope`], and we know that [`Lua`] cannot be sent to
-    /// another thread while [`Scope`] is live, it is safe to allow `!Send` data types and whose
-    /// lifetimes only outlive the scope lifetime.
-    pub fn scope<'env, R>(
-        &self,
-        f: impl for<'scope> FnOnce(&'scope Scope<'scope, 'env>) -> Result<R>,
-    ) -> Result<R> {
-        f(&Scope::new(self.lock_arc()))
-    }
-
     /// Attempts to coerce a Lua value into a String in a manner consistent with Lua's internal
     /// behavior.
     ///
@@ -1597,7 +1575,7 @@ impl Lua {
                 let _sg = StackGuard::new(state);
                 check_stack(state, 4)?;
 
-                lua.push_value(&v)?;
+                lua.push_value_at(&v, state)?;
                 let res = if lua.unlikely_memory_error() {
                     ffi::lua_tolstring(state, -1, ptr::null_mut())
                 } else {
@@ -1629,7 +1607,7 @@ impl Lua {
                 let _sg = StackGuard::new(state);
                 check_stack(state, 2)?;
 
-                lua.push_value(&v)?;
+                lua.push_value_at(&v, state)?;
                 let mut isint = 0;
                 let i = ffi::lua_tointegerx(state, -1, &mut isint);
                 if isint == 0 {
@@ -1655,7 +1633,7 @@ impl Lua {
                 let _sg = StackGuard::new(state);
                 check_stack(state, 2)?;
 
-                lua.push_value(&v)?;
+                lua.push_value_at(&v, state)?;
                 let mut isnum = 0;
                 let n = ffi::lua_tonumberx(state, -1, &mut isnum);
                 if isnum == 0 {
@@ -1708,7 +1686,7 @@ impl Lua {
             let _sg = StackGuard::new(state);
             check_stack(state, 5)?;
 
-            lua.push(t)?;
+            lua.push_at(state, t)?;
             rawset_field(state, ffi::LUA_REGISTRYINDEX, key)
         }
     }
@@ -1731,7 +1709,7 @@ impl Lua {
             push_string(state, key.as_bytes(), protect)?;
             ffi::lua_rawget(state, ffi::LUA_REGISTRYINDEX);
 
-            T::from_stack(-1, &lua)
+            T::from_specified_stack(-1, &lua, state)
         }
     }
 
@@ -1758,7 +1736,7 @@ impl Lua {
             let _sg = StackGuard::new(state);
             check_stack(state, 4)?;
 
-            lua.push(t)?;
+            lua.push_at(state, t)?;
 
             let unref_list = (*lua.extra.get()).registry_unref_list.clone();
 
@@ -1805,7 +1783,7 @@ impl Lua {
                 check_stack(state, 1)?;
 
                 ffi::lua_rawgeti(state, ffi::LUA_REGISTRYINDEX, registry_id as Integer);
-                T::from_stack(-1, &lua)
+                T::from_specified_stack(-1, &lua, state)
             },
         }
     }
@@ -1860,7 +1838,7 @@ impl Lua {
                 }
                 (value, registry_id) => {
                     // It must be safe to replace the value without triggering memory error
-                    lua.push_value(&value)?;
+                    lua.push_value_at(&value, state)?;
                     ffi::lua_rawseti(state, ffi::LUA_REGISTRYINDEX, registry_id as Integer);
                 }
             }
@@ -2003,24 +1981,6 @@ impl Lua {
         extra.app_data.remove()
     }
 
-    /// Returns an internal `Poll::Pending` constant used for executing async callbacks.
-    ///
-    /// Every time when [`Future`] is Pending, Lua corotine is suspended with this constant.
-    #[cfg(feature = "async")]
-    #[doc(hidden)]
-    #[inline(always)]
-    pub fn poll_pending() -> LightUserData {
-        static ASYNC_POLL_PENDING: u8 = 0;
-        LightUserData(&ASYNC_POLL_PENDING as *const u8 as *mut std::os::raw::c_void)
-    }
-
-    #[cfg(feature = "async")]
-    #[inline(always)]
-    pub(crate) fn poll_terminate() -> LightUserData {
-        static ASYNC_POLL_TERMINATE: u8 = 0;
-        LightUserData(&ASYNC_POLL_TERMINATE as *const u8 as *mut std::os::raw::c_void)
-    }
-
     /// Returns a weak reference to the Lua instance.
     ///
     /// This is useful for creating a reference to the Lua instance that does not prevent it from
@@ -2073,13 +2033,40 @@ impl Lua {
         LuaGuard(self.raw.lock_arc())
     }
 
-    /// Returns a handle to the unprotected Lua state without any synchronization.
+    /// Set the yield arguments. Note that Lua will not yield until you return from the function
     ///
-    /// This is useful where we know that the lock is already held by the caller.
-    #[cfg(feature = "async")]
-    #[inline(always)]
-    pub(crate) unsafe fn raw_lua(&self) -> &RawLua {
-        &*self.raw.data_ptr()
+    /// This method is mostly useful with continuations and Rust-Rust yields
+    /// due to the Rust/Lua boundary
+    ///
+    /// Example:
+    ///
+    /// ```rust
+    /// fn test() -> mlua::Result<()> {
+    ///     let lua = mlua::Lua::new();
+    ///     let always_yield = lua.create_function(|lua, ()| lua.yield_with((42, "69420".to_string(), 45.6)))?;
+    ///
+    ///     let thread = lua.create_thread(always_yield)?;
+    ///     assert_eq!(
+    ///         thread.resume::<(i32, String, f32)>(())?,
+    ///         (42, String::from("69420"), 45.6)
+    ///     );
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn yield_with(&self, args: impl IntoLuaMulti) -> Result<()> {
+        let raw = self.lock();
+        unsafe {
+            raw.extra.get().as_mut().unwrap_unchecked().yielded_values = Some(args.into_lua_multi(self)?);
+        }
+        Ok(())
+    }
+
+    /// Checks if Lua is be allowed to yield.
+    #[cfg(not(any(feature = "lua51", feature = "lua52", feature = "luajit")))]
+    #[inline]
+    pub fn is_yieldable(&self) -> bool {
+        self.lock().is_yieldable()
     }
 }
 
