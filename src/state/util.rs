@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::error::{Error, Result};
 use crate::state::extra::RefThread;
 use crate::state::{ExtraData, RawLua};
-use crate::util::{self, check_stack, get_internal_metatable, push_string, StackGuard, WrappedFailure};
+use crate::util::{self, check_stack, get_internal_metatable, push_string, WrappedFailure};
 
 #[cfg(all(not(feature = "lua51"), not(feature = "luajit"), not(feature = "luau")))]
 use crate::{types::ContinuationUpvalue, util::get_userdata};
@@ -109,6 +109,8 @@ unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s
         let s = "memory error".to_string();
         ffi::lua_pushlstring(state, s.as_ptr() as *const _, s.len());
         drop(s); // Lua copies the string, so we can drop it now
+        ffi::lua_error(state);
+    } else {
         ffi::lua_error(state);
     }
 }
