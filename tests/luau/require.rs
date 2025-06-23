@@ -105,63 +105,69 @@ fn test_require_without_config() {
     let lua = Lua::new();
 
     // RequireSimpleRelativePath
-    let res = run_require(&lua, "./require/without_config/dependency").unwrap();
+    let res = run_require(&lua, "./tests/luau/require/without_config/dependency").unwrap();
     assert_eq!("result from dependency", get_str(&res, 1));
 
     // RequireSimpleRelativePathWithinPcall
-    let res = run_require_pcall(&lua, "./require/without_config/dependency").unwrap();
+    let res = run_require_pcall(&lua, "./tests/luau/require/without_config/dependency").unwrap();
     assert!(res[0].as_boolean().unwrap());
     assert_eq!("result from dependency", get_str(&res[1], 1));
 
     // RequireRelativeToRequiringFile
-    let res = run_require(&lua, "./require/without_config/module").unwrap();
+    let res = run_require(&lua, "./tests/luau/require/without_config/module").unwrap();
     assert_eq!("result from dependency", get_str(&res, 1));
     assert_eq!("required into module", get_str(&res, 2));
 
     // RequireLua
-    let res = run_require(&lua, "./require/without_config/lua_dependency").unwrap();
+    let res = run_require(&lua, "./tests/luau/require/without_config/lua_dependency").unwrap();
     assert_eq!("result from lua_dependency", get_str(&res, 1));
 
     // RequireInitLuau
-    let res = run_require(&lua, "./require/without_config/luau").unwrap();
+    let res = run_require(&lua, "./tests/luau/require/without_config/luau").unwrap();
     assert_eq!("result from init.luau", get_str(&res, 1));
 
     // RequireInitLua
-    let res = run_require(&lua, "./require/without_config/lua").unwrap();
+    let res = run_require(&lua, "./tests/luau/require/without_config/lua").unwrap();
     assert_eq!("result from init.lua", get_str(&res, 1));
 
     // RequireSubmoduleUsingSelfIndirectly
-    let res = run_require(&lua, "./require/without_config/nested_module_requirer").unwrap();
+    let res = run_require(&lua, "./tests/luau/require/without_config/nested_module_requirer").unwrap();
     assert_eq!("result from submodule", get_str(&res, 1));
 
     // RequireSubmoduleUsingSelfDirectly
-    let res = run_require(&lua, "./require/without_config/nested").unwrap();
+    let res = run_require(&lua, "./tests/luau/require/without_config/nested").unwrap();
     assert_eq!("result from submodule", get_str(&res, 1));
 
     // CannotRequireInitLuauDirectly
-    let res = run_require(&lua, "./require/without_config/nested/init");
+    let res = run_require(&lua, "./tests/luau/require/without_config/nested/init");
     assert!(res.is_err());
     assert!((res.unwrap_err().to_string()).contains("could not resolve child component \"init\""));
 
     // RequireNestedInits
-    let res = run_require(&lua, "./require/without_config/nested_inits_requirer").unwrap();
+    let res = run_require(&lua, "./tests/luau/require/without_config/nested_inits_requirer").unwrap();
     assert_eq!("result from nested_inits/init", get_str(&res, 1));
     assert_eq!("required into module", get_str(&res, 2));
 
     // RequireWithFileAmbiguity
-    let res = run_require(&lua, "./require/without_config/ambiguous_file_requirer");
+    let res = run_require(
+        &lua,
+        "./tests/luau/require/without_config/ambiguous_file_requirer",
+    );
     assert!(res.is_err());
     assert!((res.unwrap_err().to_string())
         .contains("could not resolve child component \"dependency\" (ambiguous)"));
 
     // RequireWithDirectoryAmbiguity
-    let res = run_require(&lua, "./require/without_config/ambiguous_directory_requirer");
+    let res = run_require(
+        &lua,
+        "./tests/luau/require/without_config/ambiguous_directory_requirer",
+    );
     assert!(res.is_err());
     assert!((res.unwrap_err().to_string())
         .contains("could not resolve child component \"dependency\" (ambiguous)"));
 
     // CheckCachedResult
-    let res = run_require(&lua, "./require/without_config/validate_cache").unwrap();
+    let res = run_require(&lua, "./tests/luau/require/without_config/validate_cache").unwrap();
     assert!(res.is_table());
 }
 
@@ -170,15 +176,19 @@ fn test_require_with_config() {
     let lua = Lua::new();
 
     // RequirePathWithAlias
-    let res = run_require(&lua, "./require/with_config/src/alias_requirer").unwrap();
+    let res = run_require(&lua, "./tests/luau/require/with_config/src/alias_requirer").unwrap();
     assert_eq!("result from dependency", get_str(&res, 1));
 
     // RequirePathWithParentAlias
-    let res = run_require(&lua, "./require/with_config/src/parent_alias_requirer").unwrap();
+    let res = run_require(&lua, "./tests/luau/require/with_config/src/parent_alias_requirer").unwrap();
     assert_eq!("result from other_dependency", get_str(&res, 1));
 
     // RequirePathWithAliasPointingToDirectory
-    let res = run_require(&lua, "./require/with_config/src/directory_alias_requirer").unwrap();
+    let res = run_require(
+        &lua,
+        "./tests/luau/require/with_config/src/directory_alias_requirer",
+    )
+    .unwrap();
     assert_eq!("result from subdirectory_dependency", get_str(&res, 1));
 
     // RequireAliasThatDoesNotExist
@@ -192,7 +202,7 @@ fn test_require_with_config() {
     assert!((res.unwrap_err().to_string()).contains("@ is not a valid alias"));
 }
 
-#[cfg(feature = "async")]
+#[cfg(all(feature = "async", not(windows)))]
 #[tokio::test]
 async fn test_async_require() -> Result<()> {
     let lua = Lua::new();
@@ -215,14 +225,19 @@ async fn test_async_require() -> Result<()> {
             Ok(())
         })?,
     )?;
+    lua.globals().set("tmp_dir", temp_dir.path().to_str().unwrap())?;
+    lua.globals().set(
+        "curr_dir_components",
+        std::env::current_dir().unwrap().components().count(),
+    )?;
 
     lua.load(
         r#"
-        local result = require("./async_chunk")
+        local path_to_root = string.rep("/..", curr_dir_components - 1)
+        local result = require(`.{path_to_root}{tmp_dir}/async_chunk`)
         assert(result == "result_after_async_sleep")
         "#,
     )
-    .set_name(format!("@{}", temp_dir.path().join("require.rs").display()))
     .exec_async()
     .await
 }
