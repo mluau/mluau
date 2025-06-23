@@ -99,7 +99,6 @@ unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s
             return Ok(());
         }
 
-        let _sg = StackGuard::new(state);
         check_stack(state, 3)?;
         push_string(state, s.as_ref(), true)?;
         Ok(())
