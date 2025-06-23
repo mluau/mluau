@@ -1,4 +1,5 @@
 use crate::IntoLuaMulti;
+use std::ffi::CString;
 use std::mem::take;
 use std::os::raw::c_int;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -119,6 +120,14 @@ where
             r
         }
         Ok(Err(err)) => {
+            if (*extra).disable_error_userdata {
+                // Push the error message directly onto the stack
+                let err_msg = CString::new(err.to_string())
+                    .unwrap_or_else(|_| CString::from(c"Error occurred in callback containing null bytes"));
+                ffi::lua_pushstring(state, err_msg.as_ptr() as *const _);
+                ffi::lua_error(state);
+            }
+
             let wrapped_error = prealloc_failure.r#use(state, extra);
 
             if !wrap_error {
@@ -148,6 +157,27 @@ where
             ffi::lua_error(state)
         }
         Err(p) => {
+            if (*extra).disable_error_userdata {
+                // Push the error message directly onto the stack
+                let err_msg = {
+                    // If downcastable to String, use it
+                    if let Some(s) = p.downcast_ref::<String>() {
+                        s.clone()
+                    } else if let Some(s) = p.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else {
+                        // Otherwise, use the debug representation
+                        format!("Panic occurred in callback: {:?}", p)
+                    }
+                };
+
+                let err_msg = CString::new(err_msg)
+                    .unwrap_or_else(|_| CString::from(c"Error occurred in callback containing null bytes"));
+
+                ffi::lua_pushstring(state, err_msg.as_ptr() as *const _);
+                ffi::lua_error(state);
+            }
+
             let wrapped_panic = prealloc_failure.r#use(state, extra);
             ptr::write(wrapped_panic, WrappedFailure::Panic(Some(p)));
             get_internal_metatable::<WrappedFailure>(state);
@@ -277,6 +307,15 @@ where
                         return ffi::lua_yield(state, nargs);
                     }
                     Err(err) => {
+                        if (*extra).disable_error_userdata {
+                            // Push the error message directly onto the stack
+                            let err_msg = CString::new(err.to_string()).unwrap_or_else(|_| {
+                                CString::from(c"Error occurred in callback containing null bytes")
+                            });
+                            ffi::lua_pushstring(state, err_msg.as_ptr() as *const _);
+                            ffi::lua_error(state);
+                        }
+
                         // Make a *new* preallocated failure, and then do normal wrap_error
                         let prealloc_failure = PreallocatedFailure::reserve(state, extra);
                         let wrapped_panic = prealloc_failure.r#use(state, extra);
@@ -291,6 +330,14 @@ where
             r
         }
         Ok(Err(err)) => {
+            if (*extra).disable_error_userdata {
+                // Push the error message directly onto the stack
+                let err_msg = CString::new(err.to_string())
+                    .unwrap_or_else(|_| CString::from(c"Error occurred in callback containing null bytes"));
+                ffi::lua_pushstring(state, err_msg.as_ptr() as *const _);
+                ffi::lua_error(state);
+            }
+
             let wrapped_error = prealloc_failure.r#use(state, extra);
 
             if !wrap_error {
@@ -320,6 +367,27 @@ where
             ffi::lua_error(state)
         }
         Err(p) => {
+            if (*extra).disable_error_userdata {
+                // Push the error message directly onto the stack
+                let err_msg = {
+                    // If downcastable to String, use it
+                    if let Some(s) = p.downcast_ref::<String>() {
+                        s.clone()
+                    } else if let Some(s) = p.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else {
+                        // Otherwise, use the debug representation
+                        format!("Panic occurred in callback: {:?}", p)
+                    }
+                };
+
+                let err_msg = CString::new(err_msg)
+                    .unwrap_or_else(|_| CString::from(c"Error occurred in callback containing null bytes"));
+
+                ffi::lua_pushstring(state, err_msg.as_ptr() as *const _);
+                ffi::lua_error(state);
+            }
+
             let wrapped_panic = prealloc_failure.r#use(state, extra);
             ptr::write(wrapped_panic, WrappedFailure::Panic(Some(p)));
             get_internal_metatable::<WrappedFailure>(state);

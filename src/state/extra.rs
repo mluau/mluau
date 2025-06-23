@@ -141,6 +141,9 @@ pub(crate) struct ExtraData {
     #[cfg(feature = "luau-lute")]
     pub(crate) no_drop: bool,
 
+    // Disable error userdata in mlua errors
+    pub disable_error_userdata: bool,
+
     // Values currently being yielded from Lua.yield()
     pub(super) yielded_values: Option<MultiValue>,
 }
@@ -228,6 +231,7 @@ impl ExtraData {
             #[cfg(feature = "luau-lute")]
             no_drop: false,
             yielded_values: None,
+            disable_error_userdata: false,
         }));
 
         // Store it in the registry

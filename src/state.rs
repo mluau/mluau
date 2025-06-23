@@ -92,6 +92,14 @@ pub struct LuaOptions {
     /// [`pcall`]: https://www.lua.org/manual/5.4/manual.html#pdf-pcall
     /// [`xpcall`]: https://www.lua.org/manual/5.4/manual.html#pdf-xpcall
     pub catch_rust_panics: bool,
+
+    /// Disables use of the ``Error`` userdata in lua_error calls.
+    ///
+    /// This also disables rich error typings being returned to Rust-side code
+    /// as all errors will be stringified when passed to Lua.
+    ///
+    /// Overrides ``catch_rust_panics`` option if set to ``false``.
+    pub disable_error_userdata: bool,
 }
 
 impl Default for LuaOptions {
@@ -105,6 +113,7 @@ impl LuaOptions {
     pub const fn new() -> Self {
         LuaOptions {
             catch_rust_panics: true,
+            disable_error_userdata: false,
         }
     }
 
@@ -114,6 +123,15 @@ impl LuaOptions {
     #[must_use]
     pub const fn catch_rust_panics(mut self, enabled: bool) -> Self {
         self.catch_rust_panics = enabled;
+        self
+    }
+
+    /// Sets [`disable_error_userdata`] option.
+    ///
+    ///  [`disable_error_userdata`]: #structfield.disable_error_userdata
+    #[must_use]
+    pub const fn disable_error_userdata(mut self, enabled: bool) -> Self {
+        self.disable_error_userdata = enabled;
         self
     }
 }

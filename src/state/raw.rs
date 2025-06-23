@@ -536,7 +536,7 @@ impl RawLua {
         );
         (*extra).libs |= libs;
 
-        if !options.catch_rust_panics {
+        if !options.catch_rust_panics && !options.disable_error_userdata {
             mlua_expect!(
                 (|| -> Result<()> {
                     let _sg = StackGuard::new(state);
@@ -557,6 +557,8 @@ impl RawLua {
                 "Error during applying option `catch_rust_panics`"
             )
         }
+
+        (*extra).disable_error_userdata = options.disable_error_userdata;
 
         rawlua
     }
