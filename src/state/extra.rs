@@ -143,6 +143,7 @@ pub(crate) struct ExtraData {
 
     // Disable error userdata in mlua errors
     pub disable_error_userdata: bool,
+    // Optional fallback lua string
 
     // Values currently being yielded from Lua.yield()
     pub(super) yielded_values: Option<MultiValue>,

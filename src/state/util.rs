@@ -1,5 +1,4 @@
 use crate::IntoLuaMulti;
-use std::ffi::CString;
 use std::mem::take;
 use std::os::raw::c_int;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -9,7 +8,7 @@ use std::sync::Arc;
 use crate::error::{Error, Result};
 use crate::state::extra::RefThread;
 use crate::state::{ExtraData, RawLua};
-use crate::util::{self, check_stack, get_internal_metatable, WrappedFailure};
+use crate::util::{self, check_stack, get_internal_metatable, push_string, StackGuard, WrappedFailure};
 
 #[cfg(all(not(feature = "lua51"), not(feature = "luajit"), not(feature = "luau")))]
 use crate::{types::ContinuationUpvalue, util::get_userdata};
@@ -88,6 +87,33 @@ impl PreallocatedFailure {
     }
 }
 
+unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s: impl AsRef<[u8]>) {
+    unsafe fn push_error_string_errorable(
+        state: *mut ffi::lua_State,
+        extra: *mut ExtraData,
+        s: impl AsRef<[u8]>,
+    ) -> Result<()> {
+        let rawlua = (*extra).raw_lua();
+        if rawlua.unlikely_memory_error() {
+            push_string(state, s.as_ref(), false)?;
+            return Ok(());
+        }
+
+        let _sg = StackGuard::new(state);
+        check_stack(state, 3)?;
+        push_string(state, s.as_ref(), true)?;
+        Ok(())
+    }
+
+    if push_error_string_errorable(state, extra, s).is_err() {
+        // If we cannot push the error string, we need to fallback to error userdata
+        let s = "memory error".to_string();
+        ffi::lua_pushlstring(state, s.as_ptr() as *const _, s.len());
+        drop(s); // Lua copies the string, so we can drop it now
+        ffi::lua_error(state);
+    }
+}
+
 // An optimized version of `callback_error` that does not allocate `WrappedFailure` userdata
 // and instead reuses unused values from previous calls (or allocates new).
 pub(crate) unsafe fn callback_error_ext<F, R>(
@@ -121,11 +147,7 @@ where
         }
         Ok(Err(err)) => {
             if (*extra).disable_error_userdata {
-                // Push the error message directly onto the stack
-                let err_msg = CString::new(err.to_string())
-                    .unwrap_or_else(|_| CString::from(c"Error occurred in callback containing null bytes"));
-                ffi::lua_pushstring(state, err_msg.as_ptr() as *const _);
-                ffi::lua_error(state);
+                push_error_string(state, extra, err.to_string());
             }
 
             let wrapped_error = prealloc_failure.r#use(state, extra);
@@ -171,11 +193,7 @@ where
                     }
                 };
 
-                let err_msg = CString::new(err_msg)
-                    .unwrap_or_else(|_| CString::from(c"Error occurred in callback containing null bytes"));
-
-                ffi::lua_pushstring(state, err_msg.as_ptr() as *const _);
-                ffi::lua_error(state);
+                push_error_string(state, extra, err_msg);
             }
 
             let wrapped_panic = prealloc_failure.r#use(state, extra);
@@ -308,12 +326,7 @@ where
                     }
                     Err(err) => {
                         if (*extra).disable_error_userdata {
-                            // Push the error message directly onto the stack
-                            let err_msg = CString::new(err.to_string()).unwrap_or_else(|_| {
-                                CString::from(c"Error occurred in callback containing null bytes")
-                            });
-                            ffi::lua_pushstring(state, err_msg.as_ptr() as *const _);
-                            ffi::lua_error(state);
+                            push_error_string(state, extra, err.to_string());
                         }
 
                         // Make a *new* preallocated failure, and then do normal wrap_error
@@ -331,11 +344,7 @@ where
         }
         Ok(Err(err)) => {
             if (*extra).disable_error_userdata {
-                // Push the error message directly onto the stack
-                let err_msg = CString::new(err.to_string())
-                    .unwrap_or_else(|_| CString::from(c"Error occurred in callback containing null bytes"));
-                ffi::lua_pushstring(state, err_msg.as_ptr() as *const _);
-                ffi::lua_error(state);
+                push_error_string(state, extra, err.to_string());
             }
 
             let wrapped_error = prealloc_failure.r#use(state, extra);
@@ -381,11 +390,7 @@ where
                     }
                 };
 
-                let err_msg = CString::new(err_msg)
-                    .unwrap_or_else(|_| CString::from(c"Error occurred in callback containing null bytes"));
-
-                ffi::lua_pushstring(state, err_msg.as_ptr() as *const _);
-                ffi::lua_error(state);
+                push_error_string(state, extra, err_msg);
             }
 
             let wrapped_panic = prealloc_failure.r#use(state, extra);
