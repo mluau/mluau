@@ -1,5 +1,6 @@
 use std::fmt;
 use std::os::raw::{c_int, c_void};
+use std::string::String as StdString;
 
 use crate::error::{Error, Result};
 use crate::function::Function;
@@ -454,6 +455,13 @@ impl Thread {
     #[inline]
     pub fn to_pointer(&self) -> *const c_void {
         self.0.to_pointer()
+    }
+
+    /// Creates a traceback of the given thread
+    pub fn traceback(&self) -> Result<StdString> {
+        let lua = self.0.lua.lock();
+        let thread_state = self.state();
+        unsafe { lua.traceback_at(thread_state) }
     }
 }
 

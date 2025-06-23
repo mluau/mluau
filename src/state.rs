@@ -5,6 +5,7 @@ use std::ops::Deref;
 use std::os::raw::{c_char, c_int};
 use std::panic::Location;
 use std::result::Result as StdResult;
+use std::string::String as StdString;
 use std::{fmt, mem, ptr};
 
 use crate::chunk::{AsChunk, Chunk};
@@ -2067,6 +2068,15 @@ impl Lua {
     #[inline]
     pub fn is_yieldable(&self) -> bool {
         self.lock().is_yieldable()
+    }
+
+    /// Returns a traceback of the currently running Lua thread/coroutine
+    ///
+    /// This returns an error if there is not enough stack space to create the traceback
+    #[inline]
+    pub fn traceback(&self) -> Result<StdString> {
+        let raw = self.lock();
+        unsafe { raw.traceback() }
     }
 }
 

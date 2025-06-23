@@ -46,6 +46,8 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
 - `RawLua::stack_value` correctly calls `lua_checkstack` to avoid a potential crash when there are no stack slots free when popping from the Lua stack (`from_lua` etc.)
 - Namecall optimization on Luau: for methods/functions on userdata, the `namecall` metamethod is now defined. This allows for more efficient method calls on userdata, as it avoids the need to check for the `__index` metamethod on every call. This is particularly useful for performance-critical code that relies heavily on userdata methods. This optimization is enabled by default, but can be disabled using `UserDataRegistry::disable_namecall_optimization()` if needed.
 - Due to namcall, `RawUserDataRegistry` is not `Send`.
+- Support for disabling use of a ``Error`` userdata in favor of just stringifying the error. This is useful as ``Error`` userdata tends to have issues with ``xpcall`` depending on the error function handler being used.
+- Support for creating tracebacks on the current thread using ``Lua::traceback`` and ``Thread::traceback``.
 
 ## Roadmap
 

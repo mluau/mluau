@@ -13,3 +13,28 @@ fn test_debug_format() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_traceback() -> Result<()> {
+    let lua = Lua::new_with(
+        mlua::StdLib::ALL_SAFE,
+        mlua::LuaOptions::new().disable_error_userdata(true),
+    )?;
+
+    let tracebacker = lua.create_function(|lua, _: ()| {
+        let tb1 = lua.traceback()?;
+        let tbth = lua.current_thread().traceback()?;
+        assert_eq!(tb1, tbth);
+        Ok(tb1)
+    })?;
+
+    let chunk = lua
+        .load("local a = ...; return a()")
+        .set_name("mychunk")
+        .into_function()?
+        .call::<String>(tracebacker)?;
+
+    assert!(chunk.contains("string \"mychunk\""));
+
+    Ok(())
+}

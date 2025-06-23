@@ -5,6 +5,7 @@ use std::mem;
 use std::os::raw::{c_char, c_int, c_void};
 use std::panic::resume_unwind;
 use std::ptr::{self, NonNull};
+use std::string::String as StdString;
 use std::sync::Arc;
 
 use crate::chunk::ChunkMode;
@@ -40,7 +41,7 @@ use crate::util::{
     assert_stack, check_stack, get_destructed_userdata_metatable, get_internal_userdata, get_main_state,
     get_metatable_ptr, get_userdata, init_error_registry, init_internal_metatable, pop_error,
     push_internal_userdata, push_string, push_table, rawset_field, safe_pcall, safe_xpcall, short_type_name,
-    StackGuard, WrappedFailure,
+    to_string, StackGuard, WrappedFailure,
 };
 use crate::value::{Nil, Value};
 
@@ -1933,6 +1934,19 @@ impl RawLua {
     #[inline]
     pub(crate) fn is_yieldable(&self) -> bool {
         unsafe { ffi::lua_isyieldable(self.state()) != 0 }
+    }
+
+    pub(crate) unsafe fn traceback(&self) -> Result<StdString> {
+        self.traceback_at(self.state())
+    }
+
+    pub(crate) unsafe fn traceback_at(&self, state: *mut ffi::lua_State) -> Result<StdString> {
+        check_stack(state, ffi::LUA_TRACEBACK_STACK)?;
+
+        ffi::luaL_traceback(state, state, ptr::null(), 0);
+        let traceback = to_string(state, -1);
+        ffi::lua_pop(state, 1);
+        Ok(traceback)
     }
 }
 
