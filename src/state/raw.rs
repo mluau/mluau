@@ -1943,6 +1943,7 @@ impl RawLua {
     pub(crate) unsafe fn traceback_at(&self, state: *mut ffi::lua_State) -> Result<StdString> {
         check_stack(state, ffi::LUA_TRACEBACK_STACK)?;
 
+        let _sg = StackGuard::new(state);
         ffi::luaL_traceback(state, state, ptr::null(), 0);
         let traceback = to_string(state, -1);
         ffi::lua_pop(state, 1);
