@@ -87,11 +87,11 @@ impl PreallocatedFailure {
     }
 }
 
-unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s: impl AsRef<[u8]>) {
+unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s: String) {
     unsafe fn push_error_string_errorable(
         state: *mut ffi::lua_State,
         extra: *mut ExtraData,
-        s: impl AsRef<[u8]>,
+        s: String,
     ) -> Result<()> {
         let rawlua = (*extra).raw_lua();
         if rawlua.unlikely_memory_error() {
@@ -109,9 +109,6 @@ unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s
         let s = "memory error".to_string();
         ffi::lua_pushlstring(state, s.as_ptr() as *const _, s.len());
         drop(s); // Lua copies the string, so we can drop it now
-        ffi::lua_error(state);
-    } else {
-        ffi::lua_error(state);
     }
 }
 
@@ -148,7 +145,12 @@ where
         }
         Ok(Err(err)) => {
             if (*extra).disable_error_userdata {
-                push_error_string(state, extra, err.to_string());
+                {
+                    let err_string = err.to_string();
+                    push_error_string(state, extra, err_string);
+                    drop(err);
+                }
+                ffi::lua_error(state);
             }
 
             let wrapped_error = prealloc_failure.r#use(state, extra);
@@ -181,20 +183,25 @@ where
         }
         Err(p) => {
             if (*extra).disable_error_userdata {
-                // Push the error message directly onto the stack
-                let err_msg = {
-                    // If downcastable to String, use it
-                    if let Some(s) = p.downcast_ref::<String>() {
-                        s.clone()
-                    } else if let Some(s) = p.downcast_ref::<&str>() {
-                        s.to_string()
-                    } else {
-                        // Otherwise, use the debug representation
-                        format!("Panic occurred in callback: {:?}", p)
-                    }
-                };
+                {
+                    // Push the error message directly onto the stack
+                    let err_msg = {
+                        // If downcastable to String, use it
+                        if let Some(s) = p.downcast_ref::<String>() {
+                            s.clone()
+                        } else if let Some(s) = p.downcast_ref::<&str>() {
+                            s.to_string()
+                        } else {
+                            // Otherwise, use the debug representation
+                            format!("Panic occurred in callback: {:?}", p)
+                        }
+                    };
 
-                push_error_string(state, extra, err_msg);
+                    std::mem::forget(catch_unwind(AssertUnwindSafe(move || drop(p))));
+
+                    push_error_string(state, extra, err_msg);
+                }
+                ffi::lua_error(state);
             }
 
             let wrapped_panic = prealloc_failure.r#use(state, extra);
@@ -327,7 +334,12 @@ where
                     }
                     Err(err) => {
                         if (*extra).disable_error_userdata {
-                            push_error_string(state, extra, err.to_string());
+                            {
+                                let err_string = err.to_string();
+                                push_error_string(state, extra, err_string);
+                            }
+                            drop(err);
+                            ffi::lua_error(state);
                         }
 
                         // Make a *new* preallocated failure, and then do normal wrap_error
@@ -345,7 +357,12 @@ where
         }
         Ok(Err(err)) => {
             if (*extra).disable_error_userdata {
-                push_error_string(state, extra, err.to_string());
+                {
+                    let err_string = err.to_string();
+                    push_error_string(state, extra, err_string);
+                    drop(err); // drop the error before lua_error
+                }
+                ffi::lua_error(state);
             }
 
             let wrapped_error = prealloc_failure.r#use(state, extra);
@@ -391,7 +408,11 @@ where
                     }
                 };
 
+                // WARNING: It is a logic error for the payload in p to itself panic
+                std::mem::forget(catch_unwind(AssertUnwindSafe(move || drop(p))));
+
                 push_error_string(state, extra, err_msg);
+                ffi::lua_error(state);
             }
 
             let wrapped_panic = prealloc_failure.r#use(state, extra);
