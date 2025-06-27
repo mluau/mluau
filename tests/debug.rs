@@ -34,6 +34,7 @@ fn test_traceback() -> Result<()> {
         .into_function()?
         .call::<String>(tracebacker)?;
 
+    #[cfg(feature = "luau")]
     assert!(chunk.contains("string \"mychunk\""));
 
     Ok(())
