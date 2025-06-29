@@ -5,12 +5,12 @@ authors = ["Aleksandr Orlenko <zxteam@pm.me>"]
 edition = "2021"
 
 [features]
-lua54 = ["mlua/lua54"]
-lua53 = ["mlua/lua53"]
-lua52 = ["mlua/lua52"]
-lua51 = ["mlua/lua51"]
-luajit = ["mlua/luajit"]
-vendored = ["mlua/vendored"]
+lua54 = ["mluau/lua54"]
+lua53 = ["mluau/lua53"]
+lua52 = ["mluau/lua52"]
+lua51 = ["mluau/lua51"]
+luajit = ["mluau/luajit"]
+vendored = ["mluau/vendored"]
 
 [dependencies]
-mlua = { path = "../../..", default-features = false }
+mluau = { path = "../../..", default-features = false }

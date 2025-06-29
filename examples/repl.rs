@@ -1,6 +1,6 @@
 //! This example shows a simple read-evaluate-print-loop (REPL).
 
-use mlua::{Error, Lua, MultiValue};
+use mluau::{Error, Lua, MultiValue};
 use rustyline::DefaultEditor;
 
 fn main() {

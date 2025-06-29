@@ -1,5 +1,5 @@
 use bstr::{BStr, BString};
-use mlua::{Lua, Result};
+use mluau::{Lua, Result};
 
 #[test]
 fn create_lua() {

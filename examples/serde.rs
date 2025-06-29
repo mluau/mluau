@@ -1,4 +1,4 @@
-use mlua::{Error, Lua, LuaSerdeExt, Result, UserData, Value};
+use mluau::{Error, Lua, LuaSerdeExt, Result, UserData, Value};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
