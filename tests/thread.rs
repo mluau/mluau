@@ -275,7 +275,8 @@ fn test_thread_yield_args() -> Result<()> {
         .into_function()?;
 
     let thread = lua.create_thread(my_lua_func)?;
-    let intermediate = thread.resume::<mluau::MultiValue>(lua.create_function(|lua, ()| lua.yield_with(100))?);
+    let intermediate =
+        thread.resume::<mluau::MultiValue>(lua.create_function(|lua, ()| lua.yield_with(100))?);
     assert!(
         intermediate.is_ok(),
         "Failed to resume thread: {:?}",
