@@ -3,7 +3,7 @@ use std::os::raw::c_void;
 use std::ptr;
 use std::string::String as StdString;
 
-use mlua::{Error, LightUserData, Lua, MultiValue, Result, UserData, UserDataMethods, Value};
+use mluau::{Error, LightUserData, Lua, MultiValue, Result, UserData, UserDataMethods, Value};
 
 #[test]
 fn test_value_eq() -> Result<()> {
@@ -144,17 +144,17 @@ fn test_value_to_string() -> Result<()> {
     assert_eq!(Value::Number(34.59).type_name(), "number");
     #[cfg(all(feature = "luau", not(feature = "luau-vector4")))]
     assert_eq!(
-        Value::Vector(mlua::Vector::new(10.0, 11.1, 12.2)).to_string()?,
+        Value::Vector(mluau::Vector::new(10.0, 11.1, 12.2)).to_string()?,
         "vector(10, 11.1, 12.2)"
     );
     #[cfg(all(feature = "luau", not(feature = "luau-vector4")))]
     assert_eq!(
-        Value::Vector(mlua::Vector::new(10.0, 11.1, 12.2)).type_name(),
+        Value::Vector(mluau::Vector::new(10.0, 11.1, 12.2)).type_name(),
         "vector"
     );
     #[cfg(feature = "luau-vector4")]
     assert_eq!(
-        Value::Vector(mlua::Vector::new(10.0, 11.1, 12.2, 13.3)).to_string()?,
+        Value::Vector(mluau::Vector::new(10.0, 11.1, 12.2, 13.3)).to_string()?,
         "vector(10, 11.1, 12.2, 13.3)"
     );
 
@@ -202,7 +202,7 @@ fn test_value_to_string() -> Result<()> {
 
         // Set `__tostring` metamethod for buffer
         let mt = lua.load("{__tostring = buffer.tostring}").eval()?;
-        lua.set_type_metatable::<mlua::Buffer>(mt);
+        lua.set_type_metatable::<mluau::Buffer>(mt);
         assert_eq!(buf.to_string()?, "hello");
     }
 
@@ -241,8 +241,8 @@ fn test_value_conversions() -> Result<()> {
     assert_eq!(Value::Integer(1).as_u64(), Some(1u64));
     #[cfg(any(feature = "lua54", feature = "lua53"))]
     {
-        assert_eq!(Value::Integer(mlua::Integer::MAX).as_i32(), None);
-        assert_eq!(Value::Integer(mlua::Integer::MAX).as_u32(), None);
+        assert_eq!(Value::Integer(mluau::Integer::MAX).as_i32(), None);
+        assert_eq!(Value::Integer(mluau::Integer::MAX).as_u32(), None);
     }
     assert_eq!(Value::Integer(1).as_isize(), Some(1isize));
     assert_eq!(Value::Integer(1).as_usize(), Some(1usize));

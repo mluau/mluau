@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use bstr::BString;
 use maplit::{btreemap, btreeset, hashmap, hashset};
-use mlua::{
+use mluau::{
     AnyUserData, BorrowedBytes, BorrowedStr, Either, Error, Function, IntoLua, Lua, RegistryKey, Result,
     Table, Thread, UserDataRef, Value,
 };
@@ -49,7 +49,7 @@ fn test_string_from_lua() -> Result<()> {
     let lua = Lua::new();
 
     // From stack
-    let f = lua.create_function(|_, s: mlua::String| Ok(s))?;
+    let f = lua.create_function(|_, s: mluau::String| Ok(s))?;
     let s = f.call::<String>("hello, world!")?;
     assert_eq!(s, "hello, world!");
 

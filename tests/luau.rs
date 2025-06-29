@@ -7,7 +7,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use mlua::{
+use mluau::{
     Compiler, Error, Function, Lua, LuaOptions, Result, StdLib, Table, ThreadStatus, Value, Vector, VmState,
 };
 

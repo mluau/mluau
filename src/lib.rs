@@ -149,7 +149,7 @@ extern crate mlua_derive;
 /// Captured variables are **moved** into the chunk.
 ///
 /// ```
-/// use mlua::{Lua, Result, chunk};
+/// use mluau::{Lua, Result, chunk};
 ///
 /// fn main() -> Result<()> {
 ///     let lua = Lua::new();
@@ -204,9 +204,9 @@ pub use mlua_derive::FromLua;
 /// You can register multiple entrypoints as required.
 ///
 /// ```ignore
-/// use mlua::{Lua, Result, Table};
+/// use mluau::{Lua, Result, Table};
 ///
-/// #[mlua::lua_module]
+/// #[mluau::lua_module]
 /// fn my_module(lua: &Lua) -> Result<Table> {
 ///     let exports = lua.create_table()?;
 ///     exports.set("hello", "world")?;
@@ -221,7 +221,7 @@ pub use mlua_derive::FromLua;
 /// * name - name of the module, defaults to the name of the function
 ///
 /// ```ignore
-/// #[mlua::lua_module(name = "alt_module")]
+/// #[mluau::lua_module(name = "alt_module")]
 /// fn my_module(lua: &Lua) -> Result<Table> {
 ///     ...
 /// }
@@ -235,7 +235,7 @@ pub use mlua_derive::FromLua;
 /// with risk of having uncaught exceptions and memory leaks.
 ///
 /// ```ignore
-/// #[mlua::lua_module(skip_memory_check)]
+/// #[mluau::lua_module(skip_memory_check)]
 /// fn my_module(lua: &Lua) -> Result<Table> {
 ///     ...
 /// }

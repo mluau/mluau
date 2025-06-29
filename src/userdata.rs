@@ -429,7 +429,7 @@ pub trait UserDataFields<T> {
 /// # Examples
 ///
 /// ```
-/// # use mlua::{Lua, Result, UserData};
+/// # use mluau::{Lua, Result, UserData};
 /// # fn main() -> Result<()> {
 /// # let lua = Lua::new();
 /// struct MyUserData;
@@ -448,7 +448,7 @@ pub trait UserDataFields<T> {
 /// `add_methods` (refer to [`UserDataFields`] and [`UserDataMethods`] for more information):
 ///
 /// ```
-/// # use mlua::{Lua, MetaMethod, Result, UserData, UserDataFields, UserDataMethods};
+/// # use mluau::{Lua, MetaMethod, Result, UserData, UserDataFields, UserDataMethods};
 /// # fn main() -> Result<()> {
 /// # let lua = Lua::new();
 /// struct MyUserData(i32);

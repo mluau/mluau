@@ -1,18 +1,17 @@
 [package]
-name = "mlua"
+name = "mluau"
 version = "0.11.0-beta.3" # remember to update mlua_derive
-authors = ["Aleksandr Orlenko <zxteam@pm.me>", "kyren <catherine@kyju.org>"]
+authors = ["cheesycod", "Dev Chrysalis Dalal <dev@deviaze.com>","Aleksandr Orlenko <zxteam@pm.me>", "kyren <catherine@kyju.org>"]
 rust-version = "1.79.0"
 edition = "2021"
-repository = "https://github.com/Anti-Raid/mlua"
+repository = "https://github.com/mluau/mluau"
 documentation = "https://docs.rs/mlua"
 readme = "README.md"
-keywords = ["lua", "luajit", "luau", "scripting"]
-categories = ["api-bindings", "asynchronous"]
+keywords = ["luau", "lute", "lua", "luajit", "scripting"]
+categories = ["api-bindings"]
 license = "MIT"
 description = """
-High level bindings to Lua 5.4/5.3/5.2/5.1 (including LuaJIT) and Luau
-with async/await features and support of writing native Lua modules in Rust.
+High level bindings to Luau (and Lua 5.4-5.1/JIT, but mostly focused on Luau) with Lute support.
 """
 
 [package.metadata.docs.rs]
