@@ -11,7 +11,7 @@ use crate::util::{check_stack, error_traceback_thread, pop_error, StackGuard};
 
 #[cfg(not(feature = "luau"))]
 use crate::{
-    hook::{Debug, HookTriggers},
+    debug::{Debug, HookTriggers},
     types::HookKind,
 };
 
