@@ -2078,6 +2078,31 @@ impl Lua {
         let raw = self.lock();
         unsafe { raw.traceback() }
     }
+
+    /// Returns the address of the Lua main state as a string
+    #[inline]
+    pub fn main_state_address(&self) -> StdString {
+        let raw = self.lock();
+        format!("{:?}", raw.main_state())
+    }
+
+    /// Sets a callback that will be called when the underlying Lua state is closed
+    ///
+    /// Note: this callback must move all data it needs beforehand into the closure
+    /// (which is why it is defined as a `Fn` instead of a function pointer).
+    ///
+    /// Safety:
+    ///
+    /// The provided function should either not panic or catch all panics using catch_unwind
+    pub fn set_on_close<F>(&self, f: F)
+    where
+        F: Fn() + MaybeSend + 'static,
+    {
+        let lua = self.lock();
+        unsafe {
+            (*lua.extra.get()).on_close = Some(Box::new(f));
+        }
+    }
 }
 
 impl WeakLua {

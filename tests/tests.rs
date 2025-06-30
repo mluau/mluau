@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::collections::HashMap;
 #[cfg(not(target_arch = "wasm32"))]
 use std::iter::FromIterator;
@@ -1502,6 +1503,27 @@ fn test_get_or_init_from_ptr() -> Result<()> {
     unsafe { ffi::lua_close(state) };
 
     // Lua must not be accessed after closing
+
+    Ok(())
+}
+
+#[test]
+fn test_onclose() -> Result<()> {
+    let lua = Lua::new();
+
+    let debug_ptr = lua.main_state_address();
+    let closed = Arc::new(Cell::new(false));
+    let closed_ref = closed.clone();
+    lua.set_on_close(move || {
+        closed_ref.set(true);
+        println!("Dropping lua state {}", debug_ptr)
+    });
+
+    // Close Lua state
+    drop(lua);
+
+    // Check that on_close callback was called
+    assert!(closed.get());
 
     Ok(())
 }

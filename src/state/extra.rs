@@ -147,6 +147,12 @@ pub(crate) struct ExtraData {
 
     // Values currently being yielded from Lua.yield()
     pub(super) yielded_values: Option<MultiValue>,
+
+    // Callback called when lua VM is about to be closed
+    #[cfg(feature = "send")]
+    pub(super) on_close: Option<Box<dyn Fn() + Send + 'static>>,
+    #[cfg(not(feature = "send"))]
+    pub(super) on_close: Option<Box<dyn Fn() + 'static>>,
 }
 
 impl Drop for ExtraData {
@@ -233,6 +239,7 @@ impl ExtraData {
             no_drop: false,
             yielded_values: None,
             disable_error_userdata: false,
+            on_close: None,
         }));
 
         // Store it in the registry

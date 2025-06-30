@@ -162,7 +162,13 @@ impl Drop for RawLua {
                 }
             }
 
-            println!("Dropping Lua state: {:?}", self.main_state());
+            {
+                let extra = self.extra.get();
+                if let Some(on_close) = (*extra).on_close.take() {
+                    // Call the on_close callback
+                    on_close();
+                }
+            }
 
             #[cfg(feature = "luau-lute")]
             {
