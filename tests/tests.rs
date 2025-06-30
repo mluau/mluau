@@ -1,10 +1,9 @@
-use std::cell::Cell;
 use std::collections::HashMap;
 #[cfg(not(target_arch = "wasm32"))]
 use std::iter::FromIterator;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::String as StdString;
-use std::sync::Arc;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::{error, f32, f64, fmt};
 
 use mlua::{
@@ -1512,10 +1511,10 @@ fn test_onclose() -> Result<()> {
     let lua = Lua::new();
 
     let debug_ptr = lua.main_state_address();
-    let closed = Arc::new(Cell::new(false));
+    let closed = Arc::new(AtomicBool::new(false));
     let closed_ref = closed.clone();
     lua.set_on_close(move || {
-        closed_ref.set(true);
+        closed_ref.store(true, Ordering::SeqCst);
         println!("Dropping lua state {}", debug_ptr)
     });
 
@@ -1523,7 +1522,7 @@ fn test_onclose() -> Result<()> {
     drop(lua);
 
     // Check that on_close callback was called
-    assert!(closed.get());
+    assert!(closed.load(Ordering::SeqCst));
 
     Ok(())
 }
