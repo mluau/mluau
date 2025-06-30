@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::String as StdString;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::{error, f32, f64, fmt};
 
 use mlua::{
