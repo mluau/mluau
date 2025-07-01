@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::String as StdString;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{error, f32, f64, fmt};
 
@@ -1505,6 +1506,27 @@ fn test_get_or_init_from_ptr() -> Result<()> {
     unsafe { ffi::lua_close(state) };
 
     // Lua must not be accessed after closing
+
+    Ok(())
+}
+
+#[test]
+fn test_onclose() -> Result<()> {
+    let lua = Lua::new();
+
+    let debug_ptr = lua.main_state_address();
+    let closed = Arc::new(AtomicBool::new(false));
+    let closed_ref = closed.clone();
+    lua.set_on_close(move || {
+        closed_ref.store(true, Ordering::SeqCst);
+        println!("Dropping lua state {}", debug_ptr)
+    });
+
+    // Close Lua state
+    drop(lua);
+
+    // Check that on_close callback was called
+    assert!(closed.load(Ordering::SeqCst));
 
     Ok(())
 }

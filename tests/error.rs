@@ -154,5 +154,27 @@ fn test_disable_error_userdata() -> Result<()> {
         }
     }
 
+    lua.set_memory_limit(10000000)
+        .expect("Failed to set memory limit");
+
+    // Next, test panic handling
+    let func4 = lua.create_function(|_, ()| {
+        if true {
+            panic!("This is a test panic")
+        } else {
+            Ok(())
+        }
+    })?;
+    lua.globals().set("func4", func4)?;
+    let msg4 = lua
+        .load("local ok, err = pcall(func4); return tostring(err)")
+        .eval::<String>()?;
+    assert!(msg4.contains("This is a test panic"));
+
+    let res = lua.globals().get::<mlua::Function>("func4")?.call::<()>(());
+
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("This is a test panic"));
+
     Ok(())
 }
