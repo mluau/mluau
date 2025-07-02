@@ -71,8 +71,13 @@ impl<'a> Debug<'a> {
                 "lua_getinfo failed with `f`"
             );
 
-            ffi::lua_xmove(self.state, self.lua.ref_thread(), 1);
-            Function(self.lua.pop_ref_thread())
+            let (aux_thread, index, replace) = get_next_spot(lua.extra());
+            ffi::lua_xmove(ref_thread, lua.ref_thread(aux_thread), 1);
+            if replace {
+                ffi::lua_replace(lua.ref_thread(aux_thread), index);
+            }
+
+            Ok(Function(lua.new_value_ref(aux_thread, index)))
         }
     }
 
