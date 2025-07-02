@@ -545,7 +545,7 @@ impl Lua {
     #[cfg_attr(docsrs, doc(cfg(not(feature = "luau"))))]
     pub fn set_global_hook<F>(&self, triggers: HookTriggers, callback: F) -> Result<()>
     where
-        F: Fn(&Lua, Debug) -> Result<VmState> + MaybeSend + 'static,
+        F: Fn(&Lua, &Debug) -> Result<VmState> + MaybeSend + 'static,
     {
         let lua = self.lock();
         unsafe {
@@ -595,7 +595,7 @@ impl Lua {
     #[cfg_attr(docsrs, doc(cfg(not(feature = "luau"))))]
     pub fn set_hook<F>(&self, triggers: HookTriggers, callback: F) -> Result<()>
     where
-        F: Fn(&Lua, Debug) -> Result<VmState> + MaybeSend + 'static,
+        F: Fn(&Lua, &Debug) -> Result<VmState> + MaybeSend + 'static,
     {
         let lua = self.lock();
         unsafe { lua.set_thread_hook(lua.state(), HookKind::Thread(triggers, XRc::new(callback))) }
@@ -880,7 +880,7 @@ impl Lua {
     /// information about the function executing at a given level.
     /// Level `0` is the current running function, whereas level `n+1` is the function that has
     /// called level `n` (except for tail calls, which do not count in the stack).
-    pub fn inspect_stack<R>(&self, level: usize, f: impl FnOnce(Debug) -> R) -> Option<R> {
+    pub fn inspect_stack<R>(&self, level: usize, f: impl FnOnce(&Debug) -> R) -> Option<R> {
         let lua = self.lock();
         unsafe {
             let mut ar = mem::zeroed::<ffi::lua_Debug>();
@@ -894,7 +894,7 @@ impl Lua {
                 return None;
             }
 
-            Some(f(Debug::new(&lua, level, &mut ar)))
+            Some(f(&Debug::new(&lua, level, &mut ar)))
         }
     }
 
