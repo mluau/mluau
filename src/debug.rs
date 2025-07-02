@@ -5,6 +5,7 @@ use ffi::{lua_Debug, lua_State};
 
 use crate::function::Function;
 use crate::state::RawLua;
+use crate::state::util::get_next_spot;
 use crate::util::{assert_stack, linenumber_to_usize, ptr_to_lossy_str, ptr_to_str, StackGuard};
 
 /// Contains information about currently executing Lua code.
@@ -72,7 +73,7 @@ impl<'a> Debug<'a> {
             );
 
             let (aux_thread, index, replace) = get_next_spot(self.lua.extra());
-            ffi::lua_xmove(ref_thread, self.lua.ref_thread(aux_thread), 1);
+            ffi::lua_xmove(self.state, self.lua.ref_thread(aux_thread), 1);
             if replace {
                 ffi::lua_replace(self.lua.ref_thread(aux_thread), index);
             }
