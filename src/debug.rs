@@ -77,7 +77,7 @@ impl<'a> Debug<'a> {
                 ffi::lua_replace(lua.ref_thread(aux_thread), index);
             }
 
-            Ok(Function(lua.new_value_ref(aux_thread, index)))
+            Function(lua.new_value_ref(aux_thread, index))
         }
     }
 
