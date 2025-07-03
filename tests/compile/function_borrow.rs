@@ -1,4 +1,4 @@
-use mlua::{Lua, Result};
+use mluau::{Lua, Result};
 
 struct Test(i32);
 

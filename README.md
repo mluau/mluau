@@ -93,7 +93,7 @@ Below is a list of the available feature flags. By default `mlua` does not enabl
 - `vendored`: build static Lua(JIT) libraries from sources during `mlua` compilation using [lua-src] or [luajit-src]
 - `module`: enable module mode (building loadable `cdylib` library for Lua)
 <!-- * `async`: enable async/await support (any executor can be used, eg. [tokio] or [async-std]) -->
-- `send`: make `mlua::Lua: Send + Sync` (adds [`Send`] requirement to `mlua::Function` and `mlua::UserData`)
+- `send`: make `mluau::Lua: Send + Sync` (adds [`Send`] requirement to `mluau::Function` and `mluau::UserData`)
 - `error-send`: make `mlua:Error: Send + Sync`
 - `serde`: add serialization and deserialization support to `mlua` types using [serde]
 - `macros`: enable procedural macros (such as `chunk!`)
@@ -112,13 +112,13 @@ Below is a list of the available feature flags. By default `mlua` does not enabl
 
 ### Serialization (serde) support
 
-With the `serde` feature flag enabled, `mlua` allows you to serialize/deserialize any type that implements [`serde::Serialize`] and [`serde::Deserialize`] into/from [`mlua::Value`]. In addition, `mlua` provides the [`serde::Serialize`] trait implementation for it (including `UserData` support).
+With the `serde` feature flag enabled, `mlua` allows you to serialize/deserialize any type that implements [`serde::Serialize`] and [`serde::Deserialize`] into/from [`mluau::Value`]. In addition, `mlua` provides the [`serde::Serialize`] trait implementation for it (including `UserData` support).
 
 [Example](examples/serialize.rs)
 
 [`serde::Serialize`]: https://docs.serde.rs/serde/ser/trait.Serialize.html
 [`serde::Deserialize`]: https://docs.serde.rs/serde/de/trait.Deserialize.html
-[`mlua::Value`]: https://docs.rs/mlua/latest/mlua/enum.Value.html
+[`mluau::Value`]: https://docs.rs/mlua/latest/mlua/enum.Value.html
 
 ### Compiling
 
@@ -153,7 +153,7 @@ mlua = { version = "0.10", features = ["lua54", "vendored"] }
 `main.rs`
 
 ```rust
-use mlua::prelude::*;
+use mluau::prelude::*;
 
 fn main() -> LuaResult<()> {
     let lua = Lua::new();
@@ -189,14 +189,14 @@ mlua = { version = "0.10", features = ["lua54", "module"] }
 `lib.rs`:
 
 ```rust
-use mlua::prelude::*;
+use mluau::prelude::*;
 
 fn hello(_: &Lua, name: String) -> LuaResult<()> {
     println!("hello, {}!", name);
     Ok(())
 }
 
-#[mlua::lua_module]
+#[mluau::lua_module]
 fn my_module(lua: &Lua) -> LuaResult<LuaTable> {
     let exports = lua.create_table()?;
     exports.set("hello", lua.create_function(hello)?)?;

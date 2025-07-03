@@ -1,6 +1,6 @@
 use std::panic::catch_unwind;
 
-use mlua::Lua;
+use mluau::Lua;
 
 fn main() {
     let lua = Lua::new();

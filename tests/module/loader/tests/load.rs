@@ -1,7 +1,7 @@
 use std::env;
 use std::path::PathBuf;
 
-use mlua::{Lua, Result};
+use mluau::{Lua, Result};
 
 #[test]
 fn test_module_simple() -> Result<()> {

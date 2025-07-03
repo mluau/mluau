@@ -1,7 +1,7 @@
 use std::f32;
 use std::iter::FromIterator;
 
-use mlua::{chunk, FromLua, Function, Lua, MetaMethod, Result, UserData, UserDataMethods, Value, Variadic};
+use mluau::{chunk, FromLua, Function, Lua, MetaMethod, Result, UserData, UserDataMethods, Value, Variadic};
 
 fn main() -> Result<()> {
     // You can create a new Lua state with `Lua::new()`. This loads the default Lua std library
@@ -105,7 +105,7 @@ fn main() -> Result<()> {
 
     let check_equal = lua.create_function(|_, (list1, list2): (Vec<String>, Vec<String>)| {
         // This function just checks whether two string lists are equal, and in an inefficient way.
-        // Lua callbacks return `mlua::Result`, an Ok value is a normal return, and an Err return
+        // Lua callbacks return `mluau::Result`, an Ok value is a normal return, and an Err return
         // turns into a Lua 'error'. Again, any type that is convertible to Lua may be returned.
         Ok(list1 == list2)
     })?;

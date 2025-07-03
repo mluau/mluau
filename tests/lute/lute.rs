@@ -1,6 +1,6 @@
 #![cfg(feature = "luau-lute")]
 
-use mlua::prelude::*;
+use mluau::prelude::*;
 
 #[test]
 fn test_lute_runtime() -> LuaResult<()> {

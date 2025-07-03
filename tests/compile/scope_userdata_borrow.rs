@@ -1,4 +1,4 @@
-use mlua::{Lua, UserData};
+use mluau::{Lua, UserData};
 
 fn main() {
     // Should not allow userdata borrow to outlive lifetime of AnyUserData handle

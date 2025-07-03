@@ -1,4 +1,4 @@
-use mlua::{Lua, Result};
+use mluau::{Lua, Result};
 
 #[test]
 fn test_debug_format() -> Result<()> {
@@ -17,8 +17,8 @@ fn test_debug_format() -> Result<()> {
 #[test]
 fn test_traceback() -> Result<()> {
     let lua = Lua::new_with(
-        mlua::StdLib::ALL_SAFE,
-        mlua::LuaOptions::new().disable_error_userdata(true),
+        mluau::StdLib::ALL_SAFE,
+        mluau::LuaOptions::new().disable_error_userdata(true),
     )?;
 
     let tracebacker = lua.create_function(|lua, _: ()| {

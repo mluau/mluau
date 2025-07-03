@@ -1,6 +1,6 @@
 #![cfg(feature = "luau")]
 
-use mlua::{Lua, Result, Value};
+use mluau::{Lua, Result, Value};
 
 #[test]
 fn test_buffer() -> Result<()> {
