@@ -547,6 +547,15 @@ impl AnyUserData {
         unsafe { UserDataRef::borrow_from_stack(&lua, lua.ref_thread(self.0.aux_thread), self.0.index) }
     }
 
+    /// Borrow this userdata immutably if it is of type `T`, passing the borrowed value
+    /// to the closure.
+    pub fn borrow_scoped<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
+        let lua = self.0.lua.lock();
+        let type_id = lua.get_userdata_ref_type_id(&self.0)?;
+        let type_hints = TypeIdHints::new::<T>();
+        unsafe { borrow_userdata_scoped(lua.ref_thread(self.0.aux_thread), self.0.index, type_id, type_hints, f) }
+    }
+
     /// Borrow this userdata mutably if it is of type `T`.
     ///
     /// # Errors
@@ -561,6 +570,15 @@ impl AnyUserData {
     pub fn borrow_mut<T: 'static>(&self) -> Result<UserDataRefMut<T>> {
         let lua = self.0.lua.lock();
         unsafe { UserDataRefMut::borrow_from_stack(&lua, lua.ref_thread(self.0.aux_thread), self.0.index) }
+    }
+
+    /// Borrow this userdata mutably if it is of type `T`, passing the borrowed value
+    /// to the closure.
+    pub fn borrow_mut_scoped<T: 'static, R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R> {
+        let lua = self.0.lua.lock();
+        let type_id = lua.get_userdata_ref_type_id(&self.0)?;
+        let type_hints = TypeIdHints::new::<T>();
+        unsafe { borrow_userdata_scoped_mut(lua.ref_thread(self.0.aux_thread), self.0.index, type_id, type_hints, f) }
     }
 
     /// Takes the value out of this userdata.
