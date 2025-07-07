@@ -1,6 +1,6 @@
 use std::panic::catch_unwind;
 
-use mlua::{Error, Function, Lua, Result, Thread, ThreadStatus};
+use mluau::{Error, Function, Lua, Result, Thread, ThreadStatus};
 
 #[test]
 fn test_thread() -> Result<()> {
@@ -108,7 +108,7 @@ fn test_thread() -> Result<()> {
 
 #[test]
 fn test_thread_reset() -> Result<()> {
-    use mlua::{AnyUserData, UserData};
+    use mluau::{AnyUserData, UserData};
     use std::sync::Arc;
 
     let lua = Lua::new();
@@ -275,7 +275,8 @@ fn test_thread_yield_args() -> Result<()> {
         .into_function()?;
 
     let thread = lua.create_thread(my_lua_func)?;
-    let intermediate = thread.resume::<mlua::MultiValue>(lua.create_function(|lua, ()| lua.yield_with(100))?);
+    let intermediate =
+        thread.resume::<mluau::MultiValue>(lua.create_function(|lua, ()| lua.yield_with(100))?);
     assert!(
         intermediate.is_ok(),
         "Failed to resume thread: {:?}",
@@ -291,8 +292,8 @@ fn test_thread_yield_args() -> Result<()> {
         value: i32,
     }
 
-    impl mlua::UserData for MyTestUserData {
-        fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
+    impl mluau::UserData for MyTestUserData {
+        fn add_methods<M: mluau::UserDataMethods<Self>>(methods: &mut M) {
             methods.add_method("yield", |lua, this, ()| {
                 println!("yield called");
                 lua.yield_with(this.value)?;
@@ -313,7 +314,7 @@ fn test_thread_yield_args() -> Result<()> {
         .into_function()?;
 
     let thread = lua.create_thread(my_lua_func)?;
-    let intermediate = thread.resume::<mlua::MultiValue>(my_data);
+    let intermediate = thread.resume::<mluau::MultiValue>(my_data);
     println!("intermediate={:?}", intermediate);
     assert!(
         intermediate.is_ok(),
@@ -360,7 +361,7 @@ fn test_continuation() {
         .expect("Failed to create luau thread");
 
     let v = th
-        .resume::<mlua::MultiValue>(cont_func)
+        .resume::<mluau::MultiValue>(cont_func)
         .expect("Failed to resume");
     let v = th.resume::<i32>(v).expect("Failed to load continuation");
 
@@ -370,7 +371,7 @@ fn test_continuation() {
     let cont_func = lua
         .create_function_with_continuation(
             |lua, _: ()| lua.yield_with(()),
-            |_lua, _status, mv: mlua::MultiValue| Ok(mv.len()),
+            |_lua, _status, mv: mluau::MultiValue| Ok(mv.len()),
         )
         .expect("Failed to create cont_func");
 
@@ -390,7 +391,7 @@ fn test_continuation() {
         .expect("Failed to create luau thread");
 
     let v = th
-        .resume::<mlua::MultiValue>(cont_func)
+        .resume::<mluau::MultiValue>(cont_func)
         .expect("Failed to resume");
     assert!(v.is_empty());
     let v = th.resume::<i32>(v).expect("Failed to load continuation");
@@ -399,7 +400,7 @@ fn test_continuation() {
     // Yielding continuation test (only supported on luau)
     #[cfg(feature = "luau")]
     {
-        mlua::Lua::set_fflag("LuauYieldableContinuations", true).unwrap();
+        mluau::Lua::set_fflag("LuauYieldableContinuations", true).unwrap();
     }
 
     let cont_func = lua
@@ -458,7 +459,7 @@ fn test_continuation() {
         .expect("Failed to create luau thread");
 
     let v = th
-        .resume::<mlua::MultiValue>(cont_func)
+        .resume::<mluau::MultiValue>(cont_func)
         .expect("Failed to resume");
     let v = th.resume::<i32>(v).expect("Failed to load continuation");
 
@@ -467,18 +468,18 @@ fn test_continuation() {
     let always_yield = lua
         .create_function_with_continuation(
             |lua, ()| lua.yield_with((42, "69420".to_string(), 45.6)),
-            |_lua, _, mv: mlua::MultiValue| {
+            |_lua, _, mv: mluau::MultiValue| {
                 println!("Reached second continuation");
                 if mv.is_empty() {
                     return Ok(mv);
                 }
-                Err(mlua::Error::external(format!("a{}", mv.len())))
+                Err(mluau::Error::external(format!("a{}", mv.len())))
             },
         )
         .unwrap();
 
     let thread = lua.create_thread(always_yield).unwrap();
-    let mv = thread.resume::<mlua::MultiValue>(()).unwrap();
+    let mv = thread.resume::<mluau::MultiValue>(()).unwrap();
     assert!(thread
         .resume::<String>(mv)
         .unwrap_err()
@@ -488,14 +489,14 @@ fn test_continuation() {
     let cont_func = lua
         .create_function_with_continuation(
             |lua, a: u64| lua.yield_with((a + 1, 1)),
-            |lua, status, args: mlua::MultiValue| {
+            |lua, status, args: mluau::MultiValue| {
                 println!("Reached cont recursive/multiple: {:?}", args);
 
                 if args.len() == 5 {
                     if cfg!(any(feature = "luau", feature = "lua52")) {
-                        assert_eq!(status, mlua::ContinuationStatus::Ok);
+                        assert_eq!(status, mluau::ContinuationStatus::Ok);
                     } else {
-                        assert_eq!(status, mlua::ContinuationStatus::Yielded);
+                        assert_eq!(status, mluau::ContinuationStatus::Yielded);
                     }
                     return Ok(6_i32);
                 }
@@ -521,20 +522,20 @@ fn test_continuation() {
         .expect("Failed to create luau thread");
 
     let v = th
-        .resume::<mlua::MultiValue>(cont_func)
+        .resume::<mluau::MultiValue>(cont_func)
         .expect("Failed to resume");
     println!("v={:?}", v);
 
     let v = th
-        .resume::<mlua::MultiValue>(v)
+        .resume::<mluau::MultiValue>(v)
         .expect("Failed to load continuation");
     println!("v={:?}", v);
     let v = th
-        .resume::<mlua::MultiValue>(v)
+        .resume::<mluau::MultiValue>(v)
         .expect("Failed to load continuation");
     println!("v={:?}", v);
     let v = th
-        .resume::<mlua::MultiValue>(v)
+        .resume::<mluau::MultiValue>(v)
         .expect("Failed to load continuation");
 
     // (2, 1) followed by ()
@@ -573,7 +574,7 @@ fn test_continuation() {
         .expect("Failed to create luau thread");
 
     let v = th
-        .resume::<mlua::MultiValue>(cont_func)
+        .resume::<mluau::MultiValue>(cont_func)
         .expect("Failed to resume");
 
     let v = th.resume::<String>(v).expect("Failed to load continuation");
@@ -627,7 +628,7 @@ fn test_large_thread_creation() {
         // Yielding continuation test (only supported on luau)
         #[cfg(feature = "luau")]
         {
-            mlua::Lua::set_fflag("LuauYieldableContinuations", true).unwrap();
+            mluau::Lua::set_fflag("LuauYieldableContinuations", true).unwrap();
         }
 
         let cont_func = lua
@@ -686,7 +687,7 @@ fn test_large_thread_creation() {
             .expect("Failed to create luau thread");
 
         let v = th
-            .resume::<mlua::MultiValue>(cont_func)
+            .resume::<mluau::MultiValue>(cont_func)
             .expect("Failed to resume");
         let v = th.resume::<i32>(v).expect("Failed to load continuation");
 
@@ -695,18 +696,18 @@ fn test_large_thread_creation() {
         let always_yield = lua
             .create_function_with_continuation(
                 |lua, ()| lua.yield_with((42, "69420".to_string(), 45.6)),
-                |_lua, _, mv: mlua::MultiValue| {
+                |_lua, _, mv: mluau::MultiValue| {
                     println!("Reached second continuation");
                     if mv.is_empty() {
                         return Ok(mv);
                     }
-                    Err(mlua::Error::external(format!("a{}", mv.len())))
+                    Err(mluau::Error::external(format!("a{}", mv.len())))
                 },
             )
             .unwrap();
 
         let thread = lua.create_thread(always_yield).unwrap();
-        let mv = thread.resume::<mlua::MultiValue>(()).unwrap();
+        let mv = thread.resume::<mluau::MultiValue>(()).unwrap();
         assert!(thread
             .resume::<String>(mv)
             .unwrap_err()
@@ -716,14 +717,14 @@ fn test_large_thread_creation() {
         let cont_func = lua
             .create_function_with_continuation(
                 |lua, a: u64| lua.yield_with((a + 1, 1)),
-                |lua, status, args: mlua::MultiValue| {
+                |lua, status, args: mluau::MultiValue| {
                     println!("Reached cont recursive/multiple: {:?}", args);
 
                     if args.len() == 5 {
                         if cfg!(any(feature = "luau", feature = "lua52")) {
-                            assert_eq!(status, mlua::ContinuationStatus::Ok);
+                            assert_eq!(status, mluau::ContinuationStatus::Ok);
                         } else {
-                            assert_eq!(status, mlua::ContinuationStatus::Yielded);
+                            assert_eq!(status, mluau::ContinuationStatus::Yielded);
                         }
                         return Ok(6_i32);
                     }
@@ -749,20 +750,20 @@ fn test_large_thread_creation() {
             .expect("Failed to create luau thread");
 
         let v = th
-            .resume::<mlua::MultiValue>(cont_func)
+            .resume::<mluau::MultiValue>(cont_func)
             .expect("Failed to resume");
         println!("v={:?}", v);
 
         let v = th
-            .resume::<mlua::MultiValue>(v)
+            .resume::<mluau::MultiValue>(v)
             .expect("Failed to load continuation");
         println!("v={:?}", v);
         let v = th
-            .resume::<mlua::MultiValue>(v)
+            .resume::<mluau::MultiValue>(v)
             .expect("Failed to load continuation");
         println!("v={:?}", v);
         let v = th
-            .resume::<mlua::MultiValue>(v)
+            .resume::<mluau::MultiValue>(v)
             .expect("Failed to load continuation");
 
         // (2, 1) followed by ()
@@ -801,7 +802,7 @@ fn test_large_thread_creation() {
             .expect("Failed to create luau thread");
 
         let v = th
-            .resume::<mlua::MultiValue>(cont_func)
+            .resume::<mluau::MultiValue>(cont_func)
             .expect("Failed to resume");
 
         let v = th.resume::<String>(v).expect("Failed to load continuation");

@@ -6,7 +6,7 @@ use std::sync::Arc;
 #[cfg(feature = "lua54")]
 use std::sync::atomic::{AtomicI64, Ordering};
 
-use mlua::{
+use mluau::{
     AnyUserData, Error, ExternalError, Function, Lua, MetaMethod, Nil, ObjectLike, Result, String, UserData,
     UserDataFields, UserDataMethods, UserDataRef, Value, Variadic,
 };
@@ -144,9 +144,9 @@ fn test_metamethods() -> Result<()> {
                 let stateless_iter = lua.create_function(|_, (data, i): (UserDataRef<Self>, i64)| {
                     let i = i + 1;
                     if i <= data.0 {
-                        return Ok(mlua::Variadic::from_iter(vec![i, i]));
+                        return Ok(mluau::Variadic::from_iter(vec![i, i]));
                     }
-                    return Ok(mlua::Variadic::new());
+                    return Ok(mluau::Variadic::new());
                 })?;
                 Ok((stateless_iter, data.clone(), 0))
             });
@@ -534,7 +534,7 @@ fn test_methods_namecall() -> Result<()> {
                 if false {
                     return Ok(());
                 }
-                Err(mlua::Error::external("This is an error!"))
+                Err(mluau::Error::external("This is an error!"))
             });
         }
     }
@@ -941,7 +941,7 @@ fn test_userdata_derive() -> Result<()> {
 
     // Simple struct
 
-    #[derive(Clone, Copy, mlua::FromLua)]
+    #[derive(Clone, Copy, mluau::FromLua)]
     struct MyUserData(i32);
 
     lua.register_userdata_type::<MyUserData>(|reg| {
@@ -953,7 +953,7 @@ fn test_userdata_derive() -> Result<()> {
 
     // More complex struct where generics and where clause
 
-    #[derive(Clone, Copy, mlua::FromLua)]
+    #[derive(Clone, Copy, mluau::FromLua)]
     struct MyUserData2<'a, T: ?Sized>(&'a T)
     where
         T: Copy;

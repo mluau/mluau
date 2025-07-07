@@ -36,7 +36,7 @@ impl Table {
     /// Export a value as a global to make it usable from Lua:
     ///
     /// ```
-    /// # use mlua::{Lua, Result};
+    /// # use mluau::{Lua, Result};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let globals = lua.globals();
@@ -92,7 +92,7 @@ impl Table {
     /// Query the version of the Lua interpreter:
     ///
     /// ```
-    /// # use mlua::{Lua, Result};
+    /// # use mluau::{Lua, Result};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let globals = lua.globals();
@@ -197,7 +197,7 @@ impl Table {
     /// Compare two tables using `__eq` metamethod:
     ///
     /// ```
-    /// # use mlua::{Lua, Result, Table};
+    /// # use mluau::{Lua, Result, Table};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let table1 = lua.create_table()?;
@@ -593,7 +593,7 @@ impl Table {
     /// Iterate over all globals:
     ///
     /// ```
-    /// # use mlua::{Lua, Result, Value};
+    /// # use mluau::{Lua, Result, Value};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let globals = lua.globals();
@@ -654,7 +654,7 @@ impl Table {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Lua, Result, Table};
+    /// # use mluau::{Lua, Result, Table};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let my_table: Table = lua.load(r#"

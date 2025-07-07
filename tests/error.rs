@@ -1,7 +1,7 @@
 use std::error::Error as _;
 use std::{fmt, io};
 
-use mlua::{Error, ErrorContext, Lua, LuaOptions, Result};
+use mluau::{Error, ErrorContext, Lua, LuaOptions, Result};
 
 #[test]
 fn test_error_context() -> Result<()> {
@@ -80,7 +80,7 @@ fn test_error_chain() -> Result<()> {
 #[cfg(feature = "anyhow")]
 #[test]
 fn test_error_anyhow() -> Result<()> {
-    use mlua::IntoLua;
+    use mluau::IntoLua;
 
     let lua = Lua::new();
 
@@ -103,7 +103,7 @@ fn test_error_anyhow() -> Result<()> {
 #[test]
 fn test_disable_error_userdata() -> Result<()> {
     let lua = Lua::new_with(
-        mlua::StdLib::ALL_SAFE,
+        mluau::StdLib::ALL_SAFE,
         LuaOptions::new().disable_error_userdata(true),
     )?;
 
@@ -146,7 +146,7 @@ fn test_disable_error_userdata() -> Result<()> {
     for i in 0..10000 {
         match lua.load(format!("return string.rep('a', {})", i)).exec() {
             Ok(_) => {}
-            Err(mlua::Error::MemoryError { .. }) => {
+            Err(mluau::Error::MemoryError { .. }) => {
                 // Memory error is expected, we can stop here
                 break;
             }

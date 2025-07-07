@@ -301,7 +301,7 @@ impl Lua {
     ///
     /// # Example
     /// ```
-    /// # use mlua::{Lua, Result};
+    /// # use mluau::{Lua, Result};
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
     /// let n: i32 = unsafe {
@@ -492,7 +492,7 @@ impl Lua {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Lua, Result};
+    /// # use mluau::{Lua, Result};
     /// # #[cfg(feature = "luau")]
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
@@ -574,7 +574,7 @@ impl Lua {
     /// Shows each line number of code being executed by the Lua interpreter.
     ///
     /// ```
-    /// # use mlua::{Lua, HookTriggers, Result, VmState};
+    /// # use mluau::{Lua, HookTriggers, Result, VmState};
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
     /// lua.set_hook(HookTriggers::EVERY_LINE, |_lua, debug| {
@@ -644,7 +644,7 @@ impl Lua {
     ///
     /// ```
     /// # use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
-    /// # use mlua::{Lua, Result, ThreadStatus, VmState};
+    /// # use mluau::{Lua, Result, ThreadStatus, VmState};
     /// # #[cfg(feature = "luau")]
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
@@ -1235,7 +1235,7 @@ impl Lua {
     /// Create a function which prints its argument:
     ///
     /// ```
-    /// # use mlua::{Lua, Result};
+    /// # use mluau::{Lua, Result};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let greet = lua.create_function(|_, name: String| {
@@ -1250,7 +1250,7 @@ impl Lua {
     /// Use tuples to accept multiple arguments:
     ///
     /// ```
-    /// # use mlua::{Lua, Result};
+    /// # use mluau::{Lua, Result};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let print_person = lua.create_function(|_, (name, age): (String, u8)| {
@@ -1433,7 +1433,7 @@ impl Lua {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Lua, Result, UserData, UserDataFields, UserDataMethods};
+    /// # use mluau::{Lua, Result, UserData, UserDataFields, UserDataMethods};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// struct MyUserData(i32);
@@ -1472,7 +1472,7 @@ impl Lua {
     /// Change metatable for Lua boolean type:
     ///
     /// ```
-    /// # use mlua::{Lua, Result, Function};
+    /// # use mluau::{Lua, Result, Function};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let mt = lua.create_table()?;
@@ -1919,7 +1919,7 @@ impl Lua {
     /// # Examples
     ///
     /// ```
-    /// use mlua::{Lua, Result};
+    /// use mluau::{Lua, Result};
     ///
     /// fn hello(lua: &Lua, _: ()) -> Result<()> {
     ///     let mut s = lua.app_data_mut::<&str>().unwrap();
@@ -2074,8 +2074,8 @@ impl Lua {
     /// Example:
     ///
     /// ```rust
-    /// fn test() -> mlua::Result<()> {
-    ///     let lua = mlua::Lua::new();
+    /// fn test() -> mluau::Result<()> {
+    ///     let lua = mluau::Lua::new();
     ///     let always_yield = lua.create_function(|lua, ()| lua.yield_with((42, "69420".to_string(), 45.6)))?;
     ///
     ///     let thread = lua.create_thread(always_yield)?;

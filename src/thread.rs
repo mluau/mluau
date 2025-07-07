@@ -120,7 +120,7 @@ impl Thread {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Error, Lua, Result, Thread};
+    /// # use mluau::{Error, Lua, Result, Thread};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let thread: Thread = lua.load(r#"
@@ -416,7 +416,7 @@ impl Thread {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Lua, Result};
+    /// # use mluau::{Lua, Result};
     /// # #[cfg(feature = "luau")]
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
