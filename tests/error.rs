@@ -171,7 +171,7 @@ fn test_disable_error_userdata() -> Result<()> {
         .eval::<String>()?;
     assert!(msg4.contains("This is a test panic"));
 
-    let res = lua.globals().get::<mlua::Function>("func4")?.call::<()>(());
+    let res = lua.globals().get::<mluau::Function>("func4")?.call::<()>(());
 
     assert!(res.is_err());
     assert!(res.unwrap_err().to_string().contains("This is a test panic"));
