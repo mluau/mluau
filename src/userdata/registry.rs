@@ -640,7 +640,7 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         }
         #[cfg(not(feature = "luau"))]
         {
-            let name = name.to_string();
+            let name = name.into();
             let callback = self.box_function(&name, function);
             self.raw.functions.push((name, callback));
         }
@@ -661,7 +661,7 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         }
         #[cfg(not(feature = "luau"))]
         {
-            let name = name.to_string();
+            let name = name.into();
             let callback = self.box_function_mut(&name, function);
             self.raw.functions.push((name, callback));
         }
