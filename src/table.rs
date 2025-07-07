@@ -484,12 +484,12 @@ impl Table {
     /// [`getmetatable`]: https://www.lua.org/manual/5.4/manual.html#pdf-getmetatable
     pub fn metatable(&self) -> Option<Table> {
         let lua = self.0.lua.lock();
-        let ref_thread = lua.ref_thread();
+        let ref_thread = lua.ref_thread(self.0.aux_thread);
         unsafe {
             if ffi::lua_getmetatable(ref_thread, self.0.index) == 0 {
                 None
             } else {
-                Some(Table(lua.pop_ref_thread()))
+                Some(Table(lua.pop_ref_at(ref_thread)))
             }
         }
     }
@@ -499,21 +499,27 @@ impl Table {
     /// If `metatable` is `None`, the metatable is removed (if no metatable is set, this does
     /// nothing).
     pub fn set_metatable(&self, metatable: Option<Table>) -> Result<()> {
+        // Workaround to throw readonly error without returning Result
         #[cfg(feature = "luau")]
         if self.is_readonly() {
             return Err(Error::runtime("attempt to modify a readonly table"));
         }
 
         let lua = self.0.lua.lock();
-        let ref_thread = lua.ref_thread();
+        let state = lua.state();
         unsafe {
+            let _sg = StackGuard::new(state);
+            assert_stack(state, 2);
+
+            lua.push_ref_at(&self.0, state);
             if let Some(metatable) = metatable {
-                ffi::lua_pushvalue(ref_thread, metatable.0.index);
+                lua.push_ref_at(&metatable.0, state);
             } else {
-                ffi::lua_pushnil(ref_thread);
+                ffi::lua_pushnil(state);
             }
-            ffi::lua_setmetatable(ref_thread, self.0.index);
+            ffi::lua_setmetatable(state, -2);
         }
+
         Ok(())
     }
 

@@ -1568,7 +1568,7 @@ impl Lua {
             let _sg = StackGuard::new(state);
             check_stack(state, 1)?;
 
-            lua.push_ref(&globals.0);
+            lua.push_ref_at(&globals.0, state);
 
             #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
             ffi::lua_rawseti(state, ffi::LUA_REGISTRYINDEX, ffi::LUA_RIDX_GLOBALS);

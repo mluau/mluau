@@ -587,7 +587,7 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti,
     {
-        let name = name.to_string();
+        let name = name.into();
 
         #[cfg(feature = "luau")]
         {
@@ -609,7 +609,7 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti,
     {
-        let name = name.to_string();
+        let name = name.into();
 
         #[cfg(feature = "luau")]
         {
@@ -633,7 +633,7 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
     {
         #[cfg(feature = "luau")]
         {
-            let name = name.to_string();
+            let name = name.into();
             let callback = self.box_function_namecall(&name, function);
             self.raw.functions.push((name.clone(), callback.clone()));
             self.raw.namecalls.insert(name, callback);
@@ -654,7 +654,7 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
     {
         #[cfg(feature = "luau")]
         {
-            let name = name.to_string();
+            let name = name.into();
             let callback = self.box_function_namecall_mut(&name, function);
             self.raw.functions.push((name.clone(), callback.clone()));
             self.raw.namecalls.insert(name, callback);
@@ -689,7 +689,7 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         self.raw.meta_methods.push((name, callback));
     }
 
-    fn add_meta_function<F, A, R>(&mut self, name: impl ToString, function: F)
+    fn add_meta_function<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
     where
         F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
