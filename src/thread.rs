@@ -72,8 +72,10 @@ unsafe impl Send for Thread {}
 unsafe impl Sync for Thread {}
 
 impl Thread {
+    /// Returns reference to the Lua state that this thread is associated with.
+    #[doc(hidden)]
     #[inline(always)]
-    fn state(&self) -> *mut ffi::lua_State {
+    pub fn state(&self) -> *mut ffi::lua_State {
         self.1
     }
 
