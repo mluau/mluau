@@ -133,8 +133,14 @@ impl<'a> Debug<'a> {
         }
     }
 
-    /// Corresponds to the `l` "what" mask. Returns the current line.
+    #[doc(hidden)]
+    #[deprecated(note = "Use `current_line` instead")]
     pub fn curr_line(&self) -> i32 {
+        self.current_line().map(|n| n as i32).unwrap_or(-1)
+    }
+
+    /// Corresponds to the `l` "what" mask. Returns the current line.
+    pub fn current_line(&self) -> Option<usize> {
         unsafe {
             #[cfg(not(feature = "luau"))]
             mlua_assert!(
@@ -147,21 +153,24 @@ impl<'a> Debug<'a> {
                 "lua_getinfo failed with `l`"
             );
 
-            (*self.ar).currentline
+            linenumber_to_usize((*self.ar).currentline)
         }
     }
 
     /// Corresponds to the `t` "what" mask. Returns true if the hook is in a function tail call,
     /// false otherwise.
-    #[cfg(not(feature = "luau"))]
-    #[cfg_attr(docsrs, doc(cfg(not(feature = "luau"))))]
+    #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(any(feature = "lua54", feature = "lua53", feature = "lua52")))
+    )]
     pub fn is_tail_call(&self) -> bool {
         unsafe {
             mlua_assert!(
                 ffi::lua_getinfo(self.state, cstr!("t"), self.ar) != 0,
                 "lua_getinfo failed with `t`"
             );
-            (*self.ar).currentline != 0
+            (*self.ar).istailcall != 0
         }
     }
 
