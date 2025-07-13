@@ -9,16 +9,13 @@ use crate::state::{ExtraData, Lua, RawLua};
 // Re-export mutex wrappers
 pub(crate) use sync::{ArcReentrantMutexGuard, ReentrantMutex, ReentrantMutexGuard, XRc, XWeak};
 
-#[cfg(all(feature = "async", feature = "send"))]
-pub(crate) type BoxFuture<'a, T> = futures_util::future::BoxFuture<'a, T>;
-
-#[cfg(all(feature = "async", not(feature = "send")))]
-pub(crate) type BoxFuture<'a, T> = futures_util::future::LocalBoxFuture<'a, T>;
-
 pub use app_data::{AppData, AppDataRef, AppDataRefMut};
 pub use either::Either;
 pub use registry_key::RegistryKey;
 pub(crate) use value_ref::ValueRef;
+
+#[cfg(feature = "luau")]
+use std::collections::HashMap;
 
 /// Type of Lua integer numbers.
 pub type Integer = ffi::lua_Integer;
@@ -36,11 +33,23 @@ unsafe impl Sync for LightUserData {}
 
 #[cfg(feature = "send")]
 pub(crate) type Callback = Box<dyn Fn(&RawLua, c_int) -> Result<c_int> + Send + 'static>;
-
 #[cfg(not(feature = "send"))]
 pub(crate) type Callback = Box<dyn Fn(&RawLua, c_int) -> Result<c_int> + 'static>;
 
-pub(crate) type ScopedCallback<'s> = Box<dyn Fn(&RawLua, c_int) -> Result<c_int> + 's>;
+#[cfg(all(feature = "send", not(feature = "lua51"), not(feature = "luajit")))]
+pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> Result<c_int> + Send + 'static>;
+#[cfg(all(not(feature = "send"), not(feature = "lua51"), not(feature = "luajit")))]
+pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> Result<c_int> + 'static>;
+
+#[cfg(all(feature = "luau", feature = "send"))]
+pub(crate) type NamecallCallback = XRc<dyn Fn(&RawLua, c_int) -> Result<c_int> + Send + 'static>;
+#[cfg(all(feature = "luau", not(feature = "send")))]
+pub(crate) type NamecallCallback = XRc<dyn Fn(&RawLua, c_int) -> Result<c_int> + 'static>;
+
+#[cfg(all(feature = "luau", feature = "send"))]
+pub(crate) type DynamicCallback = XRc<dyn Fn(&RawLua, &str, c_int) -> Result<c_int> + Send + 'static>;
+#[cfg(all(feature = "luau", not(feature = "send")))]
+pub(crate) type DynamicCallback = XRc<dyn Fn(&RawLua, &str, c_int) -> Result<c_int> + 'static>;
 
 pub(crate) struct Upvalue<T> {
     pub(crate) data: T,
@@ -49,19 +58,19 @@ pub(crate) struct Upvalue<T> {
 
 pub(crate) type CallbackUpvalue = Upvalue<Option<Callback>>;
 
-#[cfg(all(feature = "async", feature = "send"))]
-pub(crate) type AsyncCallback =
-    Box<dyn for<'a> Fn(&'a RawLua, c_int) -> BoxFuture<'a, Result<c_int>> + Send + 'static>;
+#[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
+pub(crate) type ContinuationUpvalue = Upvalue<Option<(Callback, Continuation)>>;
+#[cfg(feature = "luau")]
+pub(crate) type NamecallCallbackUpvalue = Upvalue<Option<NamecallCallback>>;
 
-#[cfg(all(feature = "async", not(feature = "send")))]
-pub(crate) type AsyncCallback =
-    Box<dyn for<'a> Fn(&'a RawLua, c_int) -> BoxFuture<'a, Result<c_int>> + 'static>;
+#[cfg(feature = "luau")]
+pub struct NamecallMap {
+    pub(crate) map: HashMap<String, NamecallCallback>,
+    pub(crate) dynamic: Option<DynamicCallback>,
+}
 
-#[cfg(feature = "async")]
-pub(crate) type AsyncCallbackUpvalue = Upvalue<AsyncCallback>;
-
-#[cfg(feature = "async")]
-pub(crate) type AsyncPollUpvalue = Upvalue<Option<BoxFuture<'static, Result<c_int>>>>;
+#[cfg(feature = "luau")]
+pub(crate) type NamecallMapUpvalue = Upvalue<Option<NamecallMap>>;
 
 /// Type to set next Lua VM action after executing interrupt or hook function.
 pub enum VmState {

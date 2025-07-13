@@ -6,7 +6,7 @@ use std::os::raw::c_void;
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use mlua::{
+use mluau::{
     Compiler, Error, Function, Lua, LuaOptions, Result, StdLib, Table, ThreadStatus, Value, Vector, VmState,
 };
 
@@ -439,7 +439,7 @@ fn test_loadstring() -> Result<()> {
     assert_eq!(f.call::<i32>(())?, 123);
 
     let err = lua
-        .load(r#"loadstring("retur 123", "chunk")"#)
+        .load(r#"loadstring("moon 123", "chunk")"#)
         .exec()
         .err()
         .unwrap();
@@ -463,3 +463,7 @@ fn test_typeof_error() -> Result<()> {
 
 #[path = "luau/require.rs"]
 mod require;
+
+#[cfg(feature = "luau-lute")]
+#[path = "lute/lute.rs"]
+mod lute;
