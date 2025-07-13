@@ -17,12 +17,6 @@
 [Benchmarks]: https://github.com/khvzak/script-bench-rs
 [FAQ]: FAQ.md
 
-# The main branch is the development version of `mlua`. Please see the [v0.10](https://github.com/mlua-rs/mlua/tree/v0.10) branch for the stable versions of `mlua`.
-
-> **Note**
->
-> See v0.10 [release notes](https://github.com/mlua-rs/mlua/blob/main/docs/release_notes/v0.10.md).
-
 `mlua` is a set of bindings to the [Lua](https://www.lua.org) programming language for Rust with a goal to provide a
 _safe_ (as much as possible), high level, easy to use, practical and flexible API.
 
@@ -100,11 +94,11 @@ cargo run --example async_http_server --features=lua54,async,macros,send
 curl -v http://localhost:3000
 ```
 
-### Serialization (serde) support
+### Serde support
 
-With the `serde` feature flag enabled, `mlua` allows you to serialize/deserialize any type that implements [`serde::Serialize`] and [`serde::Deserialize`] into/from [`mlua::Value`]. In addition, `mlua` provides the [`serde::Serialize`] trait implementation for it (including `UserData` support).
+With the `serde` feature flag enabled, `mlua` allows you to serialize/deserialize any type that implements [`serde::Serialize`] and [`serde::Deserialize`] into/from [`mlua::Value`]. In addition, `mlua` provides the [`serde::Serialize`] trait implementation for `mlua::Value` (including `UserData` support).
 
-[Example](examples/serialize.rs)
+[Example](examples/serde.rs)
 
 [`serde::Serialize`]: https://docs.serde.rs/serde/ser/trait.Serialize.html
 [`serde::Deserialize`]: https://docs.serde.rs/serde/de/trait.Deserialize.html
@@ -135,7 +129,7 @@ Add to `Cargo.toml`:
 
 ``` toml
 [dependencies]
-mlua = { version = "0.10", features = ["lua54", "vendored"] }
+mlua = { version = "0.11", features = ["lua54", "vendored"] }
 ```
 
 `main.rs`
@@ -170,7 +164,7 @@ Add to `Cargo.toml`:
 crate-type = ["cdylib"]
 
 [dependencies]
-mlua = { version = "0.10", features = ["lua54", "module"] }
+mlua = { version = "0.11", features = ["lua54", "module"] }
 ```
 
 `lib.rs`:

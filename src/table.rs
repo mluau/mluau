@@ -13,7 +13,7 @@ use crate::util::{assert_stack, check_stack, get_metatable_ptr, StackGuard};
 use crate::value::{Nil, Value};
 
 #[cfg(feature = "async")]
-use futures_util::future::{self, Either, Future};
+use crate::function::AsyncCallFuture;
 
 #[cfg(feature = "serde")]
 use {
@@ -889,7 +889,7 @@ impl ObjectLike for Table {
 
     #[cfg(feature = "async")]
     #[inline]
-    fn call_async<R>(&self, args: impl IntoLuaMulti) -> impl Future<Output = Result<R>>
+    fn call_async<R>(&self, args: impl IntoLuaMulti) -> AsyncCallFuture<R>
     where
         R: FromLuaMulti,
     {
@@ -905,7 +905,7 @@ impl ObjectLike for Table {
     }
 
     #[cfg(feature = "async")]
-    fn call_async_method<R>(&self, name: &str, args: impl IntoLuaMulti) -> impl Future<Output = Result<R>>
+    fn call_async_method<R>(&self, name: &str, args: impl IntoLuaMulti) -> AsyncCallFuture<R>
     where
         R: FromLuaMulti,
     {
@@ -925,17 +925,17 @@ impl ObjectLike for Table {
 
     #[cfg(feature = "async")]
     #[inline]
-    fn call_async_function<R>(&self, name: &str, args: impl IntoLuaMulti) -> impl Future<Output = Result<R>>
+    fn call_async_function<R>(&self, name: &str, args: impl IntoLuaMulti) -> AsyncCallFuture<R>
     where
         R: FromLuaMulti,
     {
         match self.get(name) {
-            Ok(Value::Function(func)) => Either::Left(func.call_async(args)),
+            Ok(Value::Function(func)) => func.call_async(args),
             Ok(val) => {
                 let msg = format!("attempt to call a {} value (function '{name}')", val.type_name());
-                Either::Right(future::ready(Err(Error::RuntimeError(msg))))
+                AsyncCallFuture::error(Error::RuntimeError(msg))
             }
-            Err(err) => Either::Right(future::ready(Err(err))),
+            Err(err) => AsyncCallFuture::error(err),
         }
     }
 

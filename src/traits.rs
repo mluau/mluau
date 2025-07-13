@@ -11,7 +11,7 @@ use crate::util::{check_stack, short_type_name};
 use crate::value::Value;
 
 #[cfg(feature = "async")]
-use std::future::Future;
+use {crate::function::AsyncCallFuture, std::future::Future};
 
 /// Trait for types convertible to [`Value`].
 pub trait IntoLua: Sized {
@@ -162,7 +162,7 @@ pub trait ObjectLike: Sealed {
     /// arguments.
     #[cfg(feature = "async")]
     #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn call_async<R>(&self, args: impl IntoLuaMulti) -> impl Future<Output = Result<R>>
+    fn call_async<R>(&self, args: impl IntoLuaMulti) -> AsyncCallFuture<R>
     where
         R: FromLuaMulti;
 
@@ -178,7 +178,7 @@ pub trait ObjectLike: Sealed {
     /// This might invoke the `__index` metamethod.
     #[cfg(feature = "async")]
     #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn call_async_method<R>(&self, name: &str, args: impl IntoLuaMulti) -> impl Future<Output = Result<R>>
+    fn call_async_method<R>(&self, name: &str, args: impl IntoLuaMulti) -> AsyncCallFuture<R>
     where
         R: FromLuaMulti;
 
@@ -196,7 +196,7 @@ pub trait ObjectLike: Sealed {
     /// This might invoke the `__index` metamethod.
     #[cfg(feature = "async")]
     #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn call_async_function<R>(&self, name: &str, args: impl IntoLuaMulti) -> impl Future<Output = Result<R>>
+    fn call_async_function<R>(&self, name: &str, args: impl IntoLuaMulti) -> AsyncCallFuture<R>
     where
         R: FromLuaMulti;
 
