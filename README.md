@@ -114,7 +114,7 @@ Below is a list of the available feature flags. By default `mlua` does not enabl
 
 With the `serde` feature flag enabled, `mlua` allows you to serialize/deserialize any type that implements [`serde::Serialize`] and [`serde::Deserialize`] into/from [`mluau::Value`]. In addition, `mlua` provides the [`serde::Serialize`] trait implementation for it (including `UserData` support).
 
-[Example](examples/serialize.rs)
+[Example](examples/serde.rs)
 
 [`serde::Serialize`]: https://docs.serde.rs/serde/ser/trait.Serialize.html
 [`serde::Deserialize`]: https://docs.serde.rs/serde/de/trait.Deserialize.html
@@ -147,7 +147,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-mlua = { version = "0.10", features = ["lua54", "vendored"] }
+mlua = { version = "0.11", features = ["lua54", "vendored"] }
 ```
 
 `main.rs`
@@ -183,7 +183,7 @@ Add to `Cargo.toml`:
 crate-type = ["cdylib"]
 
 [dependencies]
-mlua = { version = "0.10", features = ["lua54", "module"] }
+mlua = { version = "0.11", features = ["lua54", "module"] }
 ```
 
 `lib.rs`:
