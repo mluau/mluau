@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mlua::{Error, GCMode, Lua, Result, UserData};
+use mluau::{Error, GCMode, Lua, Result, UserData};
 
 #[test]
 fn test_memory_limit() -> Result<()> {
@@ -107,7 +107,7 @@ fn test_gc_control() -> Result<()> {
 #[cfg(any(feature = "lua53", feature = "lua52"))]
 #[test]
 fn test_gc_error() {
-    use mlua::Error;
+    use mluau::Error;
 
     let lua = Lua::new();
     match lua
