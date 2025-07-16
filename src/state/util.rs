@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::error::{Error, Result};
 use crate::state::extra::RefThread;
-use crate::state::{ExtraData, RawLua};
+use crate::state::{ExtraData, RawLua, extra::REF_STACK_RESERVE};
 use crate::util::{self, check_stack, get_internal_metatable, push_string, WrappedFailure};
 
 #[cfg(all(not(feature = "lua51"), not(feature = "luajit"), not(feature = "luau")))]
@@ -510,7 +510,7 @@ pub(crate) unsafe fn get_next_spot(extra: *mut ExtraData) -> (usize, c_int, bool
         // Try to grow max stack size
         if ref_th.stack_top >= ref_th.stack_size {
             let mut inc = ref_th.stack_size; // Try to double stack size
-            while inc > 0 && ffi::lua_checkstack(ref_th.ref_thread, inc + 1) == 0 {
+            while inc > 0 && ffi::lua_checkstack(ref_th.ref_thread, inc + REF_STACK_RESERVE) == 0 {
                 inc /= 2;
             }
             if inc == 0 {
