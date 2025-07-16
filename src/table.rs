@@ -512,7 +512,7 @@ impl Table {
             assert_stack(state, 2);
 
             lua.push_ref_at(&self.0, state);
-            if let Some(metatable) = metatable {
+            if let Some(metatable) = &metatable {
                 lua.push_ref_at(&metatable.0, state);
             } else {
                 ffi::lua_pushnil(state);
