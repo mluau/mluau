@@ -6,8 +6,8 @@ use std::ptr;
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
-use crate::state::extra::RefThread;
-use crate::state::{ExtraData, RawLua, extra::REF_STACK_RESERVE};
+use crate::state::extra::{RefThread, REF_STACK_RESERVE};
+use crate::state::{ExtraData, RawLua};
 use crate::util::{self, check_stack, get_internal_metatable, push_string, WrappedFailure};
 
 #[cfg(all(not(feature = "lua51"), not(feature = "luajit"), not(feature = "luau")))]

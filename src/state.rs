@@ -1339,10 +1339,10 @@ impl Lua {
             let (aux_thread, idx, replace) = get_next_spot(lua.extra());
             ffi::lua_pushcfunction(lua.ref_thread(aux_thread), func);
             if replace {
-              ffi::lua_replace(lua.ref_thread(aux_thread), idx);
+                ffi::lua_replace(lua.ref_thread(aux_thread), idx);
             }
-          
-            Ok(Function(lua.new_value_ref(aux_thread, idx)))
+
+            return Ok(Function(lua.new_value_ref(aux_thread, idx)));
         }
 
         // Lua <5.2 requires memory allocation to push a C function
