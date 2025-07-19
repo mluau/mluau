@@ -427,6 +427,25 @@ fn test_thread_events() -> Result<()> {
         .exec();
     assert!(result.is_err());
     assert!(matches!(result, Err(Error::RuntimeError(err)) if err.contains("thread limit exceeded")));
+    lua.gc_collect()?; // Drop the coroutine
+
+    // Lastly test that topointer of thread and thread_ptr in callbacks are the same
+    let new_thread = lua.create_thread(lua.load("return 123").into_function()?)?;
+    let new_thread_ptr = new_thread.to_pointer();
+    thread_data.0.store(new_thread_ptr as *mut _, Ordering::Relaxed);
+
+    let status_ptr = Arc::new(AtomicBool::new(false));
+    let status_ptr2 = status_ptr.clone();
+    lua.set_thread_collection_callback(move |thread_ptr| {
+        let old_thread_ptr = thread_data.0.load(Ordering::Relaxed);
+        status_ptr2.store(old_thread_ptr == thread_ptr.0, Ordering::Relaxed);
+    });
+
+    // Thead will be destroyed after GC cycle
+    drop(new_thread);
+    lua.gc_collect()?;
+
+    assert!(status_ptr.load(Ordering::Relaxed));
 
     Ok(())
 }
