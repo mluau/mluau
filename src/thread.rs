@@ -165,8 +165,10 @@ impl Thread {
             let nargs = args.push_into_specified_stack_multi(&lua, thread_state)?;
             pushed_nargs += nargs;
 
-            let (_, nresults) = self.resume_inner(&lua, pushed_nargs)?;
+            drop(lua); // Drop the lock before resuming the thread
+            let (_, nresults) = self.resume_inner(state, thread_state, pushed_nargs)?;
 
+            let lua = self.0.lua.lock();
             R::from_specified_stack_multi(nresults, &lua, thread_state)
         }
     }
@@ -195,8 +197,10 @@ impl Thread {
             check_stack(thread_state, 1)?;
             error.push_into_specified_stack(&lua, thread_state)?;
 
-            let (_, nresults) = self.resume_inner(&lua, ffi::LUA_RESUMEERROR)?;
+            drop(lua); // Drop the lock before resuming the thread
+            let (_, nresults) = self.resume_inner(state, thread_state, ffi::LUA_RESUMEERROR)?;
 
+            let lua = self.0.lua.lock();
             R::from_specified_stack_multi(nresults, &lua, thread_state)
         }
     }
@@ -204,9 +208,12 @@ impl Thread {
     /// Resumes execution of this thread.
     ///
     /// It's similar to `resume()` but leaves `nresults` values on the thread stack.
-    unsafe fn resume_inner(&self, lua: &RawLua, nargs: c_int) -> Result<(ThreadStatusInner, c_int)> {
-        let state = lua.state();
-        let thread_state = self.state();
+    unsafe fn resume_inner(
+        &self,
+        state: *mut ffi::lua_State,
+        thread_state: *mut ffi::lua_State,
+        nargs: c_int,
+    ) -> Result<(ThreadStatusInner, c_int)> {
         let mut nresults = 0;
         #[cfg(not(feature = "luau"))]
         let ret = ffi::lua_resume(thread_state, state, nargs, &mut nresults as *mut c_int);
