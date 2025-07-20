@@ -165,10 +165,7 @@ impl Thread {
             let nargs = args.push_into_specified_stack_multi(&lua, thread_state)?;
             pushed_nargs += nargs;
 
-            drop(lua); // Drop the lock before resuming the thread
             let (_, nresults) = self.resume_inner(state, thread_state, pushed_nargs)?;
-
-            let lua = self.0.lua.lock();
             R::from_specified_stack_multi(nresults, &lua, thread_state)
         }
     }
@@ -197,10 +194,7 @@ impl Thread {
             check_stack(thread_state, 1)?;
             error.push_into_specified_stack(&lua, thread_state)?;
 
-            drop(lua); // Drop the lock before resuming the thread
             let (_, nresults) = self.resume_inner(state, thread_state, ffi::LUA_RESUMEERROR)?;
-
-            let lua = self.0.lua.lock();
             R::from_specified_stack_multi(nresults, &lua, thread_state)
         }
     }
