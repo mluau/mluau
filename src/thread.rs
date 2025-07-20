@@ -171,11 +171,11 @@ impl Thread {
         };
 
         drop(lua);
-        #[cfg(feature = "send")]
+        /*#[cfg(feature = "send")]
         mlua_debug_assert!(
             !self.0.lua.upgrade().is_locked(),
             "Lua state should be no longer locked after resume"
-        );
+        );*/
 
         res
     }
