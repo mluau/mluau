@@ -2152,6 +2152,13 @@ impl Lua {
             (*lua.extra.get()).on_close = Some(Box::new(f));
         }
     }
+
+    /// Debug method to return if the Lua underlying lock is currently locked.
+    /// This is useful for debugging purposes only.
+    #[cfg(feature = "send")]
+    pub fn is_locked(&self) -> bool {
+        self.raw.is_locked()
+    }
 }
 
 impl WeakLua {
