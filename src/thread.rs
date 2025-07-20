@@ -158,7 +158,7 @@ impl Thread {
 
         let state = lua.state();
         let thread_state = self.state();
-        let res = unsafe {
+        unsafe {
             let _sg = StackGuard::new(state);
             let _thread_sg = StackGuard::with_top(thread_state, 0);
 
@@ -168,16 +168,7 @@ impl Thread {
             let (_, nresults) = self.resume_inner(&lua, pushed_nargs)?;
 
             R::from_specified_stack_multi(nresults, &lua, thread_state)
-        };
-
-        drop(lua);
-        #[cfg(feature = "send")]
-        mlua_debug_assert!(
-            !self.0.lua.upgrade().is_locked(),
-            "Lua state should be no longer locked after resume"
-        );
-
-        res
+        }
     }
 
     /// Resumes execution of this thread, immediately raising an error.

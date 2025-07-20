@@ -264,6 +264,13 @@ fn test_thread_yield_args() -> Result<()> {
         (42, String::from("69420"), 45.6)
     );
 
+    // Assert unlocked
+    #[cfg(feature = "send")]
+    assert!(
+        !lua.is_locked(),
+        "Lua state should be unlocked after thread yield"
+    );
+
     // yield, no userdata
     let my_lua_func = lua
         .load(
@@ -326,6 +333,13 @@ fn test_thread_yield_args() -> Result<()> {
     assert!(result.is_ok(), "Failed to resume thread: {:?}", result);
     assert_eq!(result.unwrap(), 100, "Unexpected yield value");
     assert_eq!(thread.status(), ThreadStatus::Finished);
+
+    // Assert unlocked
+    #[cfg(feature = "send")]
+    assert!(
+        !lua.is_locked(),
+        "Lua state should be unlocked after thread yield"
+    );
 
     Ok(())
 }
