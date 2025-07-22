@@ -2159,6 +2159,22 @@ impl Lua {
     pub fn is_locked(&self) -> bool {
         self.raw.is_locked()
     }
+
+    /// Returns the strong count of the Lua instance.
+    /// 
+    /// This can be useful for debugging purposes
+    #[inline(always)]
+    pub fn strong_count(&self) -> usize {
+        XRc::strong_count(&self.raw)
+    }
+
+    /// Returns the weak count of the Lua instance.
+    /// 
+    /// This can be useful for debugging purposes
+    #[inline(always)]
+    pub fn weak_count(&self) -> usize {
+        XRc::weak_count(&self.raw)
+    }
 }
 
 impl WeakLua {
@@ -2201,6 +2217,30 @@ impl WeakLua {
             raw: self.0.upgrade()?,
             collect_garbage: false,
         })
+    }
+
+    /// Returns the strong count of the WeakLua
+    ///
+    /// Returns `0` if the Lua instance is destroyed.
+    #[inline(always)]
+    pub fn strong_count(&self) -> usize {
+        self.0.strong_count()
+    }
+
+    /// Returns the weak count of the WeakLua
+    ///     
+    /// Returns `0` if the Lua instance is destroyed.
+    #[inline(always)]
+    pub fn weak_count(&self) -> usize {
+        self.0.weak_count()
+    }
+
+    /// Returns if the Lua instance is destroyed.
+    /// 
+    /// This is equivalent to checking if the strong count is `0`.
+    #[inline(always)]
+    pub fn is_destroyed(&self) -> bool {
+        self.0.strong_count() == 0
     }
 }
 
