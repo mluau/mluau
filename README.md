@@ -48,6 +48,8 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
 - Due to namcall, `RawUserDataRegistry` is not `Send`.
 - Support for disabling use of a ``Error`` userdata in favor of just stringifying the error. This is useful as ``Error`` userdata tends to have issues with ``xpcall`` depending on the error function handler being used.
 - Support for creating tracebacks on the current thread using ``Lua::traceback`` and ``Thread::traceback``.
+- ``strong_count`` and ``weak_count`` have been added to both ``WeakLua`` and ``Lua`` for debugging purposes/allowing debugging of Lua VM reference leaks etc.
+- Support for getting userdata type name via ``AnyUserData::type_name``
 
 ## Roadmap
 

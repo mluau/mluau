@@ -502,6 +502,53 @@ impl<T> UserDataRegistry<T> {
     pub fn disable_namecall_optimization(&mut self) {
         self.raw.disable_namecall_optimization = true;
     }
+
+    /// Returns all fields/methods registered for the userdata type.
+    pub fn fields(&self, include_meta: bool) -> Vec<&str> {
+        let mut fields = Vec::with_capacity(
+            self.raw.fields.len()
+                + self.raw.field_getters.len()
+                + self.raw.field_setters.len()
+                + self.raw.meta_fields.len() 
+                + self.raw.methods.len()
+                + self.raw.meta_methods.len()
+                + self.raw.functions.len()
+        );
+
+        for (name, _) in &self.raw.fields {
+            fields.push(name.as_str());
+        }
+
+        for (name, _) in &self.raw.field_getters {
+            fields.push(name.as_str());
+        }
+
+        for (name, _) in &self.raw.field_setters {
+            fields.push(name.as_str());
+        }
+
+        if include_meta {
+            for (name, _) in &self.raw.meta_fields {
+                fields.push(name.as_str());
+            }
+        }
+
+        for (name, _) in &self.raw.methods {
+            fields.push(name.as_str());
+        }
+
+        if include_meta {
+            for (name, _) in &self.raw.meta_methods {
+                fields.push(name.as_str());
+            }
+        }
+
+        for (name, _) in &self.raw.functions {
+            fields.push(name.as_str());
+        }
+
+        fields
+    }
 }
 
 // Returns function name for the type `T`, without the module path

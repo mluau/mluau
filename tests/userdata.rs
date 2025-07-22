@@ -1370,3 +1370,42 @@ fn test_userdata_wrappers() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_userdata_typename() -> Result<()> {
+    let lua = Lua::new();
+
+    #[derive(Clone, Copy)]
+    struct MyUserData;
+
+    impl UserData for MyUserData {
+        fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+            fields.add_field("myfield", "MyUserData");
+            fields.add_meta_field(MetaMethod::Type, "MyUserData");
+        }
+
+        fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+            methods.add_method("foo", |_, _this, ()| {
+                Ok(())
+            });
+        }
+
+        fn register(registry: &mut mluau::UserDataRegistry<Self>) {
+            Self::add_fields(registry);
+            Self::add_methods(registry);
+            let fields = registry.fields(true).iter().map(|x| x.to_string()).collect::<Vec<_>>();
+            registry.add_meta_field("__ud_fields", fields);
+        }
+    }
+
+    let ud = lua.create_userdata(MyUserData)?;
+    lua.globals().set("ud", &ud)?;
+
+    assert!(ud.type_name().unwrap().unwrap() == "MyUserData");
+    let ud_fields = ud.metatable()?.get::<Vec<StdString>>("__ud_fields")?;
+    assert!(ud_fields.contains(&"myfield".to_string()));
+    assert!(ud_fields.contains(&MetaMethod::Type.name().to_string()));
+    assert!(ud_fields.contains(&"foo".to_string()));
+
+    Ok(())
+}

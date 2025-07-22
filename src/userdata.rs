@@ -906,7 +906,10 @@ impl AnyUserData {
     }
 
     /// Returns a type name of this `UserData` (from a metatable field).
-    pub(crate) fn type_name(&self) -> Result<Option<StdString>> {
+    /// 
+    /// Returns ``None`` if the type name is not set, the userdata is not registered
+    /// or no type metafield is set.
+    pub fn type_name(&self) -> Result<Option<StdString>> {
         let lua = self.0.lua.lock();
         let state = lua.state();
         unsafe {
