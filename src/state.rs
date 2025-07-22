@@ -2161,7 +2161,7 @@ impl Lua {
     }
 
     /// Returns the strong count of the Lua instance.
-    /// 
+    ///
     /// This can be useful for debugging purposes
     #[inline(always)]
     pub fn strong_count(&self) -> usize {
@@ -2169,7 +2169,7 @@ impl Lua {
     }
 
     /// Returns the weak count of the Lua instance.
-    /// 
+    ///
     /// This can be useful for debugging purposes
     #[inline(always)]
     pub fn weak_count(&self) -> usize {
@@ -2236,7 +2236,7 @@ impl WeakLua {
     }
 
     /// Returns if the Lua instance is destroyed.
-    /// 
+    ///
     /// This is equivalent to checking if the strong count is `0`.
     #[inline(always)]
     pub fn is_destroyed(&self) -> bool {
