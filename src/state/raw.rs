@@ -1089,7 +1089,7 @@ impl RawLua {
 
                 let n = ffi::lua_tonumber(state, idx);
                 match num_traits::cast(n) {
-                    Some(i) if (n - (i as Number)).abs() < Number::EPSILON => Ok(Value::Integer(i)),
+                    Some(i) if n.to_bits() == (i as Number).to_bits() => Value::Integer(i),
                     _ => Ok(Value::Number(n)),
                 }
             }
