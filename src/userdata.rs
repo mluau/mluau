@@ -15,9 +15,6 @@ use crate::types::{MaybeSend, ValueRef};
 use crate::util::{check_stack, get_userdata, push_string, take_userdata, StackGuard};
 use crate::value::Value;
 
-#[cfg(feature = "async")]
-use std::future::Future;
-
 #[cfg(feature = "serde")]
 use {
     serde::ser::{self, Serialize, Serializer},
@@ -226,6 +223,8 @@ impl MetaMethod {
 
     pub(crate) fn validate(name: &str) -> Result<&str> {
         match name {
+            // __gc is safe on Luau as it doesnt actually exist
+            #[cfg(not(feature = "luau"))]
             "__gc" => Err(Error::MetaMethodRestricted(name.to_string())),
             "__metatable" => Err(Error::MetaMethodRestricted(name.to_string())),
             _ if name.starts_with("__mlua") => Err(Error::MetaMethodRestricted(name.to_string())),
@@ -273,36 +272,6 @@ pub trait UserDataMethods<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
-    /// Add an async method which accepts a `&T` as the first parameter and returns [`Future`].
-    ///
-    /// Refer to [`add_method`] for more information about the implementation.
-    ///
-    /// [`add_method`]: UserDataMethods::add_method
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn add_async_method<M, A, MR, R>(&mut self, name: impl Into<StdString>, method: M)
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRef<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti;
-
-    /// Add an async method which accepts a `&mut T` as the first parameter and returns [`Future`].
-    ///
-    /// Refer to [`add_method`] for more information about the implementation.
-    ///
-    /// [`add_method`]: UserDataMethods::add_method
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn add_async_method_mut<M, A, MR, R>(&mut self, name: impl Into<StdString>, method: M)
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRefMut<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti;
-
     /// Add a regular method as a function which accepts generic arguments.
     ///
     /// The first argument will be a [`AnyUserData`] of type `T` if the method is called with Lua
@@ -323,21 +292,6 @@ pub trait UserDataMethods<T> {
     where
         F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti;
-
-    /// Add a regular method as an async function which accepts generic arguments and returns
-    /// [`Future`].
-    ///
-    /// This is an async version of [`add_function`].
-    ///
-    /// [`add_function`]: UserDataMethods::add_function
-    #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn add_async_function<F, A, FR, R>(&mut self, name: impl Into<StdString>, function: F)
-    where
-        F: Fn(Lua, A) -> FR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        FR: Future<Output = Result<R>> + MaybeSend + 'static,
         R: IntoLuaMulti;
 
     /// Add a metamethod which accepts a `&T` as the first parameter.
@@ -368,40 +322,6 @@ pub trait UserDataMethods<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
-    /// Add an async metamethod which accepts a `&T` as the first parameter and returns [`Future`].
-    ///
-    /// This is an async version of [`add_meta_method`].
-    ///
-    /// [`add_meta_method`]: UserDataMethods::add_meta_method
-    #[cfg(all(feature = "async", not(any(feature = "lua51", feature = "luau"))))]
-    #[cfg_attr(
-        docsrs,
-        doc(cfg(all(feature = "async", not(any(feature = "lua51", feature = "luau")))))
-    )]
-    fn add_async_meta_method<M, A, MR, R>(&mut self, name: impl Into<StdString>, method: M)
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRef<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti;
-
-    /// Add an async metamethod which accepts a `&mut T` as the first parameter and returns
-    /// [`Future`].
-    ///
-    /// This is an async version of [`add_meta_method_mut`].
-    ///
-    /// [`add_meta_method_mut`]: UserDataMethods::add_meta_method_mut
-    #[cfg(all(feature = "async", not(any(feature = "lua51", feature = "luau"))))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-    fn add_async_meta_method_mut<M, A, MR, R>(&mut self, name: impl Into<StdString>, method: M)
-    where
-        T: 'static,
-        M: Fn(Lua, UserDataRefMut<T>, A) -> MR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        MR: Future<Output = Result<R>> + MaybeSend + 'static,
-        R: IntoLuaMulti;
-
     /// Add a metamethod which accepts generic arguments.
     ///
     /// Metamethods for binary operators can be triggered if either the left or right argument to
@@ -422,23 +342,6 @@ pub trait UserDataMethods<T> {
     where
         F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti;
-
-    /// Add a metamethod which accepts generic arguments and returns [`Future`].
-    ///
-    /// This is an async version of [`add_meta_function`].
-    ///
-    /// [`add_meta_function`]: UserDataMethods::add_meta_function
-    #[cfg(all(feature = "async", not(any(feature = "lua51", feature = "luau"))))]
-    #[cfg_attr(
-        docsrs,
-        doc(cfg(all(feature = "async", not(any(feature = "lua51", feature = "luau")))))
-    )]
-    fn add_async_meta_function<F, A, FR, R>(&mut self, name: impl Into<StdString>, function: F)
-    where
-        F: Fn(Lua, A) -> FR + MaybeSend + 'static,
-        A: FromLuaMulti,
-        FR: Future<Output = Result<R>> + MaybeSend + 'static,
         R: IntoLuaMulti;
 }
 
@@ -533,7 +436,7 @@ pub trait UserDataFields<T> {
 /// # Examples
 ///
 /// ```
-/// # use mlua::{Lua, Result, UserData};
+/// # use mluau::{Lua, Result, UserData};
 /// # fn main() -> Result<()> {
 /// # let lua = Lua::new();
 /// struct MyUserData;
@@ -552,7 +455,7 @@ pub trait UserDataFields<T> {
 /// `add_methods` (refer to [`UserDataFields`] and [`UserDataMethods`] for more information):
 ///
 /// ```
-/// # use mlua::{Lua, MetaMethod, Result, UserData, UserDataFields, UserDataMethods};
+/// # use mluau::{Lua, MetaMethod, Result, UserData, UserDataFields, UserDataMethods};
 /// # fn main() -> Result<()> {
 /// # let lua = Lua::new();
 /// struct MyUserData(i32);
@@ -641,18 +544,24 @@ impl AnyUserData {
     #[inline]
     pub fn borrow<T: 'static>(&self) -> Result<UserDataRef<T>> {
         let lua = self.0.lua.lock();
-        unsafe { UserDataRef::borrow_from_stack(&lua, lua.ref_thread(), self.0.index) }
+        unsafe { UserDataRef::borrow_from_stack(&lua, lua.ref_thread(self.0.aux_thread), self.0.index) }
     }
 
     /// Borrow this userdata immutably if it is of type `T`, passing the borrowed value
     /// to the closure.
-    ///
-    /// This method is the only way to borrow scoped userdata (created inside [`Lua::scope`]).
     pub fn borrow_scoped<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
         let lua = self.0.lua.lock();
         let type_id = lua.get_userdata_ref_type_id(&self.0)?;
         let type_hints = TypeIdHints::new::<T>();
-        unsafe { borrow_userdata_scoped(lua.ref_thread(), self.0.index, type_id, type_hints, f) }
+        unsafe {
+            borrow_userdata_scoped(
+                lua.ref_thread(self.0.aux_thread),
+                self.0.index,
+                type_id,
+                type_hints,
+                f,
+            )
+        }
     }
 
     /// Borrow this userdata mutably if it is of type `T`.
@@ -668,18 +577,24 @@ impl AnyUserData {
     #[inline]
     pub fn borrow_mut<T: 'static>(&self) -> Result<UserDataRefMut<T>> {
         let lua = self.0.lua.lock();
-        unsafe { UserDataRefMut::borrow_from_stack(&lua, lua.ref_thread(), self.0.index) }
+        unsafe { UserDataRefMut::borrow_from_stack(&lua, lua.ref_thread(self.0.aux_thread), self.0.index) }
     }
 
     /// Borrow this userdata mutably if it is of type `T`, passing the borrowed value
     /// to the closure.
-    ///
-    /// This method is the only way to borrow scoped userdata (created inside [`Lua::scope`]).
     pub fn borrow_mut_scoped<T: 'static, R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R> {
         let lua = self.0.lua.lock();
         let type_id = lua.get_userdata_ref_type_id(&self.0)?;
         let type_hints = TypeIdHints::new::<T>();
-        unsafe { borrow_userdata_scoped_mut(lua.ref_thread(), self.0.index, type_id, type_hints, f) }
+        unsafe {
+            borrow_userdata_scoped_mut(
+                lua.ref_thread(self.0.aux_thread),
+                self.0.index,
+                type_id,
+                type_hints,
+                f,
+            )
+        }
     }
 
     /// Takes the value out of this userdata.
@@ -692,7 +607,7 @@ impl AnyUserData {
         let lua = self.0.lua.lock();
         match lua.get_userdata_ref_type_id(&self.0)? {
             Some(type_id) if type_id == TypeId::of::<T>() => unsafe {
-                let ref_thread = lua.ref_thread();
+                let ref_thread = lua.ref_thread(self.0.aux_thread);
                 if (*get_userdata::<UserDataStorage<T>>(ref_thread, self.0.index)).has_exclusive_access() {
                     take_userdata::<UserDataStorage<T>>(ref_thread, self.0.index).into_inner()
                 } else {
@@ -711,20 +626,51 @@ impl AnyUserData {
     pub fn destroy(&self) -> Result<()> {
         let lua = self.0.lua.lock();
         let state = lua.state();
+
         unsafe {
             let _sg = StackGuard::new(state);
             check_stack(state, 3)?;
 
-            lua.push_userdata_ref(&self.0)?;
-            protect_lua!(state, 1, 1, fn(state) {
-                if ffi::luaL_callmeta(state, -1, cstr!("__gc")) == 0 {
-                    ffi::lua_pushboolean(state, 0);
+            // Luau does not have __gc
+            #[cfg(feature = "luau")]
+            {
+                match lua.get_userdata_ref_type_id(&self.0)? {
+                    Some(type_id) => {
+                        // Get out the destructor from extra
+                        let dtor = match (&(*lua.extra())).get_userdata_dtor(type_id) {
+                            Some(dtor) => dtor,
+                            None => return Err(Error::UserDataTypeMismatch),
+                        };
+
+                        // Call the destructor
+                        protect_lua!(state, 0, 1, |state| {
+                            ffi::lua_pushcfunction(state, dtor);
+                            lua.push_ref_at(&self.0, state);
+                            ffi::lua_call(state, 1, 1);
+                        })?;
+
+                        if ffi::lua_isboolean(state, -1) != 0 && ffi::lua_toboolean(state, -1) != 0 {
+                            return Ok(());
+                        }
+                        return Err(Error::UserDataBorrowMutError);
+                    }
+                    None => return Err(Error::UserDataTypeMismatch),
                 }
-            })?;
-            if ffi::lua_isboolean(state, -1) != 0 && ffi::lua_toboolean(state, -1) != 0 {
-                return Ok(());
             }
-            Err(Error::UserDataBorrowMutError)
+
+            #[cfg(not(feature = "luau"))]
+            {
+                lua.push_userdata_ref_at(&self.0, state)?;
+                protect_lua!(state, 1, 1, fn(state) {
+                    if ffi::luaL_callmeta(state, -1, cstr!("__gc")) == 0 {
+                        ffi::lua_pushboolean(state, 0);
+                    }
+                })?;
+                if ffi::lua_isboolean(state, -1) != 0 && ffi::lua_toboolean(state, -1) != 0 {
+                    return Ok(());
+                }
+                Err(Error::UserDataBorrowMutError)
+            }
         }
     }
 
@@ -771,8 +717,8 @@ impl AnyUserData {
             let _sg = StackGuard::new(state);
             check_stack(state, 5)?;
 
-            lua.push_userdata_ref(&self.0)?;
-            lua.push(v)?;
+            lua.push_userdata_ref_at(&self.0, state)?;
+            lua.push_at(state, v)?;
 
             // Multiple (extra) user values are emulated by storing them in a table
             protect_lua!(state, 2, 0, |state| {
@@ -809,7 +755,7 @@ impl AnyUserData {
             let _sg = StackGuard::new(state);
             check_stack(state, 4)?;
 
-            lua.push_userdata_ref(&self.0)?;
+            lua.push_userdata_ref_at(&self.0, state)?;
 
             // Multiple (extra) user values are emulated by storing them in a table
             if ffi::lua_getuservalue(state, -1) != ffi::LUA_TTABLE {
@@ -817,7 +763,7 @@ impl AnyUserData {
             }
             ffi::lua_rawgeti(state, -1, n as ffi::lua_Integer);
 
-            V::from_lua(lua.pop_value(), lua.lua())
+            V::from_lua(lua.pop_value_at(state)?, lua.lua())
         }
     }
 
@@ -833,8 +779,8 @@ impl AnyUserData {
             let _sg = StackGuard::new(state);
             check_stack(state, 5)?;
 
-            lua.push_userdata_ref(&self.0)?;
-            lua.push(v)?;
+            lua.push_userdata_ref_at(&self.0, state)?;
+            lua.push_at(state, v)?;
 
             // Multiple (extra) user values are emulated by storing them in a table
             protect_lua!(state, 2, 0, |state| {
@@ -864,7 +810,7 @@ impl AnyUserData {
             let _sg = StackGuard::new(state);
             check_stack(state, 4)?;
 
-            lua.push_userdata_ref(&self.0)?;
+            lua.push_userdata_ref_at(&self.0, state)?;
 
             // Multiple (extra) user values are emulated by storing them in a table
             if ffi::lua_getuservalue(state, -1) != ffi::LUA_TTABLE {
@@ -873,7 +819,7 @@ impl AnyUserData {
             push_string(state, name.as_bytes(), !lua.unlikely_memory_error())?;
             ffi::lua_rawget(state, -2);
 
-            V::from_stack(-1, &lua)
+            V::from_specified_stack(-1, &lua, state)
         }
     }
 
@@ -888,17 +834,55 @@ impl AnyUserData {
         self.raw_metatable().map(UserDataMetatable)
     }
 
+    /// Returns the raw metatable of this [`AnyUserData`].
+    /// without any additional checks.
+    ///
+    /// This is mainly useful with lute and luau-created userdata
+    /// which do not have a type id from mlua.
+    ///
+    /// Returns ``UserDataTypeMismatch`` if the userdata is empty or has no metatable.
+    ///
+    /// Safety:
+    ///
+    /// It is up to the user to ensure that changes made to the underlying metatable
+    /// do not modify restricted mlua userdata metamethods etc. When in doubt, use
+    /// ``metatable()`` instead. It is possible to cause memory unsafety by abusing
+    /// ``underlying_metatable()```, for example by modifying/calling the `__gc` metamethod
+    pub unsafe fn underlying_metatable(&self) -> Result<Table> {
+        self.raw_underlying_metatable()
+    }
+
+    fn raw_underlying_metatable(&self) -> Result<Table> {
+        let lua = self.0.lua.lock();
+        let state = lua.state();
+        unsafe {
+            let _sg = StackGuard::new(state);
+            check_stack(state, 1)?;
+
+            // Push the userdata onto the stack
+            // Note that we cannot use `lua.push_userdata_ref_at` here
+            // as that requires a type id to be present.
+            lua.push_ref_at(&self.0, state);
+
+            let res = ffi::lua_getmetatable(state, -1); // Checked that non-empty on the previous call
+            if res == 0 {
+                return Err(Error::UserDataTypeMismatch);
+            }
+            Ok(Table(lua.pop_ref()))
+        }
+    }
+
     /// Returns a raw metatable of this [`AnyUserData`].
     fn raw_metatable(&self) -> Result<Table> {
         let lua = self.0.lua.lock();
-        let ref_thread = lua.ref_thread();
+        let ref_thread = lua.ref_thread(self.0.aux_thread);
         unsafe {
             // Check that userdata is registered and not destructed
             // All registered userdata types have a non-empty metatable
             let _type_id = lua.get_userdata_ref_type_id(&self.0)?;
 
             ffi::lua_getmetatable(ref_thread, self.0.index);
-            Ok(Table(lua.pop_ref_thread()))
+            Ok(Table(lua.pop_ref_at(ref_thread)))
         }
     }
 
@@ -922,14 +906,17 @@ impl AnyUserData {
     }
 
     /// Returns a type name of this `UserData` (from a metatable field).
-    pub(crate) fn type_name(&self) -> Result<Option<StdString>> {
+    /// 
+    /// Returns ``None`` if the type name is not set, the userdata is not registered
+    /// or no type metafield is set.
+    pub fn type_name(&self) -> Result<Option<StdString>> {
         let lua = self.0.lua.lock();
         let state = lua.state();
         unsafe {
             let _sg = StackGuard::new(state);
             check_stack(state, 3)?;
 
-            lua.push_userdata_ref(&self.0)?;
+            lua.push_userdata_ref_at(&self.0, state)?;
             let protect = !lua.unlikely_memory_error();
             let name_type = if protect {
                 protect_lua!(state, 1, 1, |state| {
@@ -971,7 +958,7 @@ impl AnyUserData {
         let is_serializable = || unsafe {
             // Userdata must be registered and not destructed
             let _ = lua.get_userdata_ref_type_id(&self.0)?;
-            let ud = &*get_userdata::<UserDataStorage<()>>(lua.ref_thread(), self.0.index);
+            let ud = &*get_userdata::<UserDataStorage<()>>(lua.ref_thread(self.0.aux_thread), self.0.index);
             Ok::<_, Error>((*ud).is_serializable())
         };
         is_serializable().unwrap_or(false)
@@ -1060,7 +1047,7 @@ impl Serialize for AnyUserData {
             let _ = lua
                 .get_userdata_ref_type_id(&self.0)
                 .map_err(ser::Error::custom)?;
-            let ud = &*get_userdata::<UserDataStorage<()>>(lua.ref_thread(), self.0.index);
+            let ud = &*get_userdata::<UserDataStorage<()>>(lua.ref_thread(self.0.aux_thread), self.0.index);
             ud.serialize(serializer)
         }
     }

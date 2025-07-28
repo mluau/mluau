@@ -1,31 +1,28 @@
 [package]
-name = "mlua"
+name = "mluau"
 version = "0.11.1" # remember to update mlua_derive
-authors = ["Aleksandr Orlenko <zxteam@pm.me>", "kyren <catherine@kyju.org>"]
+authors = ["cheesycod", "Dev Chrysalis Dalal <dev@deviaze.com>","Aleksandr Orlenko <zxteam@pm.me>", "kyren <catherine@kyju.org>"]
 rust-version = "1.79.0"
 edition = "2021"
-repository = "https://github.com/mlua-rs/mlua"
+repository = "https://github.com/mluau/mluau"
 documentation = "https://docs.rs/mlua"
 readme = "README.md"
-keywords = ["lua", "luajit", "luau", "async", "scripting"]
-categories = ["api-bindings", "asynchronous"]
+keywords = ["luau", "lute", "lua", "luajit", "scripting"]
+categories = ["api-bindings"]
 license = "MIT"
 description = """
-High level bindings to Lua 5.4/5.3/5.2/5.1 (including LuaJIT) and Luau
-with async/await features and support of writing native Lua modules in Rust.
+High level bindings to Luau (and Lua 5.4-5.1/JIT, but mostly focused on Luau) with Lute support.
 """
 
 [package.metadata.docs.rs]
-features = ["lua54", "vendored", "async", "send", "serde", "macros"]
+features = ["lua54", "vendored", "send", "serde", "macros"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
-members = [
-    "mlua_derive",
-    "mlua-sys",
-]
+members = ["mlua_derive", "mlua-sys"]
 
 [features]
+default = ["luau"]
 lua54 = ["ffi/lua54"]
 lua53 = ["ffi/lua53"]
 lua52 = ["ffi/lua52"]
@@ -35,9 +32,19 @@ luajit52 = ["luajit", "ffi/luajit52"]
 luau = ["ffi/luau"]
 luau-jit = ["luau", "ffi/luau-codegen"]
 luau-vector4 = ["luau", "ffi/luau-vector4"]
+luau-lute = ["luau", "ffi/luau-lute"]
+luau-lute-autoload = [
+    "luau",
+    "luau-lute",
+] # Useful for if you want Lute runtime to be loaded automatically on Lua state creation.
+luau-lute-crypto = ["luau-lute", "ffi/luau-lute-crypto"]
+luau-lute-net = ["luau-lute", "ffi/luau-lute-net"]
+luau-lute-prebuilt = [
+    "luau-lute",
+    "ffi/luau-lute-prebuilt",
+] # Useful for if you want to use prebuilt Lute runtime.
 vendored = ["ffi/vendored"]
 module = ["mlua_derive", "ffi/module"]
-async = ["dep:futures-util"]
 send = ["error-send"]
 error-send = []
 serde = ["dep:serde", "dep:erased-serde", "dep:serde-value", "bstr/serde"]
@@ -54,7 +61,6 @@ bstr = { version = "1.0", features = ["std"], default-features = false }
 either = "1.0"
 num-traits = { version = "0.2.14" }
 rustc-hash = "2.0"
-futures-util = { version = "0.3", optional = true, default-features = false, features = ["std"] }
 serde = { version = "1.0", optional = true }
 erased-serde = { version = "0.4", optional = true }
 serde-value = { version = "0.7", optional = true }
@@ -88,28 +94,12 @@ unexpected_cfgs = { level = "allow", check-cfg = ['cfg(tarpaulin_include)'] }
 [[bench]]
 name = "benchmark"
 harness = false
-required-features = ["async"]
+required-features = []
 
 [[bench]]
 name = "serde"
 harness = false
 required-features = ["serde"]
-
-[[example]]
-name = "async_http_client"
-required-features = ["async", "macros"]
-
-[[example]]
-name = "async_http_reqwest"
-required-features = ["async", "serde", "macros"]
-
-[[example]]
-name = "async_http_server"
-required-features = ["async", "macros", "send"]
-
-[[example]]
-name = "async_tcp_server"
-required-features = ["async", "macros", "send"]
 
 [[example]]
 name = "guided_tour"
