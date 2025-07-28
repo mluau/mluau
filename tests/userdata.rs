@@ -1385,15 +1385,17 @@ fn test_userdata_typename() -> Result<()> {
         }
 
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_method("foo", |_, _this, ()| {
-                Ok(())
-            });
+            methods.add_method("foo", |_, _this, ()| Ok(()));
         }
 
         fn register(registry: &mut mluau::UserDataRegistry<Self>) {
             Self::add_fields(registry);
             Self::add_methods(registry);
-            let fields = registry.fields(true).iter().map(|x| x.to_string()).collect::<Vec<_>>();
+            let fields = registry
+                .fields(true)
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>();
             registry.add_meta_field("__ud_fields", fields);
         }
     }

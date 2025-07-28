@@ -572,7 +572,7 @@ pub(super) fn create_require_function<R: Require + MaybeSend + 'static>(
         let s = CStr::from_ptr(s);
         callback_error_ext(state, ptr::null_mut(), true, |extra, _| {
             let s = s.to_string_lossy().to_lowercase();
-            (*extra).raw_lua().push(s).map(|_| 1)
+            (*extra).raw_lua().push_at(state, s).map(|_| 1)
         })
     }
 

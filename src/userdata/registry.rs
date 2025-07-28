@@ -509,10 +509,10 @@ impl<T> UserDataRegistry<T> {
             self.raw.fields.len()
                 + self.raw.field_getters.len()
                 + self.raw.field_setters.len()
-                + self.raw.meta_fields.len() 
+                + self.raw.meta_fields.len()
                 + self.raw.methods.len()
                 + self.raw.meta_methods.len()
-                + self.raw.functions.len()
+                + self.raw.functions.len(),
         );
 
         for (name, _) in &self.raw.fields {

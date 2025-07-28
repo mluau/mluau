@@ -928,24 +928,20 @@ impl Lua {
         let lua = self.lock();
         unsafe {
             match MemoryState::get(lua.state()) {
-                mem_state if !mem_state.is_null() => {
-                    Ok((*mem_state).set_memory_limit(limit))
-                }
+                mem_state if !mem_state.is_null() => Ok((*mem_state).set_memory_limit(limit)),
                 _ => Err(Error::MemoryControlNotAvailable),
             }
         }
     }
 
     /// Returns the current memory limit of the Lua VM (zero means no limit)
-    /// 
+    ///
     /// Does not work in module mode where Lua state is managed externally.
     pub fn memory_limit(&self) -> Result<usize> {
         let lua = self.lock();
         unsafe {
             match MemoryState::get(lua.state()) {
-                mem_state if !mem_state.is_null() => {
-                    Ok((*mem_state).memory_limit())
-                }
+                mem_state if !mem_state.is_null() => Ok((*mem_state).memory_limit()),
                 _ => Err(Error::MemoryControlNotAvailable),
             }
         }

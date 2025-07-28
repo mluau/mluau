@@ -906,7 +906,7 @@ impl AnyUserData {
     }
 
     /// Returns a type name of this `UserData` (from a metatable field).
-    /// 
+    ///
     /// Returns ``None`` if the type name is not set, the userdata is not registered
     /// or no type metafield is set.
     pub fn type_name(&self) -> Result<Option<StdString>> {
