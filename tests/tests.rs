@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::String as StdString;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{error, f32, f64, fmt};
 
-use mlua::{
+use mluau::{
     ffi, ChunkMode, Error, ExternalError, Function, Lua, LuaOptions, Nil, Result, StdLib, String, Table,
     UserData, Value, Variadic,
 };
@@ -188,7 +189,7 @@ fn test_load_mode() -> Result<()> {
     #[cfg(not(feature = "luau"))]
     let bytecode = lua.load("return 1 + 1").into_function()?.dump(true);
     #[cfg(feature = "luau")]
-    let bytecode = mlua::Compiler::new().compile("return 1 + 1")?;
+    let bytecode = mluau::Compiler::new().compile("return 1 + 1")?;
     assert_eq!(lua.load(&bytecode).eval::<i32>()?, 2);
     assert_eq!(lua.load(&bytecode).set_mode(ChunkMode::Binary).eval::<i32>()?, 2);
     match lua.load(&bytecode).set_mode(ChunkMode::Text).exec() {
@@ -362,6 +363,7 @@ fn test_error() -> Result<()> {
     }
 
     let return_string_error = globals.get::<Function>("return_string_error")?;
+    println!("return_string_error: {:?}", return_string_error.call::<Error>(()));
     assert!(return_string_error.call::<Error>(()).is_ok());
 
     match lua.load("if you are happy and you know it syntax error").exec() {
@@ -984,7 +986,7 @@ fn test_rust_function() -> Result<()> {
 fn test_c_function() -> Result<()> {
     let lua = Lua::new();
 
-    extern "C-unwind" fn c_function(state: *mut mlua::lua_State) -> std::os::raw::c_int {
+    extern "C-unwind" fn c_function(state: *mut mluau::lua_State) -> std::os::raw::c_int {
         unsafe {
             ffi::lua_pushboolean(state, 1);
             ffi::lua_setglobal(state, b"c_function\0" as *const _ as *const _);
@@ -1056,16 +1058,14 @@ fn test_ref_stack_exhaustion() {
     match catch_unwind(AssertUnwindSafe(|| -> Result<()> {
         let lua = Lua::new();
         let mut vals = Vec::new();
-        for _ in 0..10000000 {
+        for _ in 0..200000 {
+            //println!("Creating table {}", vals.len());
             vals.push(lua.create_table()?);
         }
         Ok(())
     })) {
-        Ok(_) => panic!("no panic was detected"),
-        Err(p) => assert!(p
-            .downcast::<StdString>()
-            .unwrap()
-            .starts_with("cannot create a Lua reference, out of auxiliary stack space")),
+        Ok(_) => {}
+        Err(p) => panic!("got panic: {:?}", p),
     }
 }
 
@@ -1576,6 +1576,27 @@ fn test_get_or_init_from_ptr() -> Result<()> {
     unsafe { ffi::lua_close(state) };
 
     // Lua must not be accessed after closing
+
+    Ok(())
+}
+
+#[test]
+fn test_onclose() -> Result<()> {
+    let lua = Lua::new();
+
+    let debug_ptr = lua.main_state_address();
+    let closed = Arc::new(AtomicBool::new(false));
+    let closed_ref = closed.clone();
+    lua.set_on_close(move || {
+        closed_ref.store(true, Ordering::SeqCst);
+        println!("Dropping lua state {}", debug_ptr)
+    });
+
+    // Close Lua state
+    drop(lua);
+
+    // Check that on_close callback was called
+    assert!(closed.load(Ordering::SeqCst));
 
     Ok(())
 }

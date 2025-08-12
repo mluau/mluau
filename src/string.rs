@@ -29,7 +29,7 @@ impl String {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Lua, Result, String};
+    /// # use mluau::{Lua, Result, String};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let globals = lua.globals();
@@ -60,7 +60,7 @@ impl String {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Lua, Result};
+    /// # use mluau::{Lua, Result};
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
     ///
@@ -92,7 +92,7 @@ impl String {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Lua, Result, String};
+    /// # use mluau::{Lua, Result, String};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let non_utf8: String = lua.load(r#"  "test\255"  "#).eval()?;
@@ -119,7 +119,7 @@ impl String {
         let lua = self.0.lua.upgrade();
         let slice = {
             let rawlua = lua.lock();
-            let ref_thread = rawlua.ref_thread();
+            let ref_thread = rawlua.ref_thread(self.0.aux_thread);
 
             mlua_debug_assert!(
                 ffi::lua_type(ref_thread, self.0.index) == ffi::LUA_TSTRING,

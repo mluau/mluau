@@ -475,7 +475,7 @@ pub(super) unsafe extern "C-unwind" fn init_config(config: *mut ffi::luarequire_
         callback_error_ext(state, ptr::null_mut(), true, move |extra, _| {
             let rawlua = (*extra).raw_lua();
             let loader = this.loader(rawlua.lua())?;
-            rawlua.push(loader)?;
+            rawlua.push_at(state, loader)?;
             Ok(1)
         })
     }
@@ -578,7 +578,7 @@ pub(super) fn create_require_function<R: Require + MaybeSend + 'static>(
             let s = (s.to_bytes().iter())
                 .map(|&c| c.to_ascii_lowercase())
                 .collect::<bstr::BString>();
-            (*extra).raw_lua().push(s).map(|_| 1)
+            (*extra).raw_lua().push_at(state, s).map(|_| 1)
         })
     }
 

@@ -1,5 +1,12 @@
 use bstr::{BStr, BString};
-use mlua::{Lua, Result};
+use mluau::{Lua, Result};
+
+#[test]
+fn create_lua() {
+    let lua = Lua::new();
+    let th = lua.create_table().unwrap();
+    println!("{th:#?}");
+}
 
 #[test]
 fn test_byte_string_round_trip() -> Result<()> {
