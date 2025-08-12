@@ -411,12 +411,6 @@ fn test_continuation() {
     let v = th.resume::<i32>(v).expect("Failed to load continuation");
     assert_eq!(v, -1);
 
-    // Yielding continuation test (only supported on luau)
-    #[cfg(feature = "luau")]
-    {
-        mluau::Lua::set_fflag("LuauYieldableContinuations", true).unwrap();
-    }
-
     let cont_func = lua
         .create_function_with_continuation(
             |_lua, a: u64| Ok(a + 1),
@@ -638,13 +632,6 @@ fn test_large_thread_creation() {
 
     #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
     {
-        // Repeat yielded continuation test now with a new aux thread
-        // Yielding continuation test (only supported on luau)
-        #[cfg(feature = "luau")]
-        {
-            mluau::Lua::set_fflag("LuauYieldableContinuations", true).unwrap();
-        }
-
         let cont_func = lua
             .create_function_with_continuation(
                 |_lua, a: u64| Ok(a + 1),
