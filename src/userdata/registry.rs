@@ -1,7 +1,10 @@
 #![allow(clippy::await_holding_refcell_ref, clippy::await_holding_lock)]
 
+#[cfg(feature = "dynamic-userdata")]
+use std::any::Any;
 use std::any::TypeId;
 use std::cell::RefCell;
+#[cfg(feature = "dynamic-userdata")]
 use std::marker::PhantomData;
 use std::string::String as StdString;
 
@@ -807,6 +810,11 @@ lua_userdata_impl!(std::sync::Arc<std::sync::RwLock<T>>);
 lua_userdata_impl!(std::sync::Arc<parking_lot::Mutex<T>>);
 #[cfg(feature = "userdata-wrappers")]
 lua_userdata_impl!(std::sync::Arc<parking_lot::RwLock<T>>);
+
+#[cfg(feature = "dynamic-userdata")]
+pub(crate) struct DynamicUserDataPtr {
+    pub(crate) data: Box<dyn Any + Send + Sync>
+}
 
 #[cfg(test)]
 mod assertions {

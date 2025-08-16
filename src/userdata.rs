@@ -30,6 +30,10 @@ pub(crate) use util::{
     borrow_userdata_scoped, borrow_userdata_scoped_mut, collect_userdata, init_userdata_metatable,
     TypeIdHints,
 };
+#[cfg(feature = "dynamic-userdata")]
+pub(crate) use util::collect_userdata_dyn;
+#[cfg(feature = "dynamic-userdata")]
+pub(crate) use registry::DynamicUserDataPtr;
 
 /// Kinds of metamethods that can be overridden.
 ///
@@ -524,9 +528,15 @@ pub struct AnyUserData(pub(crate) ValueRef);
 
 impl AnyUserData {
     /// Checks whether the type of this userdata is `T`.
+    /// 
+    /// Will always return `false` for dynamic userdata.
     #[inline]
     pub fn is<T: 'static>(&self) -> bool {
         let type_id = self.type_id();
+        // If the userdata is dynamic, we cannot check its type id
+        if type_id.is_none() {
+            return false;
+        }
         // We do not use wrapped types here, rather prefer to check the "real" type of the userdata
         matches!(type_id, Some(type_id) if type_id == TypeId::of::<T>())
     }
@@ -537,7 +547,7 @@ impl AnyUserData {
     ///
     /// Returns a [`UserDataBorrowError`] if the userdata is already mutably borrowed.
     /// Returns a [`DataTypeMismatch`] if the userdata is not of type `T` or if it's
-    /// scoped.
+    /// dynamic.
     ///
     /// [`UserDataBorrowError`]: crate::Error::UserDataBorrowError
     /// [`DataTypeMismatch`]: crate::Error::UserDataTypeMismatch
@@ -549,6 +559,8 @@ impl AnyUserData {
 
     /// Borrow this userdata immutably if it is of type `T`, passing the borrowed value
     /// to the closure.
+    /// 
+    /// Will return `UserDataTypeMismatch` if the userdata is dynamic.
     pub fn borrow_scoped<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
         let lua = self.0.lua.lock();
         let type_id = lua.get_userdata_ref_type_id(&self.0)?;
@@ -570,7 +582,7 @@ impl AnyUserData {
     ///
     /// Returns a [`UserDataBorrowMutError`] if the userdata cannot be mutably borrowed.
     /// Returns a [`UserDataTypeMismatch`] if the userdata is not of type `T` or if it's
-    /// scoped.
+    /// a dynamic userdata.
     ///
     /// [`UserDataBorrowMutError`]: crate::Error::UserDataBorrowMutError
     /// [`UserDataTypeMismatch`]: crate::Error::UserDataTypeMismatch
@@ -603,6 +615,8 @@ impl AnyUserData {
     /// userdata.
     ///
     /// Keeps associated user values unchanged (they will be collected by Lua's GC).
+    /// 
+    /// Will always return `UserDataTypeMismatch` on dynamic userdata.
     pub fn take<T: 'static>(&self) -> Result<T> {
         let lua = self.0.lua.lock();
         match lua.get_userdata_ref_type_id(&self.0)? {
@@ -622,7 +636,7 @@ impl AnyUserData {
     ///
     /// This is similar to [`AnyUserData::take`], but it doesn't require a type.
     ///
-    /// This method works for non-scoped userdata only.
+    /// This method works for non-scoped and non-dynamic userdata only.
     pub fn destroy(&self) -> Result<()> {
         let lua = self.0.lua.lock();
         let state = lua.state();
@@ -670,6 +684,30 @@ impl AnyUserData {
                     return Ok(());
                 }
                 Err(Error::UserDataBorrowMutError)
+            }
+        }
+    }
+
+    /// For a dynamic userdata, returns the inner data put into the userdata.
+    ///
+    /// This will return `UserDataTypeMismatch` if the userdata is not dynamic or 
+    /// if the dynamic userdata's metatable is not associated with the type `T`.
+    #[cfg(feature = "dynamic-userdata")]
+    pub fn dynamic_data<T: 'static>(&self) -> Result<&T> {
+        let lua = self.0.lua.lock();
+        // Get the metatable pointer
+        let ud_ptr = unsafe { ffi::lua_topointer(lua.ref_thread(self.0.aux_thread), self.0.index) };
+        
+        unsafe {
+            if !(&(*lua.extra())).is_userdata_dynamic(ud_ptr as *mut c_void) {
+                return Err(Error::UserDataTypeMismatch);
+            }
+
+            let ud = get_userdata::<DynamicUserDataPtr>(lua.ref_thread(self.0.aux_thread), self.0.index);
+
+            match (&*ud).data.downcast_ref::<T>() {
+                Some(data) => Ok(data),
+                None => Err(Error::UserDataTypeMismatch)
             }
         }
     }
@@ -829,6 +867,8 @@ impl AnyUserData {
     /// provides safe access to its methods.
     ///
     /// For `T: 'static` returned metatable is shared among all instances of type `T`.
+    /// 
+    /// This will always return a error if used on a dynamic userdata.
     #[inline]
     pub fn metatable(&self) -> Result<UserDataMetatable> {
         self.raw_metatable().map(UserDataMetatable)

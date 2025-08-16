@@ -105,6 +105,7 @@ impl<T: 'static> UserDataRef<T> {
         }
     }
 
+    // Does not apply to dynamic userdata, as it does not have a type id.
     pub(crate) unsafe fn borrow_from_stack(
         lua: &RawLua,
         state: *mut ffi::lua_State,

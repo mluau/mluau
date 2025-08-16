@@ -22,7 +22,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 members = ["mlua_derive", "mlua-sys"]
 
 [features]
-default = ["luau"]
+default = ["luau", "dynamic-userdata"]
 lua54 = ["ffi/lua54"]
 lua53 = ["ffi/lua53"]
 lua52 = ["ffi/lua52"]
@@ -51,6 +51,7 @@ serde = ["dep:serde", "dep:erased-serde", "dep:serde-value", "bstr/serde"]
 macros = ["mlua_derive/macros"]
 anyhow = ["dep:anyhow", "error-send"]
 userdata-wrappers = ["parking_lot/send_guard"]
+dynamic-userdata = ["luau"]
 
 # deprecated features
 serialize = ["serde"]

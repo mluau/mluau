@@ -16,9 +16,8 @@ pub(crate) use userdata::{
     init_internal_metatable, push_internal_userdata, push_userdata, take_userdata,
     DESTRUCTED_USERDATA_METATABLE,
 };
-
-#[cfg(not(feature = "luau"))]
-pub(crate) use userdata::push_uninit_userdata;
+#[cfg(feature = "dynamic-userdata")]
+pub(crate) use userdata::push_userdata_dyn;
 
 // Checks that Lua has enough free stack space for future stack operations. On failure, this will
 // panic with an internal error message.

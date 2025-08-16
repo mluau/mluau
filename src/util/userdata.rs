@@ -1,9 +1,16 @@
+#[cfg(feature = "dynamic-userdata")]
+use std::any::Any;
 use std::os::raw::{c_int, c_void};
 use std::{mem, ptr};
 
 use crate::error::Result;
 use crate::userdata::collect_userdata;
 use crate::util::{check_stack, get_metatable_ptr, push_table, rawset_field, TypeKey};
+
+#[cfg(feature = "dynamic-userdata")]
+use crate::userdata::collect_userdata_dyn;
+#[cfg(feature = "dynamic-userdata")]
+use crate::userdata::DynamicUserDataPtr;
 
 // Pushes the userdata and attaches a metatable with __gc method.
 // Internally uses 3 stack spaces, does not call checkstack.
@@ -97,19 +104,6 @@ pub(crate) unsafe fn get_internal_userdata<T: TypeKey>(
 
 // Internally uses 3 stack spaces, does not call checkstack.
 #[inline]
-#[cfg(not(feature = "luau"))]
-pub(crate) unsafe fn push_uninit_userdata<T>(state: *mut ffi::lua_State, protect: bool) -> Result<*mut T> {
-    if protect {
-        protect_lua!(state, 0, 1, |state| {
-            ffi::lua_newuserdata(state, const { mem::size_of::<T>() }) as *mut T
-        })
-    } else {
-        Ok(ffi::lua_newuserdata(state, const { mem::size_of::<T>() }) as *mut T)
-    }
-}
-
-// Internally uses 3 stack spaces, does not call checkstack.
-#[inline]
 pub(crate) unsafe fn push_userdata<T>(state: *mut ffi::lua_State, t: T, protect: bool) -> Result<*mut T> {
     let size = const { mem::size_of::<T>() };
 
@@ -129,6 +123,30 @@ pub(crate) unsafe fn push_userdata<T>(state: *mut ffi::lua_State, t: T, protect:
         ffi::lua_newuserdatadtor(state, size, collect_userdata::<T>)
     } as *mut T;
 
+    ptr::write(ud_ptr, t);
+    Ok(ud_ptr)
+}
+
+// Internally uses 3 stack spaces, does not call checkstack.
+//
+// mt_ptr is a pointer to the metatable for this userdata
+// which is needed during the destructor call to clear out
+// the associated data of the dynamic userdata.
+#[inline]
+#[cfg(feature = "dynamic-userdata")]
+pub(crate) unsafe fn push_userdata_dyn(state: *mut ffi::lua_State, data: Box<dyn Any + Send + Sync>, protect: bool) -> Result<*mut DynamicUserDataPtr> {
+    let size = const { mem::size_of::<DynamicUserDataPtr>() };
+
+    #[cfg(feature = "luau")]
+    let ud_ptr = if protect {
+        protect_lua!(state, 0, 1, |state| {
+            ffi::lua_newuserdatadtor(state, size, collect_userdata_dyn)
+        })?
+    } else {
+        ffi::lua_newuserdatadtor(state, size, collect_userdata_dyn)
+    } as *mut DynamicUserDataPtr;
+
+    let t = DynamicUserDataPtr { data };
     ptr::write(ud_ptr, t);
     Ok(ud_ptr)
 }

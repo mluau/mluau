@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
+#[cfg(feature = "dynamic-userdata")]
+use rustc_hash::FxHashSet;
 
 use crate::error::Result;
 use crate::state::RawLua;
@@ -81,6 +83,9 @@ pub(crate) struct ExtraData {
     pub(super) registered_userdata_t: FxHashMap<TypeId, c_int>,
     pub(super) registered_userdata_mt: FxHashMap<*const c_void, Option<TypeId>>,
     pub(super) last_checked_userdata_mt: (*const c_void, Option<TypeId>),
+
+    #[cfg(feature = "dynamic-userdata")]
+    pub(crate) dyn_userdata_set: FxHashSet<*mut c_void>,
 
     // When Lua instance dropped, setting `None` would prevent collecting `RegistryKey`s
     pub(super) registry_unref_list: Arc<Mutex<Option<Vec<c_int>>>>,
@@ -200,6 +205,8 @@ impl ExtraData {
             registered_userdata_t: FxHashMap::default(),
             registered_userdata_mt: FxHashMap::default(),
             last_checked_userdata_mt: (ptr::null(), None),
+            #[cfg(feature = "dynamic-userdata")]
+            dyn_userdata_set: FxHashSet::default(),
             registry_unref_list: Arc::new(Mutex::new(Some(Vec::new()))),
             app_data: AppData::default(),
             app_data_priv: AppData::default(),
@@ -305,7 +312,14 @@ impl ExtraData {
     }
 
     #[inline(always)]
+    #[cfg(feature = "luau")]
     pub(crate) unsafe fn get_userdata_dtor(&self, type_id: TypeId) -> Option<ffi::lua_CFunction> {
         self.registered_userdata_dtors.get(&type_id).copied()
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "dynamic-userdata")]
+    pub(crate) fn is_userdata_dynamic(&self, ptr: *mut c_void) -> bool {
+        self.dyn_userdata_set.contains(&ptr)
     }
 }

@@ -1,3 +1,5 @@
+#[cfg(feature = "dynamic-userdata")]
+use std::any::Any;
 use std::any::TypeId;
 use std::cell::{Cell, UnsafeCell};
 use std::ffi::CStr;
@@ -1392,6 +1394,29 @@ impl RawLua {
             ffi::lua_newtable(state);
             ffi::lua_setuservalue(state, -2);
         }
+
+        Ok(AnyUserData(self.pop_ref()))
+    }
+
+    #[cfg(feature = "dynamic-userdata")]
+    pub(crate) unsafe fn make_dyn_userdata(
+        &self,
+        mt: &Table,
+        data: Box<dyn Any + Send + Sync>,
+    ) -> Result<AnyUserData> {
+        let state = self.state();
+        let _sg = StackGuard::new(state);
+        check_stack(state, 3)?;
+        
+        let protect = !self.unlikely_memory_error();
+        crate::util::push_userdata_dyn(state, data, protect)?;
+        let ud_ptr = ffi::lua_topointer(state, -1);
+        (*self.extra.get())
+            .dyn_userdata_set
+            .insert(ud_ptr as *mut c_void);
+
+        self.push_ref_at(&mt.0, state);
+        ffi::lua_setmetatable(state, -2);
 
         Ok(AnyUserData(self.pop_ref()))
     }

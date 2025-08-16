@@ -88,6 +88,7 @@ impl TypeIdHints {
     }
 }
 
+// Not applicable for dynamic userdata, as it does not have a type id.
 pub(crate) unsafe fn borrow_userdata_scoped<T, R>(
     state: *mut ffi::lua_State,
     idx: c_int,
@@ -156,6 +157,7 @@ pub(crate) unsafe fn borrow_userdata_scoped<T, R>(
     }
 }
 
+// Not applicable for dynamic userdata, as it does not have a type id.
 pub(crate) unsafe fn borrow_userdata_scoped_mut<T, R>(
     state: *mut ffi::lua_State,
     idx: c_int,
@@ -448,6 +450,27 @@ pub(crate) unsafe extern "C" fn collect_userdata<T>(
     // Luau does not support _any_ panics in destructors (they are declared as "C", NOT as "C-unwind"),
     // so any panics will trigger `abort()`.
     ptr::drop_in_place(ud as *mut T);
+    (*extra).running_gc = false;
+}
+
+// This method is called by Luau GC when it's time to collect the userdata.
+#[cfg(feature = "dynamic-userdata")]
+pub(crate) unsafe extern "C" fn collect_userdata_dyn(
+    state: *mut ffi::lua_State,
+    ud: *mut std::os::raw::c_void,
+) {
+    use crate::userdata::registry::DynamicUserDataPtr;
+
+    // Almost none Lua operations are allowed when destructor is running,
+    // so we need to set a flag to prevent calling any Lua functions
+    let extra = (*ffi::lua_callbacks(state)).userdata as *mut crate::state::ExtraData;
+    (*extra).running_gc = true;
+    // Luau does not support _any_ panics in destructors (they are declared as "C", NOT as "C-unwind"),
+    // so any panics will trigger `abort()`.
+    mlua_debug_assert!((*extra)
+        .dyn_userdata_set
+        .remove(&ud), "did not remove dyn userdata");
+    std::ptr::drop_in_place(ud as *mut DynamicUserDataPtr);
     (*extra).running_gc = false;
 }
 

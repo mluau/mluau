@@ -7,7 +7,6 @@ use std::panic::Location;
 use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::{fmt, mem, ptr};
-
 use crate::chunk::{AsChunk, Chunk};
 use crate::debug::Debug;
 use crate::error::{Error, Result};
@@ -1448,6 +1447,28 @@ impl Lua {
             ((*lua.extra.get()).pending_userdata_reg).insert(type_id, registry.into_raw());
         }
         Ok(())
+    }
+
+    /// Creates a new dynamic userdata type.
+    /// 
+    /// This is useful for when you do not have a type `T` known at compile time,
+    /// but you want to create a userdata object with a metatable that has fields and methods
+    /// defined at runtime.
+    /// 
+    /// Additionally, a dynamic userdata type can also have a associated data object
+    /// that can be accessed within methods via `AnyUserData::dynamic_data`.
+    #[cfg(feature = "dynamic-userdata")]
+    pub fn create_dynamic_userdata<T>(&self, data: T, metatable: &Table) -> Result<AnyUserData> 
+        where T: Send + Sync + 'static
+    {
+        let lua = self.lock();
+        let state = lua.state();
+        unsafe {
+            let _sg = StackGuard::new(state);
+            check_stack(state, 3)?;
+            let ud_ref = lua.make_dyn_userdata(metatable, Box::new(data))?;
+            Ok(ud_ref)
+        }
     }
 
     /// Create a Lua userdata "proxy" object from a custom userdata type.

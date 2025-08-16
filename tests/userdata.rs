@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::string::String as StdString;
@@ -7,8 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use mluau::{
-    AnyUserData, Error, ExternalError, Function, Lua, MetaMethod, Nil, ObjectLike, Result, String, UserData,
-    UserDataFields, UserDataMethods, UserDataRef, Value, Variadic,
+    AnyUserData, Error, ExternalError, Function, Lua, MetaMethod, Nil, ObjectLike, Result, String, UserData, UserDataFields, UserDataMethods, UserDataRef, Value, Variadic
 };
 
 #[test]
@@ -1372,7 +1372,7 @@ fn test_userdata_wrappers() -> Result<()> {
 }
 
 #[test]
-fn test_userdata_typename() -> Result<()> {
+fn test_userdata_fields() -> Result<()> {
     let lua = Lua::new();
 
     #[derive(Clone, Copy)]
@@ -1408,6 +1408,70 @@ fn test_userdata_typename() -> Result<()> {
     assert!(ud_fields.contains(&"myfield".to_string()));
     assert!(ud_fields.contains(&MetaMethod::Type.name().to_string()));
     assert!(ud_fields.contains(&"foo".to_string()));
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "dynamic-userdata")]
+fn test_userdata_dynamic() -> Result<()> {
+    let lua = Lua::new();
+
+    let dropped: Arc<AtomicBool> = Arc::default();
+
+    #[derive(Debug, Clone)]
+    struct MyDynamicData {
+        dropped_ref: Arc<AtomicBool>
+    }
+
+    impl Drop for MyDynamicData {
+        fn drop(&mut self) {
+            self.dropped_ref.store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
+
+    let mt1 = lua.create_table()?;
+    mt1.set("__type", "my_dynamic_userdata")?;
+
+    let dynamic_userdata = lua.create_dynamic_userdata(MyDynamicData { dropped_ref: dropped.clone() }, &mt1)?;
+    drop(mt1);
+
+    let dt = dynamic_userdata.dynamic_data::<MyDynamicData>()?.clone();
+    drop(dynamic_userdata);
+    lua.gc_collect()?;
+    assert!(dt.dropped_ref.load(std::sync::atomic::Ordering::Acquire));
+
+    dropped.store(false, std::sync::atomic::Ordering::Release);
+
+    let mt1 = lua.create_table()?;
+    mt1.set("__type", "my_dynamic_userdata2")?;
+
+    let index_tab = lua.create_table()?;
+    index_tab.set("foo", 123)?;
+    index_tab.set("bar", lua.create_function(|_lua, ud: AnyUserData| {
+        let dt = ud.dynamic_data::<MyDynamicData>()?;
+        Ok(dt.dropped_ref.load(std::sync::atomic::Ordering::Acquire))
+    })?)?;
+    mt1.set("__index", index_tab)?;
+
+    let dynamic_userdata = lua.create_dynamic_userdata(MyDynamicData { dropped_ref: dropped.clone() }, &mt1)?;
+    drop(mt1);
+
+    let dt = dynamic_userdata.dynamic_data::<MyDynamicData>()?.clone();
+    assert!(!dt.dropped_ref.load(std::sync::atomic::Ordering::Acquire));
+
+    let underlying_metatable = unsafe { dynamic_userdata.underlying_metatable()? };
+    assert_eq!(underlying_metatable.get::<String>("__type")?, "my_dynamic_userdata2");
+
+    let func = lua.load("local ud = ...; return ud.foo").into_function()?;
+    assert_eq!(func.call::<i64>(dynamic_userdata.clone())?, 123);
+
+    let func = lua.load("local ud = ...; return ud:bar()").into_function()?;
+    assert_eq!(func.call::<bool>(dynamic_userdata.clone())?, false);
+
+    drop(dynamic_userdata);
+    lua.gc_collect()?;
+    assert!(dt.dropped_ref.load(std::sync::atomic::Ordering::Acquire));
 
     Ok(())
 }
