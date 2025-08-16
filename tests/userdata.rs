@@ -1469,6 +1469,19 @@ fn test_userdata_dynamic() -> Result<()> {
     let func = lua.load("local ud = ...; return ud:bar()").into_function()?;
     assert_eq!(func.call::<bool>(dynamic_userdata.clone())?, false);
 
+    pub struct NonDynamicUd {}
+    impl UserData for NonDynamicUd {
+    }
+    let ud = lua.create_userdata(NonDynamicUd {})?;
+    match ud.dynamic_data::<MyDynamicData>() {
+        Err(Error::UserDataTypeMismatch) => {}
+        r => panic!("expected UserDataTypeMismatch, got {r:?}"),
+    }
+    match dynamic_userdata.dynamic_data::<NonDynamicUd>() {
+        Err(Error::UserDataTypeMismatch) => {}
+        _ => panic!("expected UserDataTypeMismatch"),
+    }
+
     drop(dynamic_userdata);
     lua.gc_collect()?;
     assert!(dt.dropped_ref.load(std::sync::atomic::Ordering::Acquire));

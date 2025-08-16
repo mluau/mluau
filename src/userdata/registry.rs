@@ -4,7 +4,6 @@
 use std::any::Any;
 use std::any::TypeId;
 use std::cell::RefCell;
-#[cfg(feature = "dynamic-userdata")]
 use std::marker::PhantomData;
 use std::string::String as StdString;
 
