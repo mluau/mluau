@@ -1407,13 +1407,11 @@ impl RawLua {
         let state = self.state();
         let _sg = StackGuard::new(state);
         check_stack(state, 3)?;
-        
+
         let protect = !self.unlikely_memory_error();
         crate::util::push_userdata_dyn(state, data, protect)?;
         let ud_ptr = ffi::lua_topointer(state, -1);
-        (*self.extra.get())
-            .dyn_userdata_set
-            .insert(ud_ptr as *mut c_void);
+        (*self.extra.get()).dyn_userdata_set.insert(ud_ptr as *mut c_void);
 
         self.push_ref_at(&mt.0, state);
         ffi::lua_setmetatable(state, -2);

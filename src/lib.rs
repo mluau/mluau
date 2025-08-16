@@ -109,7 +109,7 @@ pub use crate::types::{
 };
 pub use crate::userdata::{
     AnyUserData, MetaMethod, UserData, UserDataFields, UserDataMetatable, UserDataMethods, UserDataRef,
-    UserDataRefMut, UserDataRegistry
+    UserDataRefMut, UserDataRegistry,
 };
 
 pub use crate::value::{Nil, Value};

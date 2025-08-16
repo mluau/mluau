@@ -134,7 +134,11 @@ pub(crate) unsafe fn push_userdata<T>(state: *mut ffi::lua_State, t: T, protect:
 // the associated data of the dynamic userdata.
 #[inline]
 #[cfg(feature = "dynamic-userdata")]
-pub(crate) unsafe fn push_userdata_dyn(state: *mut ffi::lua_State, data: Box<dyn Any + Send + Sync>, protect: bool) -> Result<*mut DynamicUserDataPtr> {
+pub(crate) unsafe fn push_userdata_dyn(
+    state: *mut ffi::lua_State,
+    data: Box<dyn Any + Send + Sync>,
+    protect: bool,
+) -> Result<*mut DynamicUserDataPtr> {
     let size = const { mem::size_of::<DynamicUserDataPtr>() };
 
     #[cfg(feature = "luau")]

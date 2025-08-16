@@ -467,9 +467,10 @@ pub(crate) unsafe extern "C" fn collect_userdata_dyn(
     (*extra).running_gc = true;
     // Luau does not support _any_ panics in destructors (they are declared as "C", NOT as "C-unwind"),
     // so any panics will trigger `abort()`.
-    mlua_debug_assert!((*extra)
-        .dyn_userdata_set
-        .remove(&ud), "did not remove dyn userdata");
+    mlua_debug_assert!(
+        (*extra).dyn_userdata_set.remove(&ud),
+        "did not remove dyn userdata"
+    );
     std::ptr::drop_in_place(ud as *mut DynamicUserDataPtr);
     (*extra).running_gc = false;
 }

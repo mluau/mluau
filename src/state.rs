@@ -1,12 +1,3 @@
-use std::any::TypeId;
-use std::cell::{BorrowError, BorrowMutError, RefCell};
-use std::marker::PhantomData;
-use std::ops::Deref;
-use std::os::raw::{c_char, c_int};
-use std::panic::Location;
-use std::result::Result as StdResult;
-use std::string::String as StdString;
-use std::{fmt, mem, ptr};
 use crate::chunk::{AsChunk, Chunk};
 use crate::debug::Debug;
 use crate::error::{Error, Result};
@@ -18,6 +9,15 @@ use crate::stdlib::StdLib;
 use crate::string::String;
 use crate::table::Table;
 use crate::thread::Thread;
+use std::any::TypeId;
+use std::cell::{BorrowError, BorrowMutError, RefCell};
+use std::marker::PhantomData;
+use std::ops::Deref;
+use std::os::raw::{c_char, c_int};
+use std::panic::Location;
+use std::result::Result as StdResult;
+use std::string::String as StdString;
+use std::{fmt, mem, ptr};
 
 #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 use crate::thread::ContinuationStatus;
@@ -1450,16 +1450,17 @@ impl Lua {
     }
 
     /// Creates a new dynamic userdata type.
-    /// 
+    ///
     /// This is useful for when you do not have a type `T` known at compile time,
     /// but you want to create a userdata object with a metatable that has fields and methods
     /// defined at runtime.
-    /// 
+    ///
     /// Additionally, a dynamic userdata type can also have a associated data object
     /// that can be accessed within methods via `AnyUserData::dynamic_data`.
     #[cfg(feature = "dynamic-userdata")]
-    pub fn create_dynamic_userdata<T>(&self, data: T, metatable: &Table) -> Result<AnyUserData> 
-        where T: Send + Sync + 'static
+    pub fn create_dynamic_userdata<T>(&self, data: T, metatable: &Table) -> Result<AnyUserData>
+    where
+        T: Send + Sync + 'static,
     {
         let lua = self.lock();
         let state = lua.state();

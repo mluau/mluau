@@ -812,7 +812,7 @@ lua_userdata_impl!(std::sync::Arc<parking_lot::RwLock<T>>);
 
 #[cfg(feature = "dynamic-userdata")]
 pub(crate) struct DynamicUserDataPtr {
-    pub(crate) data: Box<dyn Any + Send + Sync>
+    pub(crate) data: Box<dyn Any + Send + Sync>,
 }
 
 #[cfg(test)]

@@ -11,13 +11,13 @@ pub(crate) use error::{
 };
 pub(crate) use short_names::short_type_name;
 pub(crate) use types::TypeKey;
+#[cfg(feature = "dynamic-userdata")]
+pub(crate) use userdata::push_userdata_dyn;
 pub(crate) use userdata::{
     get_destructed_userdata_metatable, get_internal_metatable, get_internal_userdata, get_userdata,
     init_internal_metatable, push_internal_userdata, push_userdata, take_userdata,
     DESTRUCTED_USERDATA_METATABLE,
 };
-#[cfg(feature = "dynamic-userdata")]
-pub(crate) use userdata::push_userdata_dyn;
 
 // Checks that Lua has enough free stack space for future stack operations. On failure, this will
 // panic with an internal error message.

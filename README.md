@@ -50,6 +50,31 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
 - Support for creating tracebacks on the current thread using ``Lua::traceback`` and ``Thread::traceback``.
 - ``strong_count`` and ``weak_count`` have been added to both ``WeakLua`` and ``Lua`` for debugging purposes/allowing debugging of Lua VM reference leaks etc.
 - Support for getting userdata type name via ``AnyUserData::type_name``
+- Support for dynamic userdata. A dynamic userdata is a userdata whose internals are not known at compile time and can hence store arbitrary data and fields. A dynamic userdata is created using the `Lua::create_dynamic_userdata` method, which takes the associated data to store for the userdata and a metatable. The metatable can be used to define methods and fields for the dynamic userdata. The associated data can be accessed using the `AnyUserData::dynamic_data` method, which returns a reference to the associated data to hence allow for functions that 
+operate on the dynamic userdata.
+
+As an example of dynamic userdata:
+
+```rust
+    let mt1 = lua.create_table()?;
+    mt1.set("__type", "my_dynamic_userdata2")?;
+
+    let index_tab = lua.create_table()?;
+    index_tab.set("foo", 123)?;
+    index_tab.set("bar", lua.create_function(|_lua, ud: AnyUserData| {
+        let dt = ud.dynamic_data::<MyDynamicData>()?;
+        Ok(dt.foo)
+    })?)?;
+    mt1.set("__index", index_tab)?;
+
+    let dynamic_userdata = lua.create_dynamic_userdata(MyDynamicData { foo: 124 }, &mt1)?;
+
+    let func = lua.load("local ud = ...; return ud.foo").into_function()?;
+    assert_eq!(func.call::<i64>(dynamic_userdata.clone())?, 123);
+
+    let func = lua.load("local ud = ...; return ud:bar()").into_function()?;
+    assert_eq!(func.call::<i64>(dynamic_userdata.clone())?, 124);
+```
 
 ## Roadmap
 
