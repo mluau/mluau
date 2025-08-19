@@ -59,7 +59,7 @@ impl ValueRef {
                 lua: lua.weak().clone(),
                 aux_thread,
                 index,
-            })
+            }),
         }
     }
 

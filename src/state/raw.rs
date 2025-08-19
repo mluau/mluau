@@ -22,11 +22,12 @@ use crate::string::String;
 use crate::table::Table;
 use crate::thread::Thread;
 use crate::traits::IntoLua;
-use crate::types::{
-    AppDataRef, AppDataRefMut, Callback, CallbackUpvalue, DestructedUserdata, Integer, LightUserData, MaybeSend, ReentrantMutex, RegistryKey, ValueRef, XRc
-};
 #[cfg(feature = "value-ref-refcounted")]
 use crate::types::ValueRefInner;
+use crate::types::{
+    AppDataRef, AppDataRefMut, Callback, CallbackUpvalue, DestructedUserdata, Integer, LightUserData,
+    MaybeSend, ReentrantMutex, RegistryKey, ValueRef, XRc,
+};
 
 #[cfg(feature = "luau")]
 use crate::types::{NamecallCallback, NamecallCallbackUpvalue, NamecallMap, NamecallMapUpvalue};
