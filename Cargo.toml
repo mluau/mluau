@@ -52,6 +52,7 @@ macros = ["mlua_derive/macros"]
 anyhow = ["dep:anyhow", "error-send"]
 userdata-wrappers = ["parking_lot/send_guard"]
 dynamic-userdata = ["luau"]
+value-ref-refcounted = []
 
 # deprecated features
 serialize = ["serde"]

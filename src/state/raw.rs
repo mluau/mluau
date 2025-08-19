@@ -23,9 +23,10 @@ use crate::table::Table;
 use crate::thread::Thread;
 use crate::traits::IntoLua;
 use crate::types::{
-    AppDataRef, AppDataRefMut, Callback, CallbackUpvalue, DestructedUserdata, Integer, LightUserData,
-    MaybeSend, ReentrantMutex, RegistryKey, ValueRef, XRc,
+    AppDataRef, AppDataRefMut, Callback, CallbackUpvalue, DestructedUserdata, Integer, LightUserData, MaybeSend, ReentrantMutex, RegistryKey, ValueRef, XRc
 };
+#[cfg(feature = "value-ref-refcounted")]
+use crate::types::ValueRefInner;
 
 #[cfg(feature = "luau")]
 use crate::types::{NamecallCallback, NamecallCallbackUpvalue, NamecallMap, NamecallMapUpvalue};
@@ -1279,6 +1280,7 @@ impl RawLua {
     }
 
     #[inline]
+    #[cfg(not(feature = "value-ref-refcounted"))]
     pub(crate) unsafe fn clone_ref(&self, vref: &ValueRef) -> ValueRef {
         let (aux_thread, index, replace) = get_next_spot(self.extra.get());
         ffi::lua_xpush(
@@ -1292,6 +1294,21 @@ impl RawLua {
         ValueRef::new(self, aux_thread, index)
     }
 
+    #[cfg(feature = "value-ref-refcounted")]
+    pub(crate) unsafe fn drop_ref(&self, vref: &ValueRefInner) {
+        let ref_thread = self.ref_thread(vref.aux_thread);
+        mlua_debug_assert!(
+            ffi::lua_gettop(ref_thread) >= vref.index,
+            "GC finalizer is not allowed in ref_thread"
+        );
+        ffi::lua_pushnil(ref_thread);
+        ffi::lua_replace(ref_thread, vref.index);
+        (&mut (*self.extra.get()).ref_thread)[vref.aux_thread]
+            .free
+            .push(vref.index);
+    }
+
+    #[cfg(not(feature = "value-ref-refcounted"))]
     pub(crate) unsafe fn drop_ref(&self, vref: &ValueRef) {
         let ref_thread = self.ref_thread(vref.aux_thread);
         mlua_debug_assert!(
