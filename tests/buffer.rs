@@ -30,6 +30,7 @@ fn test_buffer() -> Result<()> {
     assert_eq!(buf1.len(), 5);
     assert_eq!(buf1.to_vec(), b"hello");
     assert_eq!(buf1.read_bytes::<3>(1), [b'e', b'l', b'l']);
+    assert_eq!(buf1.read_bytes_to_vec(1, 3), b"ell".to_vec());
     buf1.write_bytes(1, b"i");
     assert_eq!(buf1.to_vec(), b"hillo");
 

@@ -46,6 +46,21 @@ impl Buffer {
         bytes
     }
 
+    /// Reads given number of bytes from the buffer at the given offset.
+    ///
+    /// Offset is 0-based.
+    /// 
+    /// Unline read_bytes, this function returns a vector of bytes and is
+    /// not generic over the number of bytes.
+    #[track_caller]
+    pub fn read_bytes_to_vec(&self, offset: usize, len: usize) -> Vec<u8> {
+        let lua = self.0.lua.lock();
+        let data = self.as_slice(&lua);
+        let mut bytes = vec![0u8; len];
+        bytes.copy_from_slice(&data[offset..offset + len]);
+        bytes
+    }
+
     /// Writes given bytes to the buffer at the given offset.
     ///
     /// Offset is 0-based.
