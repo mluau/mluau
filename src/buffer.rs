@@ -1,3 +1,5 @@
+use std::os::raw::c_void;
+
 #[cfg(feature = "serde")]
 use serde::ser::{Serialize, Serializer};
 
@@ -75,6 +77,16 @@ impl Buffer {
     #[cfg(not(feature = "luau"))]
     unsafe fn as_raw_parts(&self, lua: &RawLua) -> (*mut u8, usize) {
         unreachable!()
+    }
+
+    /// Converts this buffer to a generic C pointer.
+    ///
+    /// There is no way to convert the pointer back to its original value.
+    ///
+    /// Typically this function is used only for hashing and debug information.
+    #[inline]
+    pub fn to_pointer(&self) -> *const c_void {
+        self.0.to_pointer()
     }
 }
 

@@ -35,6 +35,10 @@ fn test_buffer() -> Result<()> {
 
     let buf3 = lua.create_buffer(b"")?;
     assert!(buf3.is_empty());
+
+    let p = buf3.to_pointer();
+    assert!(!p.is_null());
+
     assert!(!Value::Buffer(buf3).to_pointer().is_null());
 
     Ok(())
