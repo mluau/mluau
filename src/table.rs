@@ -11,6 +11,7 @@ use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, ObjectLike};
 use crate::types::{Integer, LuaType, ValueRef};
 use crate::util::{assert_stack, check_stack, get_metatable_ptr, StackGuard};
 use crate::value::{Nil, Value};
+use crate::WeakLua;
 
 #[cfg(feature = "serde")]
 use {
@@ -804,6 +805,11 @@ impl Table {
             }
         }
         write!(fmt, "{}}}", " ".repeat(ident))
+    }
+
+    #[doc(hidden)]
+    pub fn weak_lua(&self) -> WeakLua {
+        self.0.lua.clone()
     }
 }
 
