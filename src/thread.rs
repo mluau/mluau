@@ -9,6 +9,7 @@ use crate::traits::{FromLuaMulti, IntoLuaMulti};
 use crate::types::{LuaType, ValueRef};
 use crate::util::{check_stack, error_traceback_thread, pop_error, StackGuard};
 
+use crate::WeakLua;
 #[cfg(not(feature = "luau"))]
 use crate::{
     debug::{Debug, HookTriggers},
@@ -464,6 +465,11 @@ impl Thread {
         let lua = self.0.lua.lock();
         let thread_state = self.state();
         unsafe { lua.traceback_at(thread_state) }
+    }
+
+    #[doc(hidden)]
+    pub fn weak_lua(&self) -> WeakLua {
+        self.0.lua.clone()
     }
 }
 
