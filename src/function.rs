@@ -13,6 +13,7 @@ use crate::util::{
     assert_stack, check_stack, linenumber_to_usize, pop_error, ptr_to_lossy_str, ptr_to_str, StackGuard,
 };
 use crate::value::Value;
+use crate::WeakLua;
 
 /// Handle to an internal Lua function.
 #[derive(Clone, Debug, PartialEq)]
@@ -486,6 +487,11 @@ impl Function {
                 Ok(Function(lua.new_value_ref(aux_thread, index)))
             }
         }
+    }
+
+    #[doc(hidden)]
+    pub fn weak_lua(&self) -> WeakLua {
+        self.0.lua.clone()
     }
 }
 
