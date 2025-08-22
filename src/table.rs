@@ -618,6 +618,16 @@ impl Table {
         }
     }
 
+    /// Same as ``pairs`` but the iterator owns the `Table` reference (so no lifetime is needed).
+    pub fn pairs_owned<K: FromLua, V: FromLua>(&self) -> TablePairsOwned<K, V> {
+        TablePairsOwned {
+            guard: self.0.lua.lock(),
+            table: self.clone(),
+            key: Some(Nil),
+            _phantom: PhantomData,
+        }
+    }
+
     /// Iterates over the pairs of the table, invoking the given closure on each pair.
     ///
     /// This method is similar to [`Table::pairs`], but optimized for performance.
@@ -1049,6 +1059,66 @@ pub struct TablePairs<'a, K, V> {
 }
 
 impl<K, V> Iterator for TablePairs<'_, K, V>
+where
+    K: FromLua,
+    V: FromLua,
+{
+    type Item = Result<(K, V)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(prev_key) = self.key.take() {
+            let lua: &RawLua = &self.guard;
+            let state = lua.state();
+
+            let res = (|| unsafe {
+                let _sg = StackGuard::new(state);
+                check_stack(state, 5)?;
+
+                lua.push_ref_at(&self.table.0, state);
+                lua.push_value_at(&prev_key, state)?;
+
+                // It must be safe to call `lua_next` unprotected as deleting a key from a table is
+                // a permitted operation.
+                // It fails only if the key is not found (never existed) which seems impossible scenario.
+                if ffi::lua_next(state, -2) != 0 {
+                    let key = lua.stack_value_at(-2, None, state)?;
+                    Ok(Some((
+                        key.clone(),
+                        K::from_lua(key, lua.lua())?,
+                        V::from_specified_stack(-1, lua, state)?,
+                    )))
+                } else {
+                    Ok(None)
+                }
+            })();
+
+            match res {
+                Ok(Some((key, ret_key, value))) => {
+                    self.key = Some(key);
+                    Some(Ok((ret_key, value)))
+                }
+                Ok(None) => None,
+                Err(e) => Some(Err(e)),
+            }
+        } else {
+            None
+        }
+    }
+}
+
+/// An iterator over the pairs of a Lua table.
+///
+/// This struct is created by the [`Table::pairs`] method.
+///
+/// [`Table::pairs`]: crate::Table::pairs
+pub struct TablePairsOwned<K, V> {
+    guard: LuaGuard,
+    table: Table,
+    key: Option<Value>,
+    _phantom: PhantomData<(K, V)>,
+}
+
+impl<K, V> Iterator for TablePairsOwned<K, V>
 where
     K: FromLua,
     V: FromLua,

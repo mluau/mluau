@@ -99,7 +99,7 @@ pub use crate::multi::{MultiValue, Variadic};
 pub use crate::state::{GCMode, Lua, LuaOptions, WeakLua};
 pub use crate::stdlib::StdLib;
 pub use crate::string::{BorrowedBytes, BorrowedStr, String};
-pub use crate::table::{Table, TablePairs, TableSequence};
+pub use crate::table::{Table, TablePairs, TablePairsOwned, TableSequence};
 pub use crate::thread::{ContinuationStatus, Thread, ThreadStatus};
 pub use crate::traits::{
     FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, LuaNativeFn, LuaNativeFnMut, ObjectLike,
