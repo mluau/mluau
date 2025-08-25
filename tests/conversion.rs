@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use bstr::BString;
 use maplit::{btreemap, btreeset, hashmap, hashset};
-use mlua::{
+use mluau::{
     AnyUserData, BorrowedBytes, BorrowedStr, Either, Error, Function, IntoLua, Lua, RegistryKey, Result,
     Table, Thread, UserDataRef, Value,
 };
@@ -49,7 +49,7 @@ fn test_string_from_lua() -> Result<()> {
     let lua = Lua::new();
 
     // From stack
-    let f = lua.create_function(|_, s: mlua::String| Ok(s))?;
+    let f = lua.create_function(|_, s: mluau::String| Ok(s))?;
     let s = f.call::<String>("hello, world!")?;
     assert_eq!(s, "hello, world!");
 
@@ -267,7 +267,7 @@ fn test_registry_value_into_lua() -> Result<()> {
     let r = lua.create_registry_value(&s)?;
     let value1 = lua.pack(&r)?;
     let value2 = lua.pack(r)?;
-    assert_eq!(value1.as_str().as_deref(), Some("hello, world"));
+    assert_eq!(value1.to_string()?, "hello, world");
     assert_eq!(value1.to_pointer(), value2.to_pointer());
 
     // Push into stack
@@ -560,11 +560,11 @@ fn test_osstring_into_from_lua() -> Result<()> {
 
     let v = lua.pack(s.as_os_str())?;
     assert!(v.is_string());
-    assert_eq!(v.as_str().unwrap(), "hello, world");
+    assert_eq!(v.as_string().unwrap(), "hello, world");
 
     let v = lua.pack(s)?;
     assert!(v.is_string());
-    assert_eq!(v.as_str().unwrap(), "hello, world");
+    assert_eq!(v.as_string().unwrap(), "hello, world");
 
     let s = lua.create_string("hello, world")?;
     let bstr = lua.unpack::<OsString>(Value::String(s))?;
@@ -588,11 +588,11 @@ fn test_pathbuf_into_from_lua() -> Result<()> {
 
     let v = lua.pack(pb.as_path())?;
     assert!(v.is_string());
-    assert_eq!(v.as_str().unwrap(), pb_str);
+    assert_eq!(v.to_string().unwrap(), pb_str);
 
     let v = lua.pack(pb.clone())?;
     assert!(v.is_string());
-    assert_eq!(v.as_str().unwrap(), pb_str);
+    assert_eq!(v.to_string().unwrap(), pb_str);
 
     let s = lua.create_string(pb_str)?;
     let bstr = lua.unpack::<PathBuf>(Value::String(s))?;
@@ -724,7 +724,7 @@ fn test_char_into_lua() -> Result<()> {
 
     let v = '🦀';
     let v2 = v.into_lua(&lua)?;
-    assert_eq!(Some(v.to_string()), v2.as_string_lossy());
+    assert_eq!(*v2.as_string().unwrap(), v.to_string());
 
     Ok(())
 }

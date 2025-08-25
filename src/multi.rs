@@ -245,7 +245,7 @@ impl FromLuaMulti for MultiValue {
 /// # Examples
 ///
 /// ```
-/// # use mlua::{Lua, Result, Variadic};
+/// # use mluau::{Lua, Result, Variadic};
 /// # fn main() -> Result<()> {
 /// # let lua = Lua::new();
 /// let add = lua.create_function(|_, vals: Variadic<f64>| -> Result<f64> {
@@ -319,6 +319,19 @@ impl<T: IntoLua> IntoLuaMulti for Variadic<T> {
     fn into_lua_multi(self, lua: &Lua) -> Result<MultiValue> {
         MultiValue::from_lua_iter(lua, self)
     }
+
+    unsafe fn push_into_specified_stack_multi(
+        self,
+        lua: &RawLua,
+        state: *mut ffi::lua_State,
+    ) -> Result<c_int> {
+        let nresults = self.len() as i32;
+        check_stack(state, nresults + 1)?;
+        for value in self.0 {
+            value.push_into_specified_stack(lua, state)?;
+        }
+        Ok(nresults)
+    }
 }
 
 impl<T: FromLua> FromLuaMulti for Variadic<T> {
@@ -387,7 +400,7 @@ macro_rules! impl_tuple {
                     _ = $name;
                     nresults += 1;
                 )*
-                check_stack(lua.state(), nresults + 1)?;
+                check_stack(state, nresults + 1)?;
                 $(
                     $name.push_into_specified_stack(lua, state)?;
                 )*

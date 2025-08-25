@@ -11,14 +11,13 @@ pub(crate) use error::{
 };
 pub(crate) use short_names::short_type_name;
 pub(crate) use types::TypeKey;
+#[cfg(feature = "dynamic-userdata")]
+pub(crate) use userdata::push_userdata_dyn;
 pub(crate) use userdata::{
     get_destructed_userdata_metatable, get_internal_metatable, get_internal_userdata, get_userdata,
     init_internal_metatable, push_internal_userdata, push_userdata, take_userdata,
     DESTRUCTED_USERDATA_METATABLE,
 };
-
-#[cfg(not(feature = "luau"))]
-pub(crate) use userdata::push_uninit_userdata;
 
 // Checks that Lua has enough free stack space for future stack operations. On failure, this will
 // panic with an internal error message.
@@ -88,7 +87,7 @@ impl Drop for StackGuard {
 #[inline(always)]
 pub(crate) unsafe fn push_string(state: *mut ffi::lua_State, s: &[u8], protect: bool) -> Result<()> {
     // Always use protected mode if the string is too long
-    if protect || s.len() > (1 << 30) {
+    if protect || s.len() >= const { 1 << 30 } {
         protect_lua!(state, 0, 1, |state| {
             ffi::lua_pushlstring(state, s.as_ptr() as *const c_char, s.len());
         })
@@ -101,15 +100,13 @@ pub(crate) unsafe fn push_string(state: *mut ffi::lua_State, s: &[u8], protect: 
 // Uses 3 stack spaces (when protect), does not call checkstack.
 #[cfg(feature = "luau")]
 #[inline(always)]
-pub(crate) unsafe fn push_buffer(state: *mut ffi::lua_State, b: &[u8], protect: bool) -> Result<()> {
-    let data = if protect {
-        protect_lua!(state, 0, 1, |state| ffi::lua_newbuffer(state, b.len()))?
+pub(crate) unsafe fn push_buffer(state: *mut ffi::lua_State, size: usize, protect: bool) -> Result<*mut u8> {
+    let data = if protect || size > const { 1024 * 1024 * 1024 } {
+        protect_lua!(state, 0, 1, |state| ffi::lua_newbuffer(state, size))?
     } else {
-        ffi::lua_newbuffer(state, b.len())
+        ffi::lua_newbuffer(state, size)
     };
-    let buf = slice::from_raw_parts_mut(data as *mut u8, b.len());
-    buf.copy_from_slice(b);
-    Ok(())
+    Ok(data as *mut u8)
 }
 
 // Uses 3 stack spaces, does not call checkstack.
@@ -122,7 +119,7 @@ pub(crate) unsafe fn push_table(
 ) -> Result<()> {
     let narr: c_int = narr.try_into().unwrap_or(c_int::MAX);
     let nrec: c_int = nrec.try_into().unwrap_or(c_int::MAX);
-    if protect {
+    if protect || narr >= const { 1 << 26 } || nrec >= const { 1 << 26 } {
         protect_lua!(state, 0, 1, |state| ffi::lua_createtable(state, narr, nrec))
     } else {
         ffi::lua_createtable(state, narr, nrec);

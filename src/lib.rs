@@ -67,9 +67,9 @@ mod macros;
 mod buffer;
 mod chunk;
 mod conversion;
+mod debug;
 mod error;
 mod function;
-mod hook;
 #[cfg(any(feature = "luau", doc))]
 mod luau;
 mod memory;
@@ -92,14 +92,14 @@ pub use bstr::BString;
 pub use ffi::{self, lua_CFunction, lua_State};
 
 pub use crate::chunk::{AsChunk, Chunk, ChunkMode};
+pub use crate::debug::{Debug, DebugEvent, DebugNames, DebugSource, DebugStack};
 pub use crate::error::{Error, ErrorContext, ExternalError, ExternalResult, Result};
 pub use crate::function::{Function, FunctionInfo};
-pub use crate::hook::{Debug, DebugEvent, DebugNames, DebugSource, DebugStack};
 pub use crate::multi::{MultiValue, Variadic};
 pub use crate::state::{GCMode, Lua, LuaOptions, WeakLua};
 pub use crate::stdlib::StdLib;
 pub use crate::string::{BorrowedBytes, BorrowedStr, String};
-pub use crate::table::{Table, TablePairs, TableSequence};
+pub use crate::table::{Table, TablePairs, TablePairsOwned, TableSequence};
 pub use crate::thread::{ContinuationStatus, Thread, ThreadStatus};
 pub use crate::traits::{
     FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, LuaNativeFn, LuaNativeFnMut, ObjectLike,
@@ -111,10 +111,11 @@ pub use crate::userdata::{
     AnyUserData, MetaMethod, UserData, UserDataFields, UserDataMetatable, UserDataMethods, UserDataRef,
     UserDataRefMut, UserDataRegistry,
 };
+
 pub use crate::value::{Nil, Value};
 
 #[cfg(not(feature = "luau"))]
-pub use crate::hook::HookTriggers;
+pub use crate::debug::HookTriggers;
 
 #[cfg(any(feature = "luau", doc))]
 #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
@@ -149,7 +150,7 @@ extern crate mlua_derive;
 /// Captured variables are **moved** into the chunk.
 ///
 /// ```
-/// use mlua::{Lua, Result, chunk};
+/// use mluau::{Lua, Result, chunk};
 ///
 /// fn main() -> Result<()> {
 ///     let lua = Lua::new();
@@ -204,9 +205,9 @@ pub use mlua_derive::FromLua;
 /// You can register multiple entrypoints as required.
 ///
 /// ```ignore
-/// use mlua::{Lua, Result, Table};
+/// use mluau::{Lua, Result, Table};
 ///
-/// #[mlua::lua_module]
+/// #[mluau::lua_module]
 /// fn my_module(lua: &Lua) -> Result<Table> {
 ///     let exports = lua.create_table()?;
 ///     exports.set("hello", "world")?;
@@ -221,7 +222,7 @@ pub use mlua_derive::FromLua;
 /// * name - name of the module, defaults to the name of the function
 ///
 /// ```ignore
-/// #[mlua::lua_module(name = "alt_module")]
+/// #[mluau::lua_module(name = "alt_module")]
 /// fn my_module(lua: &Lua) -> Result<Table> {
 ///     ...
 /// }
@@ -235,7 +236,7 @@ pub use mlua_derive::FromLua;
 /// with risk of having uncaught exceptions and memory leaks.
 ///
 /// ```ignore
-/// #[mlua::lua_module(skip_memory_check)]
+/// #[mluau::lua_module(skip_memory_check)]
 /// fn my_module(lua: &Lua) -> Result<Table> {
 ///     ...
 /// }

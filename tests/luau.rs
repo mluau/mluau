@@ -3,11 +3,10 @@
 use std::cell::Cell;
 use std::fmt::Debug;
 use std::os::raw::c_void;
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use mlua::{
+use mluau::{
     Compiler, Error, Function, Lua, LuaOptions, Result, StdLib, Table, ThreadStatus, Value, Vector, VmState,
 };
 
@@ -120,11 +119,13 @@ fn test_vector_metatable() -> Result<()> {
     "#,
         )
         .eval::<Table>()?;
-    vector_mt.set_metatable(Some(vector_mt.clone()));
+    vector_mt.set_metatable(Some(vector_mt.clone()))?;
     lua.set_type_metatable::<Vector>(Some(vector_mt.clone()));
     lua.globals().set("Vector3", vector_mt)?;
 
-    let compiler = Compiler::new().set_vector_lib("Vector3").set_vector_ctor("new");
+    let compiler = Compiler::new()
+        .set_vector_ctor("Vector3.new")
+        .set_vector_type("Vector3");
 
     // Test vector methods (fastcall)
     lua.load(
@@ -167,9 +168,9 @@ fn test_readonly_table() -> Result<()> {
     check_readonly_error(t.raw_pop::<Value>());
 
     // Special case
-    match catch_unwind(AssertUnwindSafe(|| t.set_metatable(None))) {
-        Ok(_) => panic!("expected panic, got nothing"),
-        Err(_) => {}
+    match t.set_metatable(None) {
+        Err(Error::RuntimeError(e)) if e.contains("attempt to modify a readonly table") => {}
+        r => panic!("expected RuntimeError(...) with a specific message, got {r:?}"),
     }
 
     Ok(())
@@ -329,6 +330,15 @@ fn test_interrupts() -> Result<()> {
     assert_eq!(yield_count.load(Ordering::Relaxed), 7);
     assert_eq!(co.status(), ThreadStatus::Finished);
 
+    // Test no yielding at non-yieldable points
+    yield_count.store(0, Ordering::Relaxed);
+    let co = lua.create_thread(lua.create_function(|lua, arg: Value| {
+        (lua.load("return (function(x) return x end)(...)")).call::<Value>(arg)
+    })?)?;
+    let res = co.resume::<String>("abc")?;
+    assert_eq!(res, "abc".to_string());
+    assert_eq!(yield_count.load(Ordering::Relaxed), 3);
+
     //
     // Test errors in interrupts
     //
@@ -426,6 +436,25 @@ fn test_thread_events() -> Result<()> {
         .exec();
     assert!(result.is_err());
     assert!(matches!(result, Err(Error::RuntimeError(err)) if err.contains("thread limit exceeded")));
+    lua.gc_collect()?; // Drop the coroutine
+
+    // Lastly test that topointer of thread and thread_ptr in callbacks are the same
+    let new_thread = lua.create_thread(lua.load("return 123").into_function()?)?;
+    let new_thread_ptr = new_thread.to_pointer();
+    thread_data.0.store(new_thread_ptr as *mut _, Ordering::Relaxed);
+
+    let status_ptr = Arc::new(AtomicBool::new(false));
+    let status_ptr2 = status_ptr.clone();
+    lua.set_thread_collection_callback(move |thread_ptr| {
+        let old_thread_ptr = thread_data.0.load(Ordering::Relaxed);
+        status_ptr2.store(old_thread_ptr == thread_ptr.0, Ordering::Relaxed);
+    });
+
+    // Thead will be destroyed after GC cycle
+    drop(new_thread);
+    lua.gc_collect()?;
+
+    assert!(status_ptr.load(Ordering::Relaxed));
 
     Ok(())
 }

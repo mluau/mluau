@@ -256,7 +256,7 @@ impl<'a> ser::Serializer for Serializer<'a> {
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
         let table = self.lua.create_table_with_capacity(len.unwrap_or(0), 0)?;
         if self.options.set_array_metatable {
-            table.set_metatable(Some(self.lua.array_metatable()));
+            table.set_metatable(Some(self.lua.array_metatable()))?;
         }
         Ok(SerializeSeq::new(self.lua, table, self.options))
     }
@@ -529,8 +529,8 @@ impl ser::SerializeStruct for SerializeStruct<'_> {
     fn end(self) -> Result<Value> {
         match self.inner {
             Some(table @ Value::Table(_)) => Ok(table),
-            Some(value) if self.options.detect_serde_json_arbitrary_precision => {
-                let number_s = value.as_str().expect("not an arbitrary precision number");
+            Some(value @ Value::String(_)) if self.options.detect_serde_json_arbitrary_precision => {
+                let number_s = value.to_string()?;
                 if number_s.contains(['.', 'e', 'E']) {
                     if let Ok(number) = number_s.parse().map(Value::Number) {
                         return Ok(number);

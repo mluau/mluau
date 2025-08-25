@@ -1,9 +1,9 @@
 use std::cell::UnsafeCell;
 use std::os::raw::{c_int, c_void};
 
-use crate::error::Result;
 #[cfg(not(feature = "luau"))]
-use crate::hook::{Debug, HookTriggers};
+use crate::debug::{Debug, HookTriggers};
+use crate::error::Result;
 use crate::state::{ExtraData, Lua, RawLua};
 
 // Re-export mutex wrappers
@@ -12,10 +12,16 @@ pub(crate) use sync::{ArcReentrantMutexGuard, ReentrantMutex, ReentrantMutexGuar
 pub use app_data::{AppData, AppDataRef, AppDataRefMut};
 pub use either::Either;
 pub use registry_key::RegistryKey;
+#[cfg(not(feature = "value-ref-refcounted"))]
 pub(crate) use value_ref::ValueRef;
+#[cfg(feature = "value-ref-refcounted")]
+pub(crate) use value_ref::{ValueRef, ValueRefInner};
 
 #[cfg(feature = "luau")]
 use std::collections::HashMap;
+
+#[cfg(feature = "async")]
+pub(crate) use value_ref::ValueRefIndex;
 
 /// Type of Lua integer numbers.
 pub type Integer = ffi::lua_Integer;
@@ -88,16 +94,19 @@ pub(crate) enum HookKind {
 }
 
 #[cfg(all(feature = "send", not(feature = "luau")))]
-pub(crate) type HookCallback = XRc<dyn Fn(&Lua, Debug) -> Result<VmState> + Send>;
+pub(crate) type HookCallback = XRc<dyn Fn(&Lua, &Debug) -> Result<VmState> + Send>;
 
 #[cfg(all(not(feature = "send"), not(feature = "luau")))]
-pub(crate) type HookCallback = XRc<dyn Fn(&Lua, Debug) -> Result<VmState>>;
+pub(crate) type HookCallback = XRc<dyn Fn(&Lua, &Debug) -> Result<VmState>>;
 
 #[cfg(all(feature = "send", feature = "luau"))]
 pub(crate) type InterruptCallback = XRc<dyn Fn(&Lua) -> Result<VmState> + Send>;
 
 #[cfg(all(not(feature = "send"), feature = "luau"))]
 pub(crate) type InterruptCallback = XRc<dyn Fn(&Lua) -> Result<VmState>>;
+
+#[cfg(feature = "luau")]
+pub(crate) type GcInterruptCallback = XRc<dyn Fn(&Lua, c_int) -> ()>;
 
 #[cfg(all(feature = "send", feature = "luau"))]
 pub(crate) type ThreadCreationCallback = XRc<dyn Fn(&Lua, crate::Thread) -> Result<()> + Send>;

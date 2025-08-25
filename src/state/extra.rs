@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
+#[cfg(feature = "dynamic-userdata")]
+use rustc_hash::FxHashSet;
 
 use crate::error::Result;
 use crate::state::RawLua;
@@ -30,7 +32,7 @@ use crate::luau::lute::{LuteChildVmType, LuteRuntimeHandle};
 static EXTRA_REGISTRY_KEY: u8 = 0;
 
 const WRAPPED_FAILURE_POOL_DEFAULT_CAPACITY: usize = 64;
-const REF_STACK_RESERVE: c_int = 3;
+pub const REF_STACK_RESERVE: c_int = 3;
 
 pub(crate) struct RefThread {
     pub(super) ref_thread: *mut ffi::lua_State,
@@ -82,6 +84,9 @@ pub(crate) struct ExtraData {
     pub(super) registered_userdata_mt: FxHashMap<*const c_void, Option<TypeId>>,
     pub(super) last_checked_userdata_mt: (*const c_void, Option<TypeId>),
 
+    #[cfg(feature = "dynamic-userdata")]
+    pub(crate) dyn_userdata_set: FxHashSet<*mut c_void>,
+
     // When Lua instance dropped, setting `None` would prevent collecting `RegistryKey`s
     pub(super) registry_unref_list: Arc<Mutex<Option<Vec<c_int>>>>,
 
@@ -109,11 +114,13 @@ pub(crate) struct ExtraData {
     #[cfg(not(feature = "luau"))]
     pub(super) hook_callback: Option<crate::types::HookCallback>,
     #[cfg(not(feature = "luau"))]
-    pub(super) hook_triggers: crate::hook::HookTriggers,
+    pub(super) hook_triggers: crate::debug::HookTriggers,
     #[cfg(feature = "lua54")]
     pub(super) warn_callback: Option<crate::types::WarnCallback>,
     #[cfg(feature = "luau")]
     pub(super) interrupt_callback: Option<crate::types::InterruptCallback>,
+    #[cfg(feature = "luau")]
+    pub(super) gc_interrupt_callback: Option<crate::types::GcInterruptCallback>,
     #[cfg(feature = "luau")]
     pub(super) thread_creation_callback: Option<crate::types::ThreadCreationCallback>,
     #[cfg(feature = "luau")]
@@ -147,6 +154,12 @@ pub(crate) struct ExtraData {
 
     // Values currently being yielded from Lua.yield()
     pub(super) yielded_values: Option<MultiValue>,
+
+    // Callback called when lua VM is about to be closed
+    #[cfg(feature = "send")]
+    pub(super) on_close: Option<Box<dyn Fn() + Send + 'static>>,
+    #[cfg(not(feature = "send"))]
+    pub(super) on_close: Option<Box<dyn Fn() + 'static>>,
 }
 
 impl Drop for ExtraData {
@@ -194,6 +207,8 @@ impl ExtraData {
             registered_userdata_t: FxHashMap::default(),
             registered_userdata_mt: FxHashMap::default(),
             last_checked_userdata_mt: (ptr::null(), None),
+            #[cfg(feature = "dynamic-userdata")]
+            dyn_userdata_set: FxHashSet::default(),
             registry_unref_list: Arc::new(Mutex::new(Some(Vec::new()))),
             app_data: AppData::default(),
             app_data_priv: AppData::default(),
@@ -214,6 +229,8 @@ impl ExtraData {
             #[cfg(feature = "luau")]
             interrupt_callback: None,
             #[cfg(feature = "luau")]
+            gc_interrupt_callback: None,
+            #[cfg(feature = "luau")]
             thread_creation_callback: None,
             #[cfg(feature = "luau")]
             thread_collection_callback: None,
@@ -233,6 +250,7 @@ impl ExtraData {
             no_drop: false,
             yielded_values: None,
             disable_error_userdata: false,
+            on_close: None,
         }));
 
         // Store it in the registry
@@ -298,7 +316,14 @@ impl ExtraData {
     }
 
     #[inline(always)]
+    #[cfg(feature = "luau")]
     pub(crate) unsafe fn get_userdata_dtor(&self, type_id: TypeId) -> Option<ffi::lua_CFunction> {
         self.registered_userdata_dtors.get(&type_id).copied()
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "dynamic-userdata")]
+    pub(crate) fn is_userdata_dynamic(&self, ptr: *mut c_void) -> bool {
+        self.dyn_userdata_set.contains(&ptr)
     }
 }

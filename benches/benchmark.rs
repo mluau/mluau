@@ -2,10 +2,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use tokio::runtime::Runtime;
-use tokio::task;
 
-use mlua::prelude::*;
+use mluau::prelude::*;
 
 fn collect_gc_twice(lua: &Lua) {
     lua.gc_collect().unwrap();
@@ -122,6 +120,22 @@ fn table_traversal_sequence(c: &mut Criterion) {
                 for v in table.sequence_values::<i32>() {
                     let _i = v.unwrap();
                 }
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
+fn table_ref_clone(c: &mut Criterion) {
+    let lua = Lua::new();
+
+    let t = lua.create_table().unwrap();
+
+    c.bench_function("table [ref clone]", |b| {
+        b.iter_batched(
+            || collect_gc_twice(&lua),
+            |_| {
+                let _t2 = t.clone();
             },
             BatchSize::SmallInput,
         );
@@ -341,6 +355,7 @@ criterion_group! {
         table_traversal_pairs,
         table_traversal_for_each,
         table_traversal_sequence,
+        table_ref_clone,
 
         function_create,
         function_call_sum,

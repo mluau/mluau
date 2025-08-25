@@ -46,6 +46,37 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
 - `RawLua::stack_value` correctly calls `lua_checkstack` to avoid a potential crash when there are no stack slots free when popping from the Lua stack (`from_lua` etc.)
 - Namecall optimization on Luau: for methods/functions on userdata, the `namecall` metamethod is now defined. This allows for more efficient method calls on userdata, as it avoids the need to check for the `__index` metamethod on every call. This is particularly useful for performance-critical code that relies heavily on userdata methods. This optimization is enabled by default, but can be disabled using `UserDataRegistry::disable_namecall_optimization()` if needed.
 - Due to namcall, `RawUserDataRegistry` is not `Send`.
+- Support for disabling use of a ``Error`` userdata in favor of just stringifying the error. This is useful as ``Error`` userdata tends to have issues with ``xpcall`` depending on the error function handler being used.
+- Support for creating tracebacks on the current thread using ``Lua::traceback`` and ``Thread::traceback``.
+- ``strong_count`` and ``weak_count`` have been added to both ``WeakLua`` and ``Lua`` for debugging purposes/allowing debugging of Lua VM reference leaks etc.
+- Support for getting userdata type name via ``AnyUserData::type_name``
+- Support for dynamic userdata. A dynamic userdata is a userdata whose internals are not known at compile time and can hence store arbitrary data and fields. A dynamic userdata is created using the `Lua::create_dynamic_userdata` method, which takes the associated data to store for the userdata and a metatable. The metatable can be used to define methods and fields for the dynamic userdata. The associated data can be accessed using the `AnyUserData::dynamic_data` method, which returns a reference to the associated data to hence allow for functions that 
+operate on the dynamic userdata.
+- Support for getting weak_lua from Threads and other primitives
+- Support for GC interrupts in Luau.
+
+As an example of dynamic userdata:
+
+```rust
+    let mt1 = lua.create_table()?;
+    mt1.set("__type", "my_dynamic_userdata2")?;
+
+    let index_tab = lua.create_table()?;
+    index_tab.set("foo", 123)?;
+    index_tab.set("bar", lua.create_function(|_lua, ud: AnyUserData| {
+        let dt = ud.dynamic_data::<MyDynamicData>()?;
+        Ok(dt.foo)
+    })?)?;
+    mt1.set("__index", index_tab)?;
+
+    let dynamic_userdata = lua.create_dynamic_userdata(MyDynamicData { foo: 124 }, &mt1)?;
+
+    let func = lua.load("local ud = ...; return ud.foo").into_function()?;
+    assert_eq!(func.call::<i64>(dynamic_userdata.clone())?, 123);
+
+    let func = lua.load("local ud = ...; return ud:bar()").into_function()?;
+    assert_eq!(func.call::<i64>(dynamic_userdata.clone())?, 124);
+```
 
 ## Roadmap
 
@@ -91,7 +122,7 @@ Below is a list of the available feature flags. By default `mlua` does not enabl
 - `vendored`: build static Lua(JIT) libraries from sources during `mlua` compilation using [lua-src] or [luajit-src]
 - `module`: enable module mode (building loadable `cdylib` library for Lua)
 <!-- * `async`: enable async/await support (any executor can be used, eg. [tokio] or [async-std]) -->
-- `send`: make `mlua::Lua: Send + Sync` (adds [`Send`] requirement to `mlua::Function` and `mlua::UserData`)
+- `send`: make `mluau::Lua: Send + Sync` (adds [`Send`] requirement to `mluau::Function` and `mluau::UserData`)
 - `error-send`: make `mlua:Error: Send + Sync`
 - `serde`: add serialization and deserialization support to `mlua` types using [serde]
 - `macros`: enable procedural macros (such as `chunk!`)
@@ -110,13 +141,13 @@ Below is a list of the available feature flags. By default `mlua` does not enabl
 
 ### Serialization (serde) support
 
-With the `serde` feature flag enabled, `mlua` allows you to serialize/deserialize any type that implements [`serde::Serialize`] and [`serde::Deserialize`] into/from [`mlua::Value`]. In addition, `mlua` provides the [`serde::Serialize`] trait implementation for it (including `UserData` support).
+With the `serde` feature flag enabled, `mlua` allows you to serialize/deserialize any type that implements [`serde::Serialize`] and [`serde::Deserialize`] into/from [`mluau::Value`]. In addition, `mlua` provides the [`serde::Serialize`] trait implementation for it (including `UserData` support).
 
-[Example](examples/serialize.rs)
+[Example](examples/serde.rs)
 
 [`serde::Serialize`]: https://docs.serde.rs/serde/ser/trait.Serialize.html
 [`serde::Deserialize`]: https://docs.serde.rs/serde/de/trait.Deserialize.html
-[`mlua::Value`]: https://docs.rs/mlua/latest/mlua/enum.Value.html
+[`mluau::Value`]: https://docs.rs/mlua/latest/mlua/enum.Value.html
 
 ### Compiling
 
@@ -145,13 +176,13 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-mlua = { version = "0.10", features = ["lua54", "vendored"] }
+mlua = { version = "0.11", features = ["lua54", "vendored"] }
 ```
 
 `main.rs`
 
 ```rust
-use mlua::prelude::*;
+use mluau::prelude::*;
 
 fn main() -> LuaResult<()> {
     let lua = Lua::new();
@@ -181,20 +212,20 @@ Add to `Cargo.toml`:
 crate-type = ["cdylib"]
 
 [dependencies]
-mlua = { version = "0.10", features = ["lua54", "module"] }
+mlua = { version = "0.11", features = ["lua54", "module"] }
 ```
 
 `lib.rs`:
 
 ```rust
-use mlua::prelude::*;
+use mluau::prelude::*;
 
 fn hello(_: &Lua, name: String) -> LuaResult<()> {
     println!("hello, {}!", name);
     Ok(())
 }
 
-#[mlua::lua_module]
+#[mluau::lua_module]
 fn my_module(lua: &Lua) -> LuaResult<LuaTable> {
     let exports = lua.create_table()?;
     exports.set("hello", lua.create_function(hello)?)?;

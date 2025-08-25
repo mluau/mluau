@@ -24,8 +24,12 @@ use {
 // Re-export for convenience
 pub(crate) use cell::UserDataStorage;
 pub use r#ref::{UserDataRef, UserDataRefMut};
+#[cfg(feature = "dynamic-userdata")]
+pub(crate) use registry::DynamicUserDataPtr;
 pub use registry::UserDataRegistry;
 pub(crate) use registry::{RawUserDataRegistry, UserDataProxy};
+#[cfg(feature = "dynamic-userdata")]
+pub(crate) use util::collect_userdata_dyn;
 pub(crate) use util::{
     borrow_userdata_scoped, borrow_userdata_scoped_mut, collect_userdata, init_userdata_metatable,
     TypeIdHints,
@@ -239,6 +243,13 @@ impl AsRef<str> for MetaMethod {
     }
 }
 
+impl From<MetaMethod> for StdString {
+    #[inline]
+    fn from(method: MetaMethod) -> Self {
+        method.name().to_owned()
+    }
+}
+
 /// Method registry for [`UserData`] implementors.
 pub trait UserDataMethods<T> {
     /// Add a regular method which accepts a `&T` as the first parameter.
@@ -248,7 +259,7 @@ pub trait UserDataMethods<T> {
     ///
     /// If `add_meta_method` is used to set the `__index` metamethod, the `__index` metamethod will
     /// be used as a fall-back if no regular method is found.
-    fn add_method<M, A, R>(&mut self, name: impl ToString, method: M)
+    fn add_method<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
     where
         M: Fn(&Lua, &T, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
@@ -259,7 +270,7 @@ pub trait UserDataMethods<T> {
     /// Refer to [`add_method`] for more information about the implementation.
     ///
     /// [`add_method`]: UserDataMethods::add_method
-    fn add_method_mut<M, A, R>(&mut self, name: impl ToString, method: M)
+    fn add_method_mut<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
     where
         M: FnMut(&Lua, &mut T, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
@@ -270,7 +281,7 @@ pub trait UserDataMethods<T> {
     /// The first argument will be a [`AnyUserData`] of type `T` if the method is called with Lua
     /// method syntax: `my_userdata:my_method(arg1, arg2)`, or it is passed in as the first
     /// argument: `my_userdata.my_method(my_userdata, arg1, arg2)`.
-    fn add_function<F, A, R>(&mut self, name: impl ToString, function: F)
+    fn add_function<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
     where
         F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
@@ -281,7 +292,7 @@ pub trait UserDataMethods<T> {
     /// This is a version of [`add_function`] that accepts a `FnMut` argument.
     ///
     /// [`add_function`]: UserDataMethods::add_function
-    fn add_function_mut<F, A, R>(&mut self, name: impl ToString, function: F)
+    fn add_function_mut<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
     where
         F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
@@ -295,7 +306,7 @@ pub trait UserDataMethods<T> {
     /// side has a metatable. To prevent this, use [`add_meta_function`].
     ///
     /// [`add_meta_function`]: UserDataMethods::add_meta_function
-    fn add_meta_method<M, A, R>(&mut self, name: impl ToString, method: M)
+    fn add_meta_method<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
     where
         M: Fn(&Lua, &T, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
@@ -309,7 +320,7 @@ pub trait UserDataMethods<T> {
     /// side has a metatable. To prevent this, use [`add_meta_function`].
     ///
     /// [`add_meta_function`]: UserDataMethods::add_meta_function
-    fn add_meta_method_mut<M, A, R>(&mut self, name: impl ToString, method: M)
+    fn add_meta_method_mut<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
     where
         M: FnMut(&Lua, &mut T, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
@@ -320,7 +331,7 @@ pub trait UserDataMethods<T> {
     /// Metamethods for binary operators can be triggered if either the left or right argument to
     /// the binary operator has a metatable, so the first argument here is not necessarily a
     /// userdata of type `T`.
-    fn add_meta_function<F, A, R>(&mut self, name: impl ToString, function: F)
+    fn add_meta_function<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
     where
         F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
@@ -331,7 +342,7 @@ pub trait UserDataMethods<T> {
     /// This is a version of [`add_meta_function`] that accepts a `FnMut` argument.
     ///
     /// [`add_meta_function`]: UserDataMethods::add_meta_function
-    fn add_meta_function_mut<F, A, R>(&mut self, name: impl ToString, function: F)
+    fn add_meta_function_mut<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
     where
         F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
@@ -349,7 +360,7 @@ pub trait UserDataFields<T> {
     ///
     /// If `add_meta_method` is used to set the `__index` metamethod, it will
     /// be used as a fall-back if no regular field or method are found.
-    fn add_field<V>(&mut self, name: impl ToString, value: V)
+    fn add_field<V>(&mut self, name: impl Into<StdString>, value: V)
     where
         V: IntoLua + 'static;
 
@@ -360,7 +371,7 @@ pub trait UserDataFields<T> {
     ///
     /// If `add_meta_method` is used to set the `__index` metamethod, the `__index` metamethod will
     /// be used as a fall-back if no regular field or method are found.
-    fn add_field_method_get<M, R>(&mut self, name: impl ToString, method: M)
+    fn add_field_method_get<M, R>(&mut self, name: impl Into<StdString>, method: M)
     where
         M: Fn(&Lua, &T) -> Result<R> + MaybeSend + 'static,
         R: IntoLua;
@@ -373,21 +384,21 @@ pub trait UserDataFields<T> {
     ///
     /// If `add_meta_method` is used to set the `__newindex` metamethod, the `__newindex` metamethod
     /// will be used as a fall-back if no regular field is found.
-    fn add_field_method_set<M, A>(&mut self, name: impl ToString, method: M)
+    fn add_field_method_set<M, A>(&mut self, name: impl Into<StdString>, method: M)
     where
         M: FnMut(&Lua, &mut T, A) -> Result<()> + MaybeSend + 'static,
         A: FromLua;
 
     /// Add a regular field getter as a function which accepts a generic [`AnyUserData`] of type `T`
     /// argument.
-    fn add_field_function_get<F, R>(&mut self, name: impl ToString, function: F)
+    fn add_field_function_get<F, R>(&mut self, name: impl Into<StdString>, function: F)
     where
         F: Fn(&Lua, AnyUserData) -> Result<R> + MaybeSend + 'static,
         R: IntoLua;
 
     /// Add a regular field setter as a function which accepts a generic [`AnyUserData`] of type `T`
     /// first argument.
-    fn add_field_function_set<F, A>(&mut self, name: impl ToString, function: F)
+    fn add_field_function_set<F, A>(&mut self, name: impl Into<StdString>, function: F)
     where
         F: FnMut(&Lua, AnyUserData, A) -> Result<()> + MaybeSend + 'static,
         A: FromLua;
@@ -400,7 +411,7 @@ pub trait UserDataFields<T> {
     ///
     /// `mlua` will trigger an error on an attempt to define a protected metamethod,
     /// like `__gc` or `__metatable`.
-    fn add_meta_field<V>(&mut self, name: impl ToString, value: V)
+    fn add_meta_field<V>(&mut self, name: impl Into<StdString>, value: V)
     where
         V: IntoLua + 'static;
 
@@ -412,7 +423,7 @@ pub trait UserDataFields<T> {
     ///
     /// `mlua` will trigger an error on an attempt to define a protected metamethod,
     /// like `__gc` or `__metatable`.
-    fn add_meta_field_with<F, R>(&mut self, name: impl ToString, f: F)
+    fn add_meta_field_with<F, R>(&mut self, name: impl Into<StdString>, f: F)
     where
         F: FnOnce(&Lua) -> Result<R> + 'static,
         R: IntoLua;
@@ -429,7 +440,7 @@ pub trait UserDataFields<T> {
 /// # Examples
 ///
 /// ```
-/// # use mlua::{Lua, Result, UserData};
+/// # use mluau::{Lua, Result, UserData};
 /// # fn main() -> Result<()> {
 /// # let lua = Lua::new();
 /// struct MyUserData;
@@ -448,7 +459,7 @@ pub trait UserDataFields<T> {
 /// `add_methods` (refer to [`UserDataFields`] and [`UserDataMethods`] for more information):
 ///
 /// ```
-/// # use mlua::{Lua, MetaMethod, Result, UserData, UserDataFields, UserDataMethods};
+/// # use mluau::{Lua, MetaMethod, Result, UserData, UserDataFields, UserDataMethods};
 /// # fn main() -> Result<()> {
 /// # let lua = Lua::new();
 /// struct MyUserData(i32);
@@ -517,9 +528,15 @@ pub struct AnyUserData(pub(crate) ValueRef);
 
 impl AnyUserData {
     /// Checks whether the type of this userdata is `T`.
+    ///
+    /// Will always return `false` for dynamic userdata.
     #[inline]
     pub fn is<T: 'static>(&self) -> bool {
         let type_id = self.type_id();
+        // If the userdata is dynamic, we cannot check its type id
+        if type_id.is_none() {
+            return false;
+        }
         // We do not use wrapped types here, rather prefer to check the "real" type of the userdata
         matches!(type_id, Some(type_id) if type_id == TypeId::of::<T>())
     }
@@ -530,7 +547,7 @@ impl AnyUserData {
     ///
     /// Returns a [`UserDataBorrowError`] if the userdata is already mutably borrowed.
     /// Returns a [`DataTypeMismatch`] if the userdata is not of type `T` or if it's
-    /// scoped.
+    /// dynamic.
     ///
     /// [`UserDataBorrowError`]: crate::Error::UserDataBorrowError
     /// [`DataTypeMismatch`]: crate::Error::UserDataTypeMismatch
@@ -543,7 +560,7 @@ impl AnyUserData {
     /// Borrow this userdata immutably if it is of type `T`, passing the borrowed value
     /// to the closure.
     ///
-    /// This method is the only way to borrow scoped userdata (created inside [`Lua::scope`]).
+    /// Will return `UserDataTypeMismatch` if the userdata is dynamic.
     pub fn borrow_scoped<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
         let lua = self.0.lua.lock();
         let type_id = lua.get_userdata_ref_type_id(&self.0)?;
@@ -565,7 +582,7 @@ impl AnyUserData {
     ///
     /// Returns a [`UserDataBorrowMutError`] if the userdata cannot be mutably borrowed.
     /// Returns a [`UserDataTypeMismatch`] if the userdata is not of type `T` or if it's
-    /// scoped.
+    /// a dynamic userdata.
     ///
     /// [`UserDataBorrowMutError`]: crate::Error::UserDataBorrowMutError
     /// [`UserDataTypeMismatch`]: crate::Error::UserDataTypeMismatch
@@ -577,8 +594,6 @@ impl AnyUserData {
 
     /// Borrow this userdata mutably if it is of type `T`, passing the borrowed value
     /// to the closure.
-    ///
-    /// This method is the only way to borrow scoped userdata (created inside [`Lua::scope`]).
     pub fn borrow_mut_scoped<T: 'static, R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R> {
         let lua = self.0.lua.lock();
         let type_id = lua.get_userdata_ref_type_id(&self.0)?;
@@ -600,6 +615,8 @@ impl AnyUserData {
     /// userdata.
     ///
     /// Keeps associated user values unchanged (they will be collected by Lua's GC).
+    ///
+    /// Will always return `UserDataTypeMismatch` on dynamic userdata.
     pub fn take<T: 'static>(&self) -> Result<T> {
         let lua = self.0.lua.lock();
         match lua.get_userdata_ref_type_id(&self.0)? {
@@ -619,7 +636,7 @@ impl AnyUserData {
     ///
     /// This is similar to [`AnyUserData::take`], but it doesn't require a type.
     ///
-    /// This method works for non-scoped userdata only.
+    /// This method works for non-scoped and non-dynamic userdata only.
     pub fn destroy(&self) -> Result<()> {
         let lua = self.0.lua.lock();
         let state = lua.state();
@@ -667,6 +684,30 @@ impl AnyUserData {
                     return Ok(());
                 }
                 Err(Error::UserDataBorrowMutError)
+            }
+        }
+    }
+
+    /// For a dynamic userdata, returns the inner data put into the userdata.
+    ///
+    /// This will return `UserDataTypeMismatch` if the userdata is not dynamic or
+    /// if the dynamic userdata's metatable is not associated with the type `T`.
+    #[cfg(feature = "dynamic-userdata")]
+    pub fn dynamic_data<T: 'static>(&self) -> Result<&T> {
+        let lua = self.0.lua.lock();
+        // Get the metatable pointer
+        let ud_ptr = unsafe { ffi::lua_topointer(lua.ref_thread(self.0.aux_thread), self.0.index) };
+
+        unsafe {
+            if !(&(*lua.extra())).is_userdata_dynamic(ud_ptr as *mut c_void) {
+                return Err(Error::UserDataTypeMismatch);
+            }
+
+            let ud = get_userdata::<DynamicUserDataPtr>(lua.ref_thread(self.0.aux_thread), self.0.index);
+
+            match (&*ud).data.downcast_ref::<T>() {
+                Some(data) => Ok(data),
+                None => Err(Error::UserDataTypeMismatch),
             }
         }
     }
@@ -826,6 +867,8 @@ impl AnyUserData {
     /// provides safe access to its methods.
     ///
     /// For `T: 'static` returned metatable is shared among all instances of type `T`.
+    ///
+    /// This will always return a error if used on a dynamic userdata.
     #[inline]
     pub fn metatable(&self) -> Result<UserDataMetatable> {
         self.raw_metatable().map(UserDataMetatable)
@@ -869,16 +912,17 @@ impl AnyUserData {
         }
     }
 
+    /// Returns a raw metatable of this [`AnyUserData`].
     fn raw_metatable(&self) -> Result<Table> {
         let lua = self.0.lua.lock();
-        let state = lua.state();
+        let ref_thread = lua.ref_thread(self.0.aux_thread);
         unsafe {
-            let _sg = StackGuard::new(state);
-            check_stack(state, 3)?;
+            // Check that userdata is registered and not destructed
+            // All registered userdata types have a non-empty metatable
+            let _type_id = lua.get_userdata_ref_type_id(&self.0)?;
 
-            lua.push_userdata_ref_at(&self.0, state)?;
-            ffi::lua_getmetatable(state, -1); // Checked that non-empty on the previous call
-            Ok(Table(lua.pop_ref()))
+            ffi::lua_getmetatable(ref_thread, self.0.index);
+            Ok(Table(lua.pop_ref_at(ref_thread)))
         }
     }
 
@@ -902,7 +946,10 @@ impl AnyUserData {
     }
 
     /// Returns a type name of this `UserData` (from a metatable field).
-    pub(crate) fn type_name(&self) -> Result<Option<StdString>> {
+    ///
+    /// Returns ``None`` if the type name is not set, the userdata is not registered
+    /// or no type metafield is set.
+    pub fn type_name(&self) -> Result<Option<StdString>> {
         let lua = self.0.lua.lock();
         let state = lua.state();
         unsafe {

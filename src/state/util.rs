@@ -6,7 +6,7 @@ use std::ptr;
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
-use crate::state::extra::RefThread;
+use crate::state::extra::{RefThread, REF_STACK_RESERVE};
 use crate::state::{ExtraData, RawLua};
 use crate::util::{self, check_stack, get_internal_metatable, push_string, WrappedFailure};
 
@@ -87,11 +87,11 @@ impl PreallocatedFailure {
     }
 }
 
-unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s: impl AsRef<[u8]>) {
+unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s: String) {
     unsafe fn push_error_string_errorable(
         state: *mut ffi::lua_State,
         extra: *mut ExtraData,
-        s: impl AsRef<[u8]>,
+        s: String,
     ) -> Result<()> {
         let rawlua = (*extra).raw_lua();
         if rawlua.unlikely_memory_error() {
@@ -109,9 +109,6 @@ unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s
         let s = "memory error".to_string();
         ffi::lua_pushlstring(state, s.as_ptr() as *const _, s.len());
         drop(s); // Lua copies the string, so we can drop it now
-        ffi::lua_error(state);
-    } else {
-        ffi::lua_error(state);
     }
 }
 
@@ -148,7 +145,12 @@ where
         }
         Ok(Err(err)) => {
             if (*extra).disable_error_userdata {
-                push_error_string(state, extra, err.to_string());
+                {
+                    let err_string = err.to_string();
+                    push_error_string(state, extra, err_string);
+                    drop(err);
+                }
+                ffi::lua_error(state);
             }
 
             let wrapped_error = prealloc_failure.r#use(state, extra);
@@ -181,20 +183,25 @@ where
         }
         Err(p) => {
             if (*extra).disable_error_userdata {
-                // Push the error message directly onto the stack
-                let err_msg = {
-                    // If downcastable to String, use it
-                    if let Some(s) = p.downcast_ref::<String>() {
-                        s.clone()
-                    } else if let Some(s) = p.downcast_ref::<&str>() {
-                        s.to_string()
-                    } else {
-                        // Otherwise, use the debug representation
-                        format!("Panic occurred in callback: {:?}", p)
-                    }
-                };
+                {
+                    // Push the error message directly onto the stack
+                    let err_msg = {
+                        // If downcastable to String, use it
+                        if let Some(s) = p.downcast_ref::<String>() {
+                            s.clone()
+                        } else if let Some(s) = p.downcast_ref::<&str>() {
+                            s.to_string()
+                        } else {
+                            // Otherwise, use the debug representation
+                            format!("Panic occurred in callback: {:?}", p)
+                        }
+                    };
 
-                push_error_string(state, extra, err_msg);
+                    std::mem::forget(catch_unwind(AssertUnwindSafe(move || drop(p))));
+
+                    push_error_string(state, extra, err_msg);
+                }
+                ffi::lua_error(state);
             }
 
             let wrapped_panic = prealloc_failure.r#use(state, extra);
@@ -327,7 +334,12 @@ where
                     }
                     Err(err) => {
                         if (*extra).disable_error_userdata {
-                            push_error_string(state, extra, err.to_string());
+                            {
+                                let err_string = err.to_string();
+                                push_error_string(state, extra, err_string);
+                            }
+                            drop(err);
+                            ffi::lua_error(state);
                         }
 
                         // Make a *new* preallocated failure, and then do normal wrap_error
@@ -345,7 +357,12 @@ where
         }
         Ok(Err(err)) => {
             if (*extra).disable_error_userdata {
-                push_error_string(state, extra, err.to_string());
+                {
+                    let err_string = err.to_string();
+                    push_error_string(state, extra, err_string);
+                    drop(err); // drop the error before lua_error
+                }
+                ffi::lua_error(state);
             }
 
             let wrapped_error = prealloc_failure.r#use(state, extra);
@@ -391,7 +408,11 @@ where
                     }
                 };
 
+                // WARNING: It is a logic error for the payload in p to itself panic
+                std::mem::forget(catch_unwind(AssertUnwindSafe(move || drop(p))));
+
                 push_error_string(state, extra, err_msg);
+                ffi::lua_error(state);
             }
 
             let wrapped_panic = prealloc_failure.r#use(state, extra);
@@ -454,7 +475,7 @@ pub(crate) unsafe fn compare_refs<R>(
     let th_b = &extra.ref_thread[aux_thread_b];
     let internal_thread = &mut extra.ref_thread_internal;
 
-    // 4 spaces needed: idx element on A, idx element on B
+    // 2 spaces needed: idx element on A, idx element on B
     check_stack(internal_thread.ref_thread, 2)
         .expect("internal error: cannot merge references, out of internal auxiliary stack space");
 
@@ -463,9 +484,9 @@ pub(crate) unsafe fn compare_refs<R>(
     // Push the index element from thread B to top
     ffi::lua_xpush(th_b.ref_thread, internal_thread.ref_thread, aux_thread_b_index);
     // Now we have the following stack:
-    // - index element from thread A (1) [copy from pushvalue]
-    // - index element from thread B (2) [copy from pushvalue]
-    // We want to compare the index elements from both threads, so use 3 and 4 as indices
+    // - index element from thread A (2) [copy from xpush]
+    // - index element from thread B (1) [copy from xpush]
+    // We want to compare the index elements from both threads, so use -1 and -2 as indices
     let result = f(internal_thread.ref_thread, -1, -2);
 
     // Pop the top 2 elements to clean the copies
@@ -489,7 +510,7 @@ pub(crate) unsafe fn get_next_spot(extra: *mut ExtraData) -> (usize, c_int, bool
         // Try to grow max stack size
         if ref_th.stack_top >= ref_th.stack_size {
             let mut inc = ref_th.stack_size; // Try to double stack size
-            while inc > 0 && ffi::lua_checkstack(ref_th.ref_thread, inc + 1) == 0 {
+            while inc > 0 && ffi::lua_checkstack(ref_th.ref_thread, inc + REF_STACK_RESERVE) == 0 {
                 inc /= 2;
             }
             if inc == 0 {

@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use mlua::{DebugEvent, Error, HookTriggers, Lua, Result, ThreadStatus, Value, VmState};
+use mluau::{DebugEvent, Error, HookTriggers, Lua, Result, ThreadStatus, Value, VmState};
 
 #[test]
 fn test_hook_triggers() {
@@ -24,7 +24,7 @@ fn test_line_counts() -> Result<()> {
     let lua = Lua::new();
     lua.set_hook(HookTriggers::EVERY_LINE, move |_lua, debug| {
         assert_eq!(debug.event(), DebugEvent::Line);
-        hook_output.lock().unwrap().push(debug.curr_line());
+        hook_output.lock().unwrap().push(debug.current_line().unwrap());
         Ok(VmState::Continue)
     })?;
     lua.load(
@@ -240,7 +240,7 @@ fn test_hook_threads() -> Result<()> {
     let hook_output = output.clone();
     co.set_hook(HookTriggers::EVERY_LINE, move |_lua, debug| {
         assert_eq!(debug.event(), DebugEvent::Line);
-        hook_output.lock().unwrap().push(debug.curr_line());
+        hook_output.lock().unwrap().push(debug.current_line().unwrap());
         Ok(VmState::Continue)
     })?;
 

@@ -1,5 +1,6 @@
 use std::fmt;
 use std::os::raw::{c_int, c_void};
+use std::string::String as StdString;
 
 use crate::error::{Error, Result};
 use crate::function::Function;
@@ -8,9 +9,10 @@ use crate::traits::{FromLuaMulti, IntoLuaMulti};
 use crate::types::{LuaType, ValueRef};
 use crate::util::{check_stack, error_traceback_thread, pop_error, StackGuard};
 
+use crate::WeakLua;
 #[cfg(not(feature = "luau"))]
 use crate::{
-    hook::{Debug, HookTriggers},
+    debug::{Debug, HookTriggers},
     types::HookKind,
 };
 
@@ -71,8 +73,10 @@ unsafe impl Send for Thread {}
 unsafe impl Sync for Thread {}
 
 impl Thread {
+    /// Returns reference to the Lua state that this thread is associated with.
+    #[doc(hidden)]
     #[inline(always)]
-    fn state(&self) -> *mut ffi::lua_State {
+    pub fn state(&self) -> *mut ffi::lua_State {
         self.1
     }
 
@@ -117,7 +121,7 @@ impl Thread {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Error, Lua, Result, Thread};
+    /// # use mluau::{Error, Lua, Result, Thread};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let thread: Thread = lua.load(r#"
@@ -272,7 +276,7 @@ impl Thread {
     #[cfg_attr(docsrs, doc(cfg(not(feature = "luau"))))]
     pub fn set_hook<F>(&self, triggers: HookTriggers, callback: F) -> Result<()>
     where
-        F: Fn(&crate::Lua, Debug) -> Result<crate::VmState> + crate::MaybeSend + 'static,
+        F: Fn(&crate::Lua, &Debug) -> Result<crate::VmState> + crate::MaybeSend + 'static,
     {
         let lua = self.0.lua.lock();
         unsafe {
@@ -413,7 +417,7 @@ impl Thread {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Lua, Result};
+    /// # use mluau::{Lua, Result};
     /// # #[cfg(feature = "luau")]
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
@@ -454,6 +458,18 @@ impl Thread {
     #[inline]
     pub fn to_pointer(&self) -> *const c_void {
         self.0.to_pointer()
+    }
+
+    /// Creates a traceback of the given thread
+    pub fn traceback(&self) -> Result<StdString> {
+        let lua = self.0.lua.lock();
+        let thread_state = self.state();
+        unsafe { lua.traceback_at(thread_state) }
+    }
+
+    #[doc(hidden)]
+    pub fn weak_lua(&self) -> WeakLua {
+        self.0.lua.clone()
     }
 }
 

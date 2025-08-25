@@ -1,3 +1,36 @@
+## v0.11.2 (Aug 10, 2025)
+
+- Faster stack push for `Variadic<T>`
+- Fix handling Windows paths with drive letter in Luau require (#623)
+- Make Luau registered aliases ascii case-insensitive (#620)
+- Fix deserializing negative zeros `-0.0` (#618)
+
+## v0.11.1 (Jul 15, 2025)
+
+- Fixed bug exhausting Lua auxiliary stack and leaving it without reserve (#615)
+- `Lua::push_c_function` now correctly handles OOM for Lua 5.1 and Luau
+
+## v0.11.0 (Jul 14, 2025)
+
+Changes since v0.11.0-beta.3
+
+- Allow linking external Lua libraries in a build script (e.g. pluto) using `external` mlua-sys feature flag
+- `Lua::inspect_stack` takes a callback with `&Debug` argument, instead of returning `Debug` directly
+- Added `Debug::function` method to get function running at a given level
+- `Debug::curr_line` is deprecated in favour of `Debug::current_line` that returns `Option<usize>`
+- Added `Lua::set_globals` method to replace global environment
+- `Table::set_metatable` now returns `Result<()>` (this operation can fail in sandboxed Luau mode)
+- `impl ToString` replaced with `Into<StdString>`  in `UserData` registration
+- `Value::as_str` and `Value::as_string_lossy` methods are deprecated (as they are non-idiomatic)
+- Bugfixes and improvements
+
+## v0.11.0-beta.3 (Jun 23, 2025)
+
+- Luau in sandboxed mode has reduced options in `collectgarbage` function (to follow the official doc)
+- `Function::deep_clone` now returns `Result<Function>` as this operation can trigger memory errors
+- Luau "Require" resolves included Lua files relative to the current directory (#605)
+- Fixed bug when finalizing `AsyncThread` on drop (`call_async` methods family)
+
 ## v0.11.0-beta.2 (Jun 12, 2025)
 
 - Lua 5.4 updated to 5.4.8

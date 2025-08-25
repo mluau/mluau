@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::String as StdString;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{error, f32, f64, fmt};
 
-use mlua::{
+use mluau::{
     ffi, ChunkMode, Error, ExternalError, Function, Lua, LuaOptions, Nil, Result, StdLib, String, Table,
     UserData, Value, Variadic,
 };
@@ -148,6 +149,31 @@ fn test_eval() -> Result<()> {
 }
 
 #[test]
+fn test_replace_globals() -> Result<()> {
+    let lua = Lua::new();
+
+    let globals = lua.create_table()?;
+    globals.set("foo", "bar")?;
+
+    lua.set_globals(globals.clone())?;
+    let val = lua.load("return foo").eval::<StdString>()?;
+    assert_eq!(val, "bar");
+
+    // Updating globals in sandboxed Lua state is not allowed
+    #[cfg(feature = "luau")]
+    {
+        lua.sandbox(true)?;
+        match lua.set_globals(globals) {
+            Err(Error::RuntimeError(msg))
+                if msg.contains("cannot change globals in a sandboxed Lua state") => {}
+            r => panic!("expected RuntimeError(...) with a specific error message, got {r:?}"),
+        }
+    }
+
+    Ok(())
+}
+
+#[test]
 fn test_load_mode() -> Result<()> {
     let lua = unsafe { Lua::unsafe_new() };
 
@@ -163,7 +189,7 @@ fn test_load_mode() -> Result<()> {
     #[cfg(not(feature = "luau"))]
     let bytecode = lua.load("return 1 + 1").into_function()?.dump(true);
     #[cfg(feature = "luau")]
-    let bytecode = mlua::Compiler::new().compile("return 1 + 1")?;
+    let bytecode = mluau::Compiler::new().compile("return 1 + 1")?;
     assert_eq!(lua.load(&bytecode).eval::<i32>()?, 2);
     assert_eq!(lua.load(&bytecode).set_mode(ChunkMode::Binary).eval::<i32>()?, 2);
     match lua.load(&bytecode).set_mode(ChunkMode::Text).exec() {
@@ -578,6 +604,21 @@ fn test_num_conversion() -> Result<()> {
 
     assert_eq!(lua.unpack::<i128>(lua.pack(1i128 << 64)?)?, 1i128 << 64);
 
+    // Negative zero
+    let negative_zero = lua.load("-0.0").eval::<f64>()?;
+    assert_eq!(negative_zero, 0.0);
+    // LuaJIT treats -0.0 as a positive zero
+    #[cfg(not(feature = "luajit"))]
+    assert!(negative_zero.is_sign_negative());
+
+    // In Lua <5.3 all numbers are floats
+    #[cfg(not(any(feature = "lua54", feature = "lua53", feature = "luajit")))]
+    {
+        let negative_zero = lua.load("-0").eval::<f64>()?;
+        assert_eq!(negative_zero, 0.0);
+        assert!(negative_zero.is_sign_negative());
+    }
+
     Ok(())
 }
 
@@ -945,7 +986,7 @@ fn test_rust_function() -> Result<()> {
 fn test_c_function() -> Result<()> {
     let lua = Lua::new();
 
-    extern "C-unwind" fn c_function(state: *mut mlua::lua_State) -> std::os::raw::c_int {
+    extern "C-unwind" fn c_function(state: *mut mluau::lua_State) -> std::os::raw::c_int {
         unsafe {
             ffi::lua_pushboolean(state, 1);
             ffi::lua_setglobal(state, b"c_function\0" as *const _ as *const _);
@@ -1201,6 +1242,17 @@ fn test_register_module() -> Result<()> {
             res.unwrap_err().to_string(),
             "runtime error: module name must begin with '@'"
         );
+
+        // Luau registered modules (aliases) are case-insensitive
+        let res = lua.register_module("@My_Module", &t);
+        assert!(res.is_ok());
+        lua.load(
+            r#"
+            local my_module = require("@MY_MODule")
+            assert(my_module.name == "my_module")
+        "#,
+        )
+        .exec()?;
     }
 
     Ok(())
@@ -1250,14 +1302,18 @@ fn test_inspect_stack() -> Result<()> {
     let lua = Lua::new();
 
     // Not inside any function
-    assert!(lua.inspect_stack(0).is_none());
+    assert!(lua.inspect_stack(0, |_| ()).is_none());
 
     let logline = lua.create_function(|lua, msg: StdString| {
-        let debug = lua.inspect_stack(1).unwrap(); // caller
-        let source = debug.source().short_src;
-        let source = source.as_deref().unwrap_or("?");
-        let line = debug.curr_line();
-        Ok(format!("{}:{} {}", source, line, msg))
+        let r = lua
+            .inspect_stack(1, |debug| {
+                let source = debug.source().short_src;
+                let source = source.as_deref().unwrap_or("?");
+                let line = debug.current_line().unwrap();
+                format!("{}:{} {}", source, line, msg)
+            })
+            .unwrap();
+        Ok(r)
     })?;
     lua.globals().set("logline", logline)?;
 
@@ -1280,8 +1336,7 @@ fn test_inspect_stack() -> Result<()> {
     .exec()?;
 
     let stack_info = lua.create_function(|lua, ()| {
-        let debug = lua.inspect_stack(1).unwrap(); // caller
-        let stack_info = debug.stack();
+        let stack_info = lua.inspect_stack(1, |debug| debug.stack()).unwrap();
         Ok(format!("{stack_info:?}"))
     })?;
     lua.globals().set("stack_info", stack_info)?;
@@ -1307,6 +1362,25 @@ fn test_inspect_stack() -> Result<()> {
             return stack_info()
         end
         assert(baz() == 'DebugStack { num_ups: 1 }')
+    "#,
+    )
+    .exec()?;
+
+    // Test retrieving currently running function
+    let running_function =
+        lua.create_function(|lua, ()| Ok(lua.inspect_stack(1, |debug| debug.function())))?;
+    lua.globals().set("running_function", running_function)?;
+    lua.load(
+        r#"
+        local function baz()
+            return running_function()
+        end
+        if jit == nil then
+            assert(baz() == baz)
+        else
+            -- luajit inline the "baz" function and returns the chunk itself
+            assert(baz() == running_function())
+        end
     "#,
     )
     .exec()?;
@@ -1502,6 +1576,27 @@ fn test_get_or_init_from_ptr() -> Result<()> {
     unsafe { ffi::lua_close(state) };
 
     // Lua must not be accessed after closing
+
+    Ok(())
+}
+
+#[test]
+fn test_onclose() -> Result<()> {
+    let lua = Lua::new();
+
+    let debug_ptr = lua.main_state_address();
+    let closed = Arc::new(AtomicBool::new(false));
+    let closed_ref = closed.clone();
+    lua.set_on_close(move || {
+        closed_ref.store(true, Ordering::SeqCst);
+        println!("Dropping lua state {}", debug_ptr)
+    });
+
+    // Close Lua state
+    drop(lua);
+
+    // Check that on_close callback was called
+    assert!(closed.load(Ordering::SeqCst));
 
     Ok(())
 }

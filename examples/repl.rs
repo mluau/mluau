@@ -1,6 +1,6 @@
 //! This example shows a simple read-evaluate-print-loop (REPL).
 
-use mlua::{Error, Lua, MultiValue};
+use mluau::{Error, Lua, MultiValue};
 use rustyline::DefaultEditor;
 
 fn main() {
@@ -20,14 +20,16 @@ fn main() {
             match lua.load(&line).eval::<MultiValue>() {
                 Ok(values) => {
                     editor.add_history_entry(line).unwrap();
-                    println!(
-                        "{}",
-                        values
-                            .iter()
-                            .map(|value| format!("{:#?}", value))
-                            .collect::<Vec<_>>()
-                            .join("\t")
-                    );
+                    if values.len() > 0 {
+                        println!(
+                            "{}",
+                            values
+                                .iter()
+                                .map(|value| format!("{:#?}", value))
+                                .collect::<Vec<_>>()
+                                .join("\t")
+                        );
+                    }
                     break;
                 }
                 Err(Error::SyntaxError {

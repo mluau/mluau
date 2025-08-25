@@ -1,6 +1,6 @@
 use std::{fs, io};
 
-use mlua::{Chunk, ChunkMode, Lua, Result};
+use mluau::{Chunk, ChunkMode, Lua, Result};
 
 #[test]
 fn test_chunk_methods() -> Result<()> {
@@ -83,15 +83,15 @@ fn test_chunk_macro() -> Result<()> {
     let data = lua.create_table()?;
     data.raw_set("num", 1)?;
 
-    let ud = mlua::AnyUserData::wrap("hello");
-    let f = mlua::Function::wrap(|| Ok(()));
+    let ud = mluau::AnyUserData::wrap("hello");
+    let f = mluau::Function::wrap(|| Ok(()));
 
     lua.globals().set("g", 123)?;
 
     let string = String::new();
     let str = string.as_str();
 
-    lua.load(mlua::chunk! {
+    lua.load(mluau::chunk! {
         assert($name == "Rustacean")
         assert(type($table) == "table")
         assert($table[1] == 1)
@@ -114,23 +114,22 @@ fn test_chunk_macro() -> Result<()> {
 #[cfg(feature = "luau")]
 #[test]
 fn test_compiler() -> Result<()> {
-    let compiler = mlua::Compiler::new()
+    let compiler = mluau::Compiler::new()
         .set_optimization_level(2)
         .set_debug_level(2)
         .set_type_info_level(1)
         .set_coverage_level(2)
-        .set_vector_lib("vector")
-        .set_vector_ctor("new")
+        .set_vector_ctor("vector.new")
         .set_vector_type("vector")
-        .set_mutable_globals(vec!["mutable_global"])
-        .set_userdata_types(vec!["MyUserdata"])
-        .set_disabled_builtins(vec!["tostring"]);
+        .set_mutable_globals(["mutable_global"])
+        .set_userdata_types(["MyUserdata"])
+        .set_disabled_builtins(["tostring"]);
 
     assert!(compiler.compile("return tostring(vector.new(1, 2, 3))").is_ok());
 
     // Error
     match compiler.compile("%") {
-        Err(mlua::Error::SyntaxError { ref message, .. }) => {
+        Err(mluau::Error::SyntaxError { ref message, .. }) => {
             assert!(message.contains("Expected identifier when parsing expression, got '%'"),);
         }
         res => panic!("expected result: {res:?}"),
@@ -142,16 +141,14 @@ fn test_compiler() -> Result<()> {
 #[cfg(feature = "luau")]
 #[test]
 fn test_compiler_library_constants() {
-    use mlua::{CompileConstant, Compiler, Vector};
+    use mluau::{Compiler, Vector};
 
     let compiler = Compiler::new()
         .set_optimization_level(2)
-        .set_library_constants(vec![
-            ("mylib", "const_bool", CompileConstant::Boolean(true)),
-            ("mylib", "const_num", CompileConstant::Number(123.0)),
-            ("mylib", "const_vec", CompileConstant::Vector(Vector::zero())),
-            ("mylib", "const_str", "value1".into()),
-        ]);
+        .add_library_constant("mylib.const_bool", true)
+        .add_library_constant("mylib.const_num", 123.0)
+        .add_library_constant("mylib.const_vec", Vector::zero())
+        .add_library_constant("mylib.const_str", "value1");
 
     let lua = Lua::new();
     lua.set_compiler(compiler);

@@ -29,7 +29,7 @@ impl String {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Lua, Result, String};
+    /// # use mluau::{Lua, Result, String};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let globals = lua.globals();
@@ -60,7 +60,7 @@ impl String {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Lua, Result};
+    /// # use mluau::{Lua, Result};
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
     ///
@@ -86,13 +86,13 @@ impl String {
 
     /// Get the bytes that make up this string.
     ///
-    /// The returned slice will not contain the terminating nul byte, but will contain any nul
+    /// The returned slice will not contain the terminating null byte, but will contain any null
     /// bytes embedded into the Lua string.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Lua, Result, String};
+    /// # use mluau::{Lua, Result, String};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let non_utf8: String = lua.load(r#"  "test\255"  "#).eval()?;
@@ -106,15 +106,15 @@ impl String {
         BorrowedBytes::from(self)
     }
 
-    /// Get the bytes that make up this string, including the trailing nul byte.
+    /// Get the bytes that make up this string, including the trailing null byte.
     pub fn as_bytes_with_nul(&self) -> BorrowedBytes<'_> {
         let BorrowedBytes { buf, borrow, _lua } = BorrowedBytes::from(self);
-        // Include the trailing nul byte (it's always present but excluded by default)
+        // Include the trailing null byte (it's always present but excluded by default)
         let buf = unsafe { slice::from_raw_parts((*buf).as_ptr(), (*buf).len() + 1) };
         BorrowedBytes { buf, borrow, _lua }
     }
 
-    // Does not return the terminating nul byte
+    // Does not return the terminating null byte
     unsafe fn to_slice(&self) -> (&[u8], Lua) {
         let lua = self.0.lua.upgrade();
         let slice = {

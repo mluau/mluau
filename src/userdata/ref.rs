@@ -63,7 +63,7 @@ impl<T> TryFrom<UserDataVariant<T>> for UserDataRef<T> {
 
     #[inline]
     fn try_from(variant: UserDataVariant<T>) -> Result<Self> {
-        let guard = if !cfg!(feature = "send") || is_sync::<T>() {
+        let guard = if cfg!(not(feature = "send")) || is_sync::<T>() {
             variant.raw_lock().try_lock_shared_guarded()
         } else {
             variant.raw_lock().try_lock_exclusive_guarded()
@@ -105,6 +105,7 @@ impl<T: 'static> UserDataRef<T> {
         }
     }
 
+    // Does not apply to dynamic userdata, as it does not have a type id.
     pub(crate) unsafe fn borrow_from_stack(
         lua: &RawLua,
         state: *mut ffi::lua_State,

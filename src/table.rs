@@ -11,6 +11,7 @@ use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, ObjectLike};
 use crate::types::{Integer, LuaType, ValueRef};
 use crate::util::{assert_stack, check_stack, get_metatable_ptr, StackGuard};
 use crate::value::{Nil, Value};
+use crate::WeakLua;
 
 #[cfg(feature = "serde")]
 use {
@@ -36,7 +37,7 @@ impl Table {
     /// Export a value as a global to make it usable from Lua:
     ///
     /// ```
-    /// # use mlua::{Lua, Result};
+    /// # use mluau::{Lua, Result};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let globals = lua.globals();
@@ -92,7 +93,7 @@ impl Table {
     /// Query the version of the Lua interpreter:
     ///
     /// ```
-    /// # use mlua::{Lua, Result};
+    /// # use mluau::{Lua, Result};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let globals = lua.globals();
@@ -197,7 +198,7 @@ impl Table {
     /// Compare two tables using `__eq` metamethod:
     ///
     /// ```
-    /// # use mlua::{Lua, Result, Table};
+    /// # use mluau::{Lua, Result, Table};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let table1 = lua.create_table()?;
@@ -208,7 +209,7 @@ impl Table {
     ///
     /// let always_equals_mt = lua.create_table()?;
     /// always_equals_mt.set("__eq", lua.create_function(|_, (_t1, _t2): (Table, Table)| Ok(true))?)?;
-    /// table2.set_metatable(Some(always_equals_mt));
+    /// table2.set_metatable(Some(always_equals_mt))?;
     ///
     /// assert!(table1.equals(&table1.clone())?);
     /// assert!(table1.equals(&table2)?);
@@ -484,16 +485,12 @@ impl Table {
     /// [`getmetatable`]: https://www.lua.org/manual/5.4/manual.html#pdf-getmetatable
     pub fn metatable(&self) -> Option<Table> {
         let lua = self.0.lua.lock();
-        let state = lua.state();
+        let ref_thread = lua.ref_thread(self.0.aux_thread);
         unsafe {
-            let _sg = StackGuard::new(state);
-            assert_stack(state, 2);
-
-            lua.push_ref_at(&self.0, state);
-            if ffi::lua_getmetatable(state, -1) == 0 {
+            if ffi::lua_getmetatable(ref_thread, self.0.index) == 0 {
                 None
             } else {
-                Some(Table(lua.pop_ref()))
+                Some(Table(lua.pop_ref_at(ref_thread)))
             }
         }
     }
@@ -502,11 +499,11 @@ impl Table {
     ///
     /// If `metatable` is `None`, the metatable is removed (if no metatable is set, this does
     /// nothing).
-    pub fn set_metatable(&self, metatable: Option<Table>) {
+    pub fn set_metatable(&self, metatable: Option<Table>) -> Result<()> {
         // Workaround to throw readonly error without returning Result
         #[cfg(feature = "luau")]
         if self.is_readonly() {
-            panic!("attempt to modify a readonly table");
+            return Err(Error::runtime("attempt to modify a readonly table"));
         }
 
         let lua = self.0.lua.lock();
@@ -516,13 +513,15 @@ impl Table {
             assert_stack(state, 2);
 
             lua.push_ref_at(&self.0, state);
-            if let Some(metatable) = metatable {
+            if let Some(metatable) = &metatable {
                 lua.push_ref_at(&metatable.0, state);
             } else {
                 ffi::lua_pushnil(state);
             }
             ffi::lua_setmetatable(state, -2);
         }
+
+        Ok(())
     }
 
     /// Returns true if the table has metatable attached.
@@ -595,7 +594,7 @@ impl Table {
     /// Iterate over all globals:
     ///
     /// ```
-    /// # use mlua::{Lua, Result, Value};
+    /// # use mluau::{Lua, Result, Value};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let globals = lua.globals();
@@ -614,6 +613,16 @@ impl Table {
         TablePairs {
             guard: self.0.lua.lock(),
             table: self,
+            key: Some(Nil),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Same as ``pairs`` but the iterator owns the `Table` reference (so no lifetime is needed).
+    pub fn pairs_owned<K: FromLua, V: FromLua>(&self) -> TablePairsOwned<K, V> {
+        TablePairsOwned {
+            guard: self.0.lua.lock(),
+            table: self.clone(),
             key: Some(Nil),
             _phantom: PhantomData,
         }
@@ -656,7 +665,7 @@ impl Table {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Lua, Result, Table};
+    /// # use mluau::{Lua, Result, Table};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let my_table: Table = lua.load(r#"
@@ -807,6 +816,11 @@ impl Table {
         }
         write!(fmt, "{}}}", " ".repeat(ident))
     }
+
+    #[doc(hidden)]
+    pub fn weak_lua(&self) -> WeakLua {
+        self.0.lua.clone()
+    }
 }
 
 impl fmt::Debug for Table {
@@ -889,7 +903,7 @@ impl ObjectLike for Table {
         R: FromLuaMulti,
     {
         // Convert table to a function and call via pcall that respects the `__call` metamethod.
-        Function(self.0.copy()).call(args)
+        Function(self.0.clone()).call(args)
     }
 
     #[inline]
@@ -913,7 +927,7 @@ impl ObjectLike for Table {
 
     #[inline]
     fn to_string(&self) -> Result<StdString> {
-        Value::Table(Table(self.0.copy())).to_string()
+        Value::Table(Table(self.0.clone())).to_string()
     }
 }
 
@@ -1045,6 +1059,66 @@ pub struct TablePairs<'a, K, V> {
 }
 
 impl<K, V> Iterator for TablePairs<'_, K, V>
+where
+    K: FromLua,
+    V: FromLua,
+{
+    type Item = Result<(K, V)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(prev_key) = self.key.take() {
+            let lua: &RawLua = &self.guard;
+            let state = lua.state();
+
+            let res = (|| unsafe {
+                let _sg = StackGuard::new(state);
+                check_stack(state, 5)?;
+
+                lua.push_ref_at(&self.table.0, state);
+                lua.push_value_at(&prev_key, state)?;
+
+                // It must be safe to call `lua_next` unprotected as deleting a key from a table is
+                // a permitted operation.
+                // It fails only if the key is not found (never existed) which seems impossible scenario.
+                if ffi::lua_next(state, -2) != 0 {
+                    let key = lua.stack_value_at(-2, None, state)?;
+                    Ok(Some((
+                        key.clone(),
+                        K::from_lua(key, lua.lua())?,
+                        V::from_specified_stack(-1, lua, state)?,
+                    )))
+                } else {
+                    Ok(None)
+                }
+            })();
+
+            match res {
+                Ok(Some((key, ret_key, value))) => {
+                    self.key = Some(key);
+                    Some(Ok((ret_key, value)))
+                }
+                Ok(None) => None,
+                Err(e) => Some(Err(e)),
+            }
+        } else {
+            None
+        }
+    }
+}
+
+/// An iterator over the pairs of a Lua table.
+///
+/// This struct is created by the [`Table::pairs`] method.
+///
+/// [`Table::pairs`]: crate::Table::pairs
+pub struct TablePairsOwned<K, V> {
+    guard: LuaGuard,
+    table: Table,
+    key: Option<Value>,
+    _phantom: PhantomData<(K, V)>,
+}
+
+impl<K, V> Iterator for TablePairsOwned<K, V>
 where
     K: FromLua,
     V: FromLua,

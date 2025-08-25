@@ -13,6 +13,7 @@ use crate::util::{
     assert_stack, check_stack, linenumber_to_usize, pop_error, ptr_to_lossy_str, ptr_to_str, StackGuard,
 };
 use crate::value::Value;
+use crate::WeakLua;
 
 /// Handle to an internal Lua function.
 #[derive(Clone, Debug, PartialEq)]
@@ -65,7 +66,7 @@ impl Function {
     /// Call Lua's built-in `tostring` function:
     ///
     /// ```
-    /// # use mlua::{Function, Lua, Result};
+    /// # use mluau::{Function, Lua, Result};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let globals = lua.globals();
@@ -81,7 +82,7 @@ impl Function {
     /// Call a function with multiple arguments:
     ///
     /// ```
-    /// # use mlua::{Function, Lua, Result};
+    /// # use mluau::{Function, Lua, Result};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let sum: Function = lua.load(
@@ -128,7 +129,7 @@ impl Function {
     /// # Examples
     ///
     /// ```
-    /// # use mlua::{Function, Lua, Result};
+    /// # use mluau::{Function, Lua, Result};
     /// # fn main() -> Result<()> {
     /// # let lua = Lua::new();
     /// let sum: Function = lua.load(
@@ -383,7 +384,7 @@ impl Function {
     /// [`Compiler::set_coverage_level`]: crate::chunk::Compiler::set_coverage_level
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn coverage<F>(&self, mut func: F)
+    pub fn coverage<F>(&self, func: F)
     where
         F: FnMut(CoverageInfo),
     {
@@ -403,13 +404,16 @@ impl Function {
             } else {
                 None
             };
-            let rust_callback = &mut *(data as *mut F);
-            rust_callback(CoverageInfo {
-                function,
-                line_defined,
-                depth,
-                hits: slice::from_raw_parts(hits, size).to_vec(),
-            });
+            let rust_callback = &*(data as *const RefCell<F>);
+            if let Ok(mut rust_callback) = rust_callback.try_borrow_mut() {
+                // Call the Rust callback with CoverageInfo
+                rust_callback(CoverageInfo {
+                    function,
+                    line_defined,
+                    depth,
+                    hits: slice::from_raw_parts(hits, size).to_vec(),
+                });
+            }
         }
 
         let lua = self.0.lua.lock();
@@ -419,7 +423,8 @@ impl Function {
             assert_stack(state, 1);
 
             lua.push_ref_at(&self.0, state);
-            let func_ptr = &mut func as *mut F as *mut c_void;
+            let func = RefCell::new(func);
+            let func_ptr = &func as *const RefCell<F> as *mut c_void;
             ffi::lua_getcoverage(state, -1, func_ptr, callback::<F>);
         }
     }
@@ -482,6 +487,11 @@ impl Function {
                 Ok(Function(lua.new_value_ref(aux_thread, index)))
             }
         }
+    }
+
+    #[doc(hidden)]
+    pub fn weak_lua(&self) -> WeakLua {
+        self.0.lua.clone()
     }
 }
 

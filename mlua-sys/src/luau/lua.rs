@@ -235,6 +235,7 @@ unsafe extern "C-unwind" {
     ) -> c_int;
     pub fn lua_call(L: *mut lua_State, nargs: c_int, nresults: c_int);
     pub fn lua_pcall(L: *mut lua_State, nargs: c_int, nresults: c_int, errfunc: c_int) -> c_int;
+    pub fn lua_cpcall(L: *mut lua_State, f: lua_CFunction, ud: *mut c_void) -> c_int;
 
     //
     // Coroutine functions
@@ -266,6 +267,8 @@ pub const LUA_GCSETSTEPSIZE: c_int = 9;
 
 unsafe extern "C-unwind" {
     pub fn lua_gc(L: *mut lua_State, what: c_int, data: c_int) -> c_int;
+    pub fn lua_gcstatename(state: c_int) -> *const c_char;
+    pub fn lua_gcallocationrate(L: *mut lua_State) -> i64;
 }
 
 //

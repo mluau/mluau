@@ -120,7 +120,8 @@ pub unsafe fn lua_isinteger(L: *mut lua_State, idx: c_int) -> c_int {
     if lua_type(L, idx) == LUA_TNUMBER {
         let n = lua_tonumber(L, idx);
         let i = lua_tointeger(L, idx);
-        if (n - i as lua_Number).abs() < lua_Number::EPSILON {
+        // Lua 5.3+ returns "false" for `-0.0`
+        if n.to_bits() == (i as lua_Number).to_bits() {
             return 1;
         }
     }
@@ -388,7 +389,7 @@ pub unsafe fn luaL_loadbufferenv(
         }
     }
 
-    if chunk_is_text {
+    let status = if chunk_is_text {
         if env < 0 {
             env -= 1;
         }
@@ -397,14 +398,21 @@ pub unsafe fn luaL_loadbufferenv(
         ptr::write(data_ud, data);
         // By deferring the `free(data)` to the userdata destructor, we ensure that
         // even if `luau_load` throws an error, the `data` is still released.
-        let ok = luau_load(L, name, data, size, env) == 0;
+        let status = luau_load(L, name, data, size, env);
         lua_replace(L, -2); // replace data with the result
-        if !ok {
-            return LUA_ERRSYNTAX;
+        status
+    } else {
+        luau_load(L, name, data, size, env)
+    };
+
+    if status != 0 {
+        if lua_isstring(L, -1) != 0 && CStr::from_ptr(lua_tostring(L, -1)) == c"not enough memory" {
+            // A case for Luau >= 0.679
+            return LUA_ERRMEM;
         }
-    } else if luau_load(L, name, data, size, env) != 0 {
         return LUA_ERRSYNTAX;
     }
+
     LUA_OK
 }
 

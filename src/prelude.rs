@@ -10,11 +10,12 @@ pub use crate::{
     LuaNativeFnMut, LuaOptions, MetaMethod as LuaMetaMethod, MultiValue as LuaMultiValue, Nil as LuaNil,
     Number as LuaNumber, ObjectLike as LuaObjectLike, RegistryKey as LuaRegistryKey, Result as LuaResult,
     StdLib as LuaStdLib, String as LuaString, Table as LuaTable, TablePairs as LuaTablePairs,
-    TableSequence as LuaTableSequence, Thread as LuaThread, ThreadStatus as LuaThreadStatus,
-    UserData as LuaUserData, UserDataFields as LuaUserDataFields, UserDataMetatable as LuaUserDataMetatable,
-    UserDataMethods as LuaUserDataMethods, UserDataRef as LuaUserDataRef,
-    UserDataRefMut as LuaUserDataRefMut, UserDataRegistry as LuaUserDataRegistry, Value as LuaValue,
-    Variadic as LuaVariadic, VmState as LuaVmState, WeakLua,
+    TablePairsOwned as LuaTablePairsOwned, TableSequence as LuaTableSequence, Thread as LuaThread,
+    ThreadStatus as LuaThreadStatus, UserData as LuaUserData, UserDataFields as LuaUserDataFields,
+    UserDataMetatable as LuaUserDataMetatable, UserDataMethods as LuaUserDataMethods,
+    UserDataRef as LuaUserDataRef, UserDataRefMut as LuaUserDataRefMut,
+    UserDataRegistry as LuaUserDataRegistry, Value as LuaValue, Variadic as LuaVariadic,
+    VmState as LuaVmState, WeakLua,
 };
 
 #[cfg(not(feature = "luau"))]
@@ -25,7 +26,8 @@ pub use crate::HookTriggers as LuaHookTriggers;
 #[doc(no_inline)]
 pub use crate::{
     CompileConstant as LuaCompileConstant, CoverageInfo as LuaCoverageInfo,
-    NavigateError as LuaNavigateError, Require as LuaRequire, Vector as LuaVector,
+    NavigateError as LuaNavigateError, Require as LuaRequire, TextRequirer as LuaTextRequirer,
+    Vector as LuaVector,
 };
 
 #[cfg(feature = "serde")]

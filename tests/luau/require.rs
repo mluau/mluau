@@ -1,7 +1,7 @@
 use std::io::Result as IoResult;
 use std::result::Result as StdResult;
 
-use mlua::{Error, IntoLua, Lua, MultiValue, NavigateError, Require, Result, TextRequirer, Value};
+use mluau::{Error, IntoLua, Lua, MultiValue, NavigateError, Require, Result, TextRequirer, Value};
 
 fn run_require(lua: &Lua, path: impl IntoLua) -> Result<Value> {
     lua.load(r#"return require(...)"#).call(path)
@@ -47,7 +47,7 @@ fn test_require_errors() {
     assert!(res.is_err());
     assert!((res.unwrap_err().to_string()).contains("require is not supported in this context"));
 
-    // Test throwing mlua::Error
+    // Test throwing mluau::Error
     struct MyRequire(TextRequirer);
 
     impl Require for MyRequire {
@@ -87,7 +87,7 @@ fn test_require_errors() {
             self.0.config()
         }
 
-        fn loader(&self, lua: &Lua) -> Result<mlua::Function> {
+        fn loader(&self, lua: &Lua) -> Result<mluau::Function> {
             self.0.loader(lua)
         }
     }
@@ -178,6 +178,11 @@ fn test_require_with_config() {
     // RequirePathWithAlias
     let res = run_require(&lua, "./tests/luau/require/with_config/src/alias_requirer").unwrap();
     assert_eq!("result from dependency", get_str(&res, 1));
+
+    // RequirePathWithAlias (case-insensitive)
+    let res2 = run_require(&lua, "./tests/luau/require/with_config/src/alias_requirer_uc").unwrap();
+    assert_eq!("result from dependency", get_str(&res2, 1));
+    assert_eq!(res.to_pointer(), res2.to_pointer());
 
     // RequirePathWithParentAlias
     let res = run_require(&lua, "./tests/luau/require/with_config/src/parent_alias_requirer").unwrap();
