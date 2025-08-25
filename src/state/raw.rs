@@ -1990,7 +1990,7 @@ impl RawLua {
     }
 
     /// Returns the current allocation rate of garbage collector
-    /// 
+    ///
     /// Returns -1 on failure
     #[cfg(feature = "luau")]
     pub(crate) fn gc_allocation_rate(&self) -> i64 {

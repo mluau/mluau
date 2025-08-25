@@ -64,7 +64,7 @@ impl<'a> Debug<'a> {
                 panic!("Cannot get function while running GC");
             }
         }
-        
+
         unsafe {
             let _sg = StackGuard::new(self.state);
             assert_stack(self.state, 1);

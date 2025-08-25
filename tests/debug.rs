@@ -1,4 +1,5 @@
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use mluau::{Lua, Result};
 
@@ -75,9 +76,7 @@ fn test_gc_interrupt() -> Result<()> {
         mluau::LuaOptions::new().disable_error_userdata(true),
     )?;
 
-    lua.set_interrupt(|_lua| {
-        Ok(mluau::VmState::Continue)
-    });
+    lua.set_interrupt(|_lua| Ok(mluau::VmState::Continue));
 
     let interrupted = Arc::new(AtomicBool::new(false));
     let interrupted_clone = interrupted.clone();
@@ -86,7 +85,9 @@ fn test_gc_interrupt() -> Result<()> {
     });
 
     // Allocate a lot of memory to trigger GC
-    let tbl: mluau::Table = lua.load("local t={}; for i=1,1e5 do t[i]={} end; return t").eval()?;
+    let tbl: mluau::Table = lua
+        .load("local t={}; for i=1,1e5 do t[i]={} end; return t")
+        .eval()?;
     drop(tbl);
     lua.gc_collect()?;
     assert!(interrupted.load(std::sync::atomic::Ordering::SeqCst));

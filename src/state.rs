@@ -684,15 +684,16 @@ impl Lua {
                 // GC interrupts cannot survive Lua exceptions and hence abort if they throw
                 let extra = ExtraData::get(state);
                 if let Some(callback) = &(*extra).gc_interrupt_callback {
-                    use std::{panic::{catch_unwind, AssertUnwindSafe}, process::abort};
+                    use std::panic::{catch_unwind, AssertUnwindSafe};
+                    use std::process::abort;
 
                     if XRc::strong_count(&callback) > 2 {
                         return; // Don't allow recursion
                     }
                     (*extra).running_gc = true;
                     match catch_unwind(AssertUnwindSafe(|| (callback)((*extra).lua(), gc))) {
-                        Ok(_) => {},
-                        Err(_) => abort()
+                        Ok(_) => {}
+                        Err(_) => abort(),
                     };
                     (*extra).running_gc = false;
                 }
@@ -736,11 +737,11 @@ impl Lua {
     }
 
     /// Sets a GC interrupt callback
-    /// 
+    ///
     /// Unlike a normal interrupt, a GC interrupt callback cannot panic
     /// and may not perform any VM operations besides inspect_stack (outside of Debug::function)
     /// and setting/removing interrupts, thread callbacks and yield arguments/check if yieldable
-    /// 
+    ///
     /// Does not do anything if a normal interrupt callback is not set first
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
@@ -2237,7 +2238,7 @@ impl Lua {
     }
 
     /// Returns the state of the garbage collector as a string
-    /// 
+    ///
     /// Useful when paired with GC interrupts
     #[cfg(feature = "luau")]
     pub fn gc_state_name(&self, state: c_int) -> Option<StdString> {
@@ -2246,7 +2247,7 @@ impl Lua {
     }
 
     /// Returns the current allocation rate of garbage collector
-    /// 
+    ///
     /// Returns -1 on failure
     #[cfg(feature = "luau")]
     pub fn gc_allocation_rate(&self) -> i64 {
