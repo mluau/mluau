@@ -141,7 +141,7 @@ fn test_compiler() -> Result<()> {
 #[cfg(feature = "luau")]
 #[test]
 fn test_compiler_library_constants() {
-    use mluau::{CompileConstant, Compiler, Vector};
+    use mluau::{Compiler, Vector};
 
     let compiler = Compiler::new()
         .set_optimization_level(2)
