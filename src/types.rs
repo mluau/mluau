@@ -12,16 +12,10 @@ pub(crate) use sync::{ArcReentrantMutexGuard, ReentrantMutex, ReentrantMutexGuar
 pub use app_data::{AppData, AppDataRef, AppDataRefMut};
 pub use either::Either;
 pub use registry_key::RegistryKey;
-#[cfg(not(feature = "value-ref-refcounted"))]
 pub(crate) use value_ref::ValueRef;
-#[cfg(feature = "value-ref-refcounted")]
-pub(crate) use value_ref::{ValueRef, ValueRefInner};
 
 #[cfg(feature = "luau")]
 use std::collections::HashMap;
-
-#[cfg(feature = "async")]
-pub(crate) use value_ref::ValueRefIndex;
 
 /// Type of Lua integer numbers.
 pub type Integer = ffi::lua_Integer;
