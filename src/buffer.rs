@@ -1,5 +1,5 @@
-use std::os::raw::c_void;
 use std::io;
+use std::os::raw::c_void;
 
 #[cfg(feature = "serde")]
 use serde::ser::{Serialize, Serializer};

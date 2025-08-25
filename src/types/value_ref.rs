@@ -3,8 +3,8 @@ use std::fmt;
 use std::ops::Deref;
 use std::os::raw::{c_int, c_void};
 
-use crate::state::util::compare_refs;
 use super::XRc;
+use crate::state::util::compare_refs;
 use crate::state::{RawLua, WeakLua};
 
 /// A reference to a Lua (complex) value stored in the Lua auxiliary thread.
