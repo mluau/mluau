@@ -594,18 +594,18 @@ fn test_large_thread_creation() {
     let lua = Lua::new();
     lua.set_memory_limit(100_000_000_000).unwrap();
     let th1 = lua
-        .create_thread(lua.create_function(|lua, _: ()| Ok(())).unwrap())
+        .create_thread(lua.create_function(|_lua, _: ()| Ok(())).unwrap())
         .unwrap();
 
     let mut this = Vec::new();
-    for i in 1..2000000 {
+    for _i in 1..2000000 {
         let th = lua
             .create_thread(lua.create_function(|_, ()| Ok(())).unwrap())
             .expect("Failed to create thread");
         this.push(th);
     }
     let th2 = lua
-        .create_thread(lua.create_function(|lua, _: ()| Ok(())).unwrap())
+        .create_thread(lua.create_function(|_lua, _: ()| Ok(())).unwrap())
         .unwrap();
 
     for rth in this {

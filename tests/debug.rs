@@ -80,7 +80,7 @@ fn test_gc_interrupt() -> Result<()> {
 
     let interrupted = Arc::new(AtomicBool::new(false));
     let interrupted_clone = interrupted.clone();
-    lua.set_gc_interrupt(move |lua, gc_state| {
+    lua.set_gc_interrupt(move |_lua, _gc_state| {
         interrupted_clone.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 

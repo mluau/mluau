@@ -918,6 +918,20 @@ impl RawLua {
         Ok(String(self.pop_ref()))
     }
 
+    #[cfg(feature = "luau")]
+    pub(crate) unsafe fn create_buffer_with_capacity(&self, size: usize) -> Result<(*mut u8, crate::Buffer)> {
+        let state = self.state();
+        if self.unlikely_memory_error() {
+            let ptr = crate::util::push_buffer(state, size, false)?;
+            return Ok((ptr, crate::Buffer(self.pop_ref())));
+        }
+
+        let _sg = StackGuard::new(state);
+        check_stack(state, 3)?;
+        let ptr = crate::util::push_buffer(state, size, true)?;
+        Ok((ptr, crate::Buffer(self.pop_ref())))
+    }
+
     /// See [`Lua::create_table_with_capacity`]
     pub(crate) unsafe fn create_table_with_capacity(&self, narr: usize, nrec: usize) -> Result<Table> {
         let state = self.state();
@@ -1280,36 +1294,6 @@ impl RawLua {
         ValueRef::new(self, aux_thread, index)
     }
 
-    #[inline]
-    #[cfg(not(feature = "value-ref-refcounted"))]
-    pub(crate) unsafe fn clone_ref(&self, vref: &ValueRef) -> ValueRef {
-        let (aux_thread, index, replace) = get_next_spot(self.extra.get());
-        ffi::lua_xpush(
-            self.ref_thread(vref.aux_thread),
-            self.ref_thread(aux_thread),
-            vref.index,
-        );
-        if replace {
-            ffi::lua_replace(self.ref_thread(aux_thread), index);
-        }
-        ValueRef::new(self, aux_thread, index)
-    }
-
-    #[cfg(feature = "value-ref-refcounted")]
-    pub(crate) unsafe fn drop_ref(&self, vref: &ValueRefInner) {
-        let ref_thread = self.ref_thread(vref.aux_thread);
-        mlua_debug_assert!(
-            ffi::lua_gettop(ref_thread) >= vref.index,
-            "GC finalizer is not allowed in ref_thread"
-        );
-        ffi::lua_pushnil(ref_thread);
-        ffi::lua_replace(ref_thread, vref.index);
-        (&mut (*self.extra.get()).ref_thread)[vref.aux_thread]
-            .free
-            .push(vref.index);
-    }
-
-    #[cfg(not(feature = "value-ref-refcounted"))]
     pub(crate) unsafe fn drop_ref(&self, vref: &ValueRef) {
         let ref_thread = self.ref_thread(vref.aux_thread);
         mlua_debug_assert!(

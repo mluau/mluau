@@ -4,72 +4,43 @@ use std::ops::Deref;
 use std::os::raw::{c_int, c_void};
 
 use crate::state::util::compare_refs;
+use super::XRc;
 use crate::state::{RawLua, WeakLua};
 
-#[cfg(feature = "value-ref-refcounted")]
-use crate::types::XRc;
-
-#[cfg(feature = "value-ref-refcounted")]
-pub struct ValueRefInner {
-    pub(crate) lua: WeakLua,
-    pub(crate) aux_thread: usize,
-    pub(crate) index: c_int,
-}
-
-#[cfg(feature = "value-ref-refcounted")]
-impl Drop for ValueRefInner {
-    fn drop(&mut self) {
-        if let Some(lua) = self.lua.try_lock() {
-            unsafe { lua.drop_ref(self) };
-        }
-    }
-}
-
 /// A reference to a Lua (complex) value stored in the Lua auxiliary thread.
-#[derive(Clone)]
-#[cfg(feature = "value-ref-refcounted")]
-pub struct ValueRef {
-    pub(super) inner: XRc<ValueRefInner>,
-}
-
-#[cfg(feature = "value-ref-refcounted")]
-impl Deref for ValueRef {
-    type Target = ValueRefInner;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
 /// A reference to a Lua (complex) value stored in the Lua auxiliary thread.
 #[cfg(not(feature = "value-ref-refcounted"))]
+#[derive(Clone)]
 pub struct ValueRef {
     pub(crate) lua: WeakLua,
     pub(crate) aux_thread: usize,
+    /// Keep index separate to avoid additional indirection when accessing it.
     pub(crate) index: c_int,
-    pub(crate) drop: bool,
+    /// If `index_count` is `None`, the value does not need to be destroyed.
+    pub(crate) index_count: Option<ValueRefIndex>,
+}
+
+/// A reference to a Lua value index in the auxiliary thread.
+/// It's cheap to clone and can be used to track the number of references to a value.
+#[derive(Clone)]
+pub(crate) struct ValueRefIndex(pub(crate) XRc<c_int>);
+
+impl From<c_int> for ValueRefIndex {
+    #[inline]
+    fn from(index: c_int) -> Self {
+        ValueRefIndex(XRc::new(index))
+    }
 }
 
 impl ValueRef {
     #[inline]
-    #[cfg(feature = "value-ref-refcounted")]
-    pub(crate) fn new(lua: &RawLua, aux_thread: usize, index: c_int) -> Self {
-        ValueRef {
-            inner: XRc::new(ValueRefInner {
-                lua: lua.weak().clone(),
-                aux_thread,
-                index,
-            }),
-        }
-    }
-
-    #[cfg(not(feature = "value-ref-refcounted"))]
-    pub(crate) fn new(lua: &RawLua, aux_thread: usize, index: c_int) -> Self {
+    pub(crate) fn new(lua: &RawLua, aux_thread: usize, index: impl Into<ValueRefIndex>) -> Self {
+        let index = index.into();
         ValueRef {
             lua: lua.weak().clone(),
             aux_thread,
-            index,
-            drop: true,
+            index: *index.0,
+            index_count: Some(index),
         }
     }
 
@@ -78,40 +49,17 @@ impl ValueRef {
         let lua = self.lua.lock();
         unsafe { ffi::lua_topointer(lua.ref_thread(self.aux_thread), self.index) }
     }
-
-    /// Returns a copy of the value, which is valid as long as the original value is held.
-    #[inline]
-    #[cfg(not(feature = "value-ref-refcounted"))]
-    pub(crate) fn copy(&self) -> Self {
-        ValueRef {
-            lua: self.lua.clone(),
-            aux_thread: self.aux_thread,
-            index: self.index,
-            drop: false,
-        }
-    }
-
-    /// Returns a copy of the value, which is valid as long as the original value is held.
-    #[inline]
-    #[cfg(feature = "value-ref-refcounted")]
-    pub(crate) fn copy(&self) -> Self {
-        self.clone()
-    }
 }
 
-#[cfg(not(feature = "value-ref-refcounted"))]
-impl Clone for ValueRef {
-    fn clone(&self) -> Self {
-        unsafe { self.lua.lock().clone_ref(self) }
-    }
-}
-
-#[cfg(not(feature = "value-ref-refcounted"))]
 impl Drop for ValueRef {
     fn drop(&mut self) {
-        if self.drop {
-            if let Some(lua) = self.lua.try_lock() {
-                unsafe { lua.drop_ref(self) };
+        if let Some(ValueRefIndex(index)) = self.index_count.take() {
+            // It's guaranteed that the inner value returns exactly once.
+            // This means in particular that the value is not dropped.
+            if XRc::into_inner(index).is_some() {
+                if let Some(lua) = self.lua.try_lock() {
+                    unsafe { lua.drop_ref(self) };
+                }
             }
         }
     }
