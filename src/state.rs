@@ -681,7 +681,21 @@ impl Lua {
     {
         unsafe extern "C-unwind" fn interrupt_proc(state: *mut ffi::lua_State, gc: c_int) {
             if gc >= 0 {
-                // We don't support GC interrupts since they cannot survive Lua exceptions
+                // GC interrupts cannot survive Lua exceptions and hence abort if they throw
+                let extra = ExtraData::get(state);
+                if let Some(callback) = &(*extra).gc_interrupt_callback {
+                    use std::{panic::{catch_unwind, AssertUnwindSafe}, process::abort};
+
+                    if XRc::strong_count(&callback) > 2 {
+                        return; // Don't allow recursion
+                    }
+                    (*extra).running_gc = true;
+                    match catch_unwind(AssertUnwindSafe(|| (callback)((*extra).lua(), gc))) {
+                        Ok(_) => {},
+                        Err(_) => abort()
+                    };
+                    (*extra).running_gc = false;
+                }
                 return;
             }
             let result = callback_error_ext(state, ptr::null_mut(), false, move |extra, _| {
@@ -701,7 +715,7 @@ impl Lua {
         }
 
         // Set interrupt callback
-        let lua = self.lock();
+        let lua = self.lock_gc_safe();
         unsafe {
             (*lua.extra.get()).interrupt_callback = Some(XRc::new(callback));
             (*ffi::lua_callbacks(lua.main_state())).interrupt = Some(interrupt_proc);
@@ -714,10 +728,39 @@ impl Lua {
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn remove_interrupt(&self) {
-        let lua = self.lock();
+        let lua = self.lock_gc_safe();
         unsafe {
             (*lua.extra.get()).interrupt_callback = None;
             (*ffi::lua_callbacks(lua.main_state())).interrupt = None;
+        }
+    }
+
+    /// Sets a GC interrupt callback
+    /// 
+    /// Unlike a normal interrupt, a GC interrupt callback cannot panic
+    /// and may not perform any VM operations besides inspect_stack (outside of Debug::function)
+    /// and setting/removing interrupts, thread callbacks and yield arguments/check if yieldable
+    /// 
+    /// Does not do anything if a normal interrupt callback is not set first
+    #[cfg(any(feature = "luau", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+    pub fn set_gc_interrupt<F>(&self, callback: F)
+    where
+        F: Fn(&Lua, c_int) + MaybeSend + 'static,
+    {
+        let lua = self.lock_gc_safe();
+        unsafe {
+            (*lua.extra.get()).gc_interrupt_callback = Some(XRc::new(callback));
+        }
+    }
+
+    /// Removes any GC interrupt callback previously set by `set_gc_interrupt`.
+    #[cfg(any(feature = "luau", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+    pub fn remove_gc_interrupt(&self) {
+        let lua = self.lock_gc_safe();
+        unsafe {
+            (*lua.extra.get()).gc_interrupt_callback = None;
         }
     }
 
@@ -728,7 +771,7 @@ impl Lua {
     where
         F: Fn(&Lua, Thread) -> Result<()> + MaybeSend + 'static,
     {
-        let lua = self.lock();
+        let lua = self.lock_gc_safe();
         unsafe {
             (*lua.extra.get()).thread_creation_callback = Some(XRc::new(callback));
             (*ffi::lua_callbacks(lua.main_state())).userthread = Some(Self::userthread_proc);
@@ -745,7 +788,7 @@ impl Lua {
     where
         F: Fn(crate::LightUserData) + MaybeSend + 'static,
     {
-        let lua = self.lock();
+        let lua = self.lock_gc_safe();
         unsafe {
             (*lua.extra.get()).thread_collection_callback = Some(XRc::new(callback));
             (*ffi::lua_callbacks(lua.main_state())).userthread = Some(Self::userthread_proc);
@@ -882,7 +925,7 @@ impl Lua {
     /// Level `0` is the current running function, whereas level `n+1` is the function that has
     /// called level `n` (except for tail calls, which do not count in the stack).
     pub fn inspect_stack<R>(&self, level: usize, f: impl FnOnce(&Debug) -> R) -> Option<R> {
-        let lua = self.lock();
+        let lua = self.lock_gc_safe();
         unsafe {
             let mut ar = mem::zeroed::<ffi::lua_Debug>();
             let level = level as c_int;
@@ -2113,6 +2156,12 @@ impl Lua {
     }
 
     #[inline(always)]
+    pub(crate) fn lock_gc_safe(&self) -> ReentrantMutexGuard<'_, RawLua> {
+        let rawlua = self.raw.lock();
+        rawlua
+    }
+
+    #[inline(always)]
     pub(crate) fn lock_arc(&self) -> LuaGuard {
         LuaGuard(self.raw.lock_arc())
     }
@@ -2139,7 +2188,7 @@ impl Lua {
     /// }
     /// ```
     pub fn yield_with(&self, args: impl IntoLuaMulti) -> Result<()> {
-        let raw = self.lock();
+        let raw = self.lock_gc_safe();
         unsafe {
             raw.extra.get().as_mut().unwrap_unchecked().yielded_values = Some(args.into_lua_multi(self)?);
         }
@@ -2150,7 +2199,7 @@ impl Lua {
     #[cfg(not(any(feature = "lua51", feature = "lua52", feature = "luajit")))]
     #[inline]
     pub fn is_yieldable(&self) -> bool {
-        self.lock().is_yieldable()
+        self.lock_gc_safe().is_yieldable()
     }
 
     /// Returns a traceback of the currently running Lua thread/coroutine
@@ -2165,7 +2214,7 @@ impl Lua {
     /// Returns the address of the Lua main state as a string
     #[inline]
     pub fn main_state_address(&self) -> StdString {
-        let raw = self.lock();
+        let raw = self.lock_gc_safe();
         format!("{:?}", raw.main_state())
     }
 
@@ -2181,10 +2230,28 @@ impl Lua {
     where
         F: Fn() + MaybeSend + 'static,
     {
-        let lua = self.lock();
+        let lua = self.lock_gc_safe();
         unsafe {
             (*lua.extra.get()).on_close = Some(Box::new(f));
         }
+    }
+
+    /// Returns the state of the garbage collector as a string
+    /// 
+    /// Useful when paired with GC interrupts
+    #[cfg(feature = "luau")]
+    pub fn gc_state_name(&self, state: c_int) -> Option<StdString> {
+        let raw = self.lock_gc_safe();
+        raw.gc_state_name(state)
+    }
+
+    /// Returns the current allocation rate of garbage collector
+    /// 
+    /// Returns -1 on failure
+    #[cfg(feature = "luau")]
+    pub fn gc_allocation_rate(&self) -> i64 {
+        let raw = self.lock_gc_safe();
+        raw.gc_allocation_rate()
     }
 
     /// Debug method to return if the Lua underlying lock is currently locked.

@@ -1977,6 +1977,26 @@ impl RawLua {
         }
     }
 
+    /// Returns the state of garbage collector as a string
+    #[cfg(feature = "luau")]
+    pub(crate) fn gc_state_name(&self, state: c_int) -> Option<StdString> {
+        let state_ptr = unsafe { ffi::lua_gcstatename(state) };
+        if state_ptr.is_null() {
+            None
+        } else {
+            let c_str = unsafe { CStr::from_ptr(state_ptr) };
+            Some(c_str.to_string_lossy().into_owned())
+        }
+    }
+
+    /// Returns the current allocation rate of garbage collector
+    /// 
+    /// Returns -1 on failure
+    #[cfg(feature = "luau")]
+    pub(crate) fn gc_allocation_rate(&self) -> i64 {
+        unsafe { ffi::lua_gcallocationrate(self.state()) }
+    }
+
     #[cfg(not(any(feature = "lua51", feature = "lua52", feature = "luajit")))]
     #[inline]
     pub(crate) fn is_yieldable(&self) -> bool {

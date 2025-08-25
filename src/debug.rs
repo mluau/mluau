@@ -57,6 +57,14 @@ impl<'a> Debug<'a> {
     ///
     /// Corresponds to the `f` "what" mask.
     pub fn function(&self) -> Function {
+        #[cfg(feature = "luau")]
+        {
+            let extra = self.lua.extra();
+            if unsafe { (*extra).running_gc } {
+                panic!("Cannot get function while running GC");
+            }
+        }
+        
         unsafe {
             let _sg = StackGuard::new(self.state);
             assert_stack(self.state, 1);

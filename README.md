@@ -52,6 +52,8 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
 - Support for getting userdata type name via ``AnyUserData::type_name``
 - Support for dynamic userdata. A dynamic userdata is a userdata whose internals are not known at compile time and can hence store arbitrary data and fields. A dynamic userdata is created using the `Lua::create_dynamic_userdata` method, which takes the associated data to store for the userdata and a metatable. The metatable can be used to define methods and fields for the dynamic userdata. The associated data can be accessed using the `AnyUserData::dynamic_data` method, which returns a reference to the associated data to hence allow for functions that 
 operate on the dynamic userdata.
+- Support for getting weak_lua from Threads and other primitives
+- Support for GC interrupts in Luau.
 
 As an example of dynamic userdata:
 
