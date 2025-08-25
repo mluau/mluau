@@ -97,16 +97,19 @@ unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s
     ) -> Result<()> {
         let rawlua = (*extra).raw_lua();
         if rawlua.unlikely_memory_error() {
+            println!("Unlikely to be memory error, so no protect");
             push_string(state, s.as_ref(), false)?;
             return Ok(());
         }
 
+        println!("Likely to be memory error, so protect");
         check_stack(state, 3)?;
         push_string(state, s.as_ref(), true)?;
         Ok(())
     }
 
     if push_error_string_errorable(state, extra, s).is_err() {
+        println!("Falling back to pushing error string without allocation");
         // If we cannot push the error string, we need to fallback to error userdata
         let s = "memory error".to_string();
         let s_bytes = s.as_bytes();
