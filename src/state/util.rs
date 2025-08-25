@@ -1,4 +1,5 @@
 use crate::IntoLuaMulti;
+use std::ffi::c_char;
 use std::mem::take;
 use std::os::raw::c_int;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -99,7 +100,7 @@ unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s
             return Ok(());
         }
 
-        check_stack(state, 3)?;
+        check_stack(state, 1)?;
         push_string(state, s.as_ref(), true)?;
         Ok(())
     }
@@ -107,7 +108,8 @@ unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s
     if push_error_string_errorable(state, extra, s).is_err() {
         // If we cannot push the error string, we need to fallback to error userdata
         let s = "memory error".to_string();
-        ffi::lua_pushlstring(state, s.as_ptr() as *const _, s.len());
+        let s_bytes = s.as_bytes();
+        ffi::lua_pushlstring(state, s_bytes.as_ptr() as *const c_char, s_bytes.len());
         drop(s); // Lua copies the string, so we can drop it now
     }
 }
