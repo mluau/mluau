@@ -98,6 +98,7 @@ unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s
         let rawlua = (*extra).raw_lua();
         if rawlua.unlikely_memory_error() {
             println!("Unlikely to be memory error, so no protect");
+            check_stack(state, 1)?;
             push_string(state, s.as_ref(), false)?;
             return Ok(());
         }
