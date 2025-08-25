@@ -44,7 +44,7 @@ fn test_traceback() -> Result<()> {
 }
 
 #[test]
-#[cfg(feature = "luau")]
+#[cfg(all(feature = "luau"))]
 fn test_gc_state_name() -> Result<()> {
     let lua = Lua::new();
 
