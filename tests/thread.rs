@@ -1,6 +1,6 @@
 use std::panic::catch_unwind;
 
-use mlua::{Error, Function, IntoLua, Lua, Result, Thread, ThreadStatus, Value};
+use mluau::{Error, Function, IntoLua, Lua, Result, Thread, ThreadStatus, Value};
 
 #[test]
 fn test_thread() -> Result<()> {
