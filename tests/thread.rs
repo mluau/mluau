@@ -364,16 +364,13 @@ fn test_thread_yield_args() -> Result<()> {
     );
 
     // mlua khvzak yield
-    let func = lua.create_function(|lua, ()| {
-        lua.yield_with("yielded value")
-    })?;
+    let func = lua.create_function(|lua, ()| lua.yield_with("yielded value"))?;
 
     let thread = lua.create_thread(func)?;
     assert_eq!(thread.resume::<String>(())?, "yielded value");
     assert_eq!(thread.status(), ThreadStatus::Resumable);
     thread.resume::<()>(())?;
     assert_eq!(thread.status(), ThreadStatus::Finished);
-
 
     Ok(())
 }

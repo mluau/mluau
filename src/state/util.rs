@@ -262,11 +262,11 @@ where
                 if let Some(values) = values {
                     // A note on Luau
                     //
-                    // When using the yieldable continuations fflag (and in future when the fflag gets removed and
-                    // yieldable continuations) becomes default, we must either pop the top of the
-                    // stack on the state we are resuming or somehow store the number of
-                    // args on top of stack pre-yield and then subtract in the resume in order to get predictable
-                    // behaviour here. See https://github.com/luau-lang/luau/issues/1867 for more information
+                    // When using the yieldable continuations fflag (and in future when the fflag gets removed
+                    // and yieldable continuations) becomes default, we must either pop
+                    // the top of the stack on the state we are resuming or somehow store
+                    // the number of args on top of stack pre-yield and then subtract in
+                    // the resume in order to get predictable behaviour here. See https://github.com/luau-lang/luau/issues/1867 for more information
                     //
                     // In this case, popping is easier and leads to less bugs/more ergonomic API.
 
@@ -275,10 +275,14 @@ where
 
                     match values.push_into_specified_stack_multi(raw, state) {
                         Ok(nargs) => {
-                            #[cfg(all(not(feature = "luau"), not(feature = "lua51"), not(feature = "luajit")))]
+                            #[cfg(all(
+                                not(feature = "luau"),
+                                not(feature = "lua51"),
+                                not(feature = "luajit")
+                            ))]
                             {
-                                // Yield to a continuation. Unlike luau, we need to do this manually and on the
-                                // fly using a yieldk call
+                                // Yield to a continuation. Unlike luau, we need to do this manually and on
+                                // the fly using a yieldk call
                                 if in_callback_with_continuation {
                                     // On Lua 5.2, status and ctx are not present, so use 0 as status for
                                     // compatibility
@@ -286,8 +290,10 @@ where
                                     unsafe extern "C-unwind" fn cont_callback(
                                         state: *mut ffi::lua_State,
                                     ) -> c_int {
-                                        let upvalue =
-                                            get_userdata::<ContinuationUpvalue>(state, ffi::lua_upvalueindex(1));
+                                        let upvalue = get_userdata::<ContinuationUpvalue>(
+                                            state,
+                                            ffi::lua_upvalueindex(1),
+                                        );
                                         callback_error_ext_yieldable(
                                             state,
                                             (*upvalue).extra.get(),
@@ -313,8 +319,10 @@ where
                                         status: c_int,
                                         _ctx: ffi::lua_KContext,
                                     ) -> c_int {
-                                        let upvalue =
-                                            get_userdata::<ContinuationUpvalue>(state, ffi::lua_upvalueindex(1));
+                                        let upvalue = get_userdata::<ContinuationUpvalue>(
+                                            state,
+                                            ffi::lua_upvalueindex(1),
+                                        );
                                         callback_error_ext_yieldable(
                                             state,
                                             (*upvalue).extra.get(),

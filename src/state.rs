@@ -2179,7 +2179,7 @@ impl Lua {
     ///
     /// This method is mostly useful with continuations and Rust-Rust yields
     /// due to the Rust/Lua boundary.
-    /// 
+    ///
     /// Note: Lua 5.1 does not support yielding across C function boundary and hence does not
     /// supported yielding in mluau
     ///
