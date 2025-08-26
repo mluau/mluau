@@ -275,6 +275,7 @@ fn test_thread_resume_bad_arg() -> Result<()> {
 }
 
 #[test]
+#[cfg(not(feature = "lua51"))]
 fn test_thread_yield_args() -> Result<()> {
     let lua = Lua::new();
     let always_yield = lua.create_function(|lua, ()| lua.yield_with((42, "69420".to_string(), 45.6)))?;
@@ -361,6 +362,18 @@ fn test_thread_yield_args() -> Result<()> {
         !lua.is_locked(),
         "Lua state should be unlocked after thread yield"
     );
+
+    // mlua khvzak yield
+    let func = lua.create_function(|lua, ()| {
+        lua.yield_with("yielded value")
+    })?;
+
+    let thread = lua.create_thread(func)?;
+    assert_eq!(thread.resume::<String>(())?, "yielded value");
+    assert_eq!(thread.status(), ThreadStatus::Resumable);
+    thread.resume::<()>(())?;
+    assert_eq!(thread.status(), ThreadStatus::Finished);
+
 
     Ok(())
 }

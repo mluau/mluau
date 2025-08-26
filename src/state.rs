@@ -2178,7 +2178,10 @@ impl Lua {
     /// Set the yield arguments. Note that Lua will not yield until you return from the function
     ///
     /// This method is mostly useful with continuations and Rust-Rust yields
-    /// due to the Rust/Lua boundary
+    /// due to the Rust/Lua boundary.
+    /// 
+    /// Note: Lua 5.1 does not support yielding across C function boundary and hence does not
+    /// supported yielding in mluau
     ///
     /// Example:
     ///
@@ -2196,6 +2199,7 @@ impl Lua {
     ///     Ok(())
     /// }
     /// ```
+    #[cfg(not(feature = "lua51"))]
     pub fn yield_with(&self, args: impl IntoLuaMulti) -> Result<()> {
         let raw = self.lock_gc_safe();
         unsafe {

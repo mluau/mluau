@@ -254,105 +254,109 @@ where
             prealloc_failure.release(state, extra);
 
             let raw = extra.as_ref().unwrap_unchecked().raw_lua();
-            let values = take(&mut extra.as_mut().unwrap_unchecked().yielded_values);
 
-            if let Some(values) = values {
-                // A note on Luau
-                //
-                // When using the yieldable continuations fflag (and in future when the fflag gets removed and
-                // yieldable continuations) becomes default, we must either pop the top of the
-                // stack on the state we are resuming or somehow store the number of
-                // args on top of stack pre-yield and then subtract in the resume in order to get predictable
-                // behaviour here. See https://github.com/luau-lang/luau/issues/1867 for more information
-                //
-                // In this case, popping is easier and leads to less bugs/more ergonomic API.
+            #[cfg(not(feature = "lua51"))]
+            {
+                let values = take(&mut extra.as_mut().unwrap_unchecked().yielded_values);
 
-                // We need to pop/clear stack early, then push args
-                ffi::lua_pop(state, -1);
+                if let Some(values) = values {
+                    // A note on Luau
+                    //
+                    // When using the yieldable continuations fflag (and in future when the fflag gets removed and
+                    // yieldable continuations) becomes default, we must either pop the top of the
+                    // stack on the state we are resuming or somehow store the number of
+                    // args on top of stack pre-yield and then subtract in the resume in order to get predictable
+                    // behaviour here. See https://github.com/luau-lang/luau/issues/1867 for more information
+                    //
+                    // In this case, popping is easier and leads to less bugs/more ergonomic API.
 
-                match values.push_into_specified_stack_multi(raw, state) {
-                    Ok(nargs) => {
-                        #[cfg(all(not(feature = "luau"), not(feature = "lua51"), not(feature = "luajit")))]
-                        {
-                            // Yield to a continuation. Unlike luau, we need to do this manually and on the
-                            // fly using a yieldk call
-                            if in_callback_with_continuation {
-                                // On Lua 5.2, status and ctx are not present, so use 0 as status for
-                                // compatibility
-                                #[cfg(feature = "lua52")]
-                                unsafe extern "C-unwind" fn cont_callback(
-                                    state: *mut ffi::lua_State,
-                                ) -> c_int {
-                                    let upvalue =
-                                        get_userdata::<ContinuationUpvalue>(state, ffi::lua_upvalueindex(1));
-                                    callback_error_ext_yieldable(
-                                        state,
-                                        (*upvalue).extra.get(),
-                                        true,
-                                        |extra, nargs| {
-                                            // Lua ensures that `LUA_MINSTACK` stack spaces are available
-                                            // (after pushing arguments)
-                                            // The lock must be already held as the callback is executed
-                                            let rawlua = (*extra).raw_lua();
-                                            match (*upvalue).data {
-                                                Some(ref func) => (func.1)(rawlua, nargs, 0),
-                                                None => Err(Error::CallbackDestructed),
-                                            }
-                                        },
-                                        true,
-                                    )
-                                }
+                    // We need to pop/clear stack early, then push args
+                    ffi::lua_pop(state, -1);
 
-                                // Lua 5.3/5.4 case
-                                #[cfg(not(feature = "lua52"))]
-                                unsafe extern "C-unwind" fn cont_callback(
-                                    state: *mut ffi::lua_State,
-                                    status: c_int,
-                                    _ctx: ffi::lua_KContext,
-                                ) -> c_int {
-                                    let upvalue =
-                                        get_userdata::<ContinuationUpvalue>(state, ffi::lua_upvalueindex(1));
-                                    callback_error_ext_yieldable(
-                                        state,
-                                        (*upvalue).extra.get(),
-                                        true,
-                                        |extra, nargs| {
-                                            // Lua ensures that `LUA_MINSTACK` stack spaces are available
-                                            // (after pushing arguments)
-                                            // The lock must be already held as the callback is executed
-                                            let rawlua = (*extra).raw_lua();
-                                            match (*upvalue).data {
-                                                Some(ref func) => (func.1)(rawlua, nargs, status),
-                                                None => Err(Error::CallbackDestructed),
-                                            }
-                                        },
-                                        true,
-                                    )
-                                }
-
-                                return ffi::lua_yieldc(state, nargs, cont_callback);
-                            }
-                        }
-
-                        return ffi::lua_yield(state, nargs);
-                    }
-                    Err(err) => {
-                        if (*extra).disable_error_userdata {
+                    match values.push_into_specified_stack_multi(raw, state) {
+                        Ok(nargs) => {
+                            #[cfg(all(not(feature = "luau"), not(feature = "lua51"), not(feature = "luajit")))]
                             {
-                                let err_string = err.to_string();
-                                push_error_string(state, extra, err_string);
+                                // Yield to a continuation. Unlike luau, we need to do this manually and on the
+                                // fly using a yieldk call
+                                if in_callback_with_continuation {
+                                    // On Lua 5.2, status and ctx are not present, so use 0 as status for
+                                    // compatibility
+                                    #[cfg(feature = "lua52")]
+                                    unsafe extern "C-unwind" fn cont_callback(
+                                        state: *mut ffi::lua_State,
+                                    ) -> c_int {
+                                        let upvalue =
+                                            get_userdata::<ContinuationUpvalue>(state, ffi::lua_upvalueindex(1));
+                                        callback_error_ext_yieldable(
+                                            state,
+                                            (*upvalue).extra.get(),
+                                            true,
+                                            |extra, nargs| {
+                                                // Lua ensures that `LUA_MINSTACK` stack spaces are available
+                                                // (after pushing arguments)
+                                                // The lock must be already held as the callback is executed
+                                                let rawlua = (*extra).raw_lua();
+                                                match (*upvalue).data {
+                                                    Some(ref func) => (func.1)(rawlua, nargs, 0),
+                                                    None => Err(Error::CallbackDestructed),
+                                                }
+                                            },
+                                            true,
+                                        )
+                                    }
+
+                                    // Lua 5.3/5.4 case
+                                    #[cfg(not(feature = "lua52"))]
+                                    unsafe extern "C-unwind" fn cont_callback(
+                                        state: *mut ffi::lua_State,
+                                        status: c_int,
+                                        _ctx: ffi::lua_KContext,
+                                    ) -> c_int {
+                                        let upvalue =
+                                            get_userdata::<ContinuationUpvalue>(state, ffi::lua_upvalueindex(1));
+                                        callback_error_ext_yieldable(
+                                            state,
+                                            (*upvalue).extra.get(),
+                                            true,
+                                            |extra, nargs| {
+                                                // Lua ensures that `LUA_MINSTACK` stack spaces are available
+                                                // (after pushing arguments)
+                                                // The lock must be already held as the callback is executed
+                                                let rawlua = (*extra).raw_lua();
+                                                match (*upvalue).data {
+                                                    Some(ref func) => (func.1)(rawlua, nargs, status),
+                                                    None => Err(Error::CallbackDestructed),
+                                                }
+                                            },
+                                            true,
+                                        )
+                                    }
+
+                                    return ffi::lua_yieldc(state, nargs, cont_callback);
+                                }
                             }
-                            drop(err);
+
+                            return ffi::lua_yield(state, nargs);
+                        }
+                        Err(err) => {
+                            if (*extra).disable_error_userdata {
+                                {
+                                    let err_string = err.to_string();
+                                    push_error_string(state, extra, err_string);
+                                }
+                                drop(err);
+                                ffi::lua_error(state);
+                            }
+
+                            // Make a *new* preallocated failure, and then do normal wrap_error
+                            let prealloc_failure = PreallocatedFailure::reserve(state, extra);
+                            let wrapped_panic = prealloc_failure.r#use(state, extra);
+                            ptr::write(wrapped_panic, WrappedFailure::Error(err));
+                            get_internal_metatable::<WrappedFailure>(state);
+                            ffi::lua_setmetatable(state, -2);
                             ffi::lua_error(state);
                         }
-
-                        // Make a *new* preallocated failure, and then do normal wrap_error
-                        let prealloc_failure = PreallocatedFailure::reserve(state, extra);
-                        let wrapped_panic = prealloc_failure.r#use(state, extra);
-                        ptr::write(wrapped_panic, WrappedFailure::Error(err));
-                        get_internal_metatable::<WrappedFailure>(state);
-                        ffi::lua_setmetatable(state, -2);
-                        ffi::lua_error(state);
                     }
                 }
             }

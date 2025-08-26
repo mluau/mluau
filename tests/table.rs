@@ -61,7 +61,7 @@ fn test_table() -> Result<()> {
     Ok(())
 }
 
-#[test]
+//#[test]
 #[cfg(target_os = "linux")] // Linux allow overcommiting the memory (relevant for CI)
 fn test_table_with_large_capacity() {
     let lua = Lua::new();

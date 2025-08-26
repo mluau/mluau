@@ -153,6 +153,7 @@ pub(crate) struct ExtraData {
     // Optional fallback lua string
 
     // Values currently being yielded from Lua.yield()
+    #[cfg(not(feature = "lua51"))]
     pub(super) yielded_values: Option<MultiValue>,
 
     // Callback called when lua VM is about to be closed
@@ -248,6 +249,7 @@ impl ExtraData {
             lute_runtimeinitter: None,
             #[cfg(feature = "luau-lute")]
             no_drop: false,
+            #[cfg(not(feature = "lua51"))]
             yielded_values: None,
             disable_error_userdata: false,
             on_close: None,
