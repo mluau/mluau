@@ -161,11 +161,11 @@ impl Thread {
         let thread_state = self.state();
         unsafe {
             let _sg = StackGuard::new(state);
-            let _thread_sg = StackGuard::with_top(thread_state, 0);
 
             let nargs = args.push_into_specified_stack_multi(&lua, thread_state)?;
             pushed_nargs += nargs;
 
+            let _thread_sg = StackGuard::with_top(thread_state, 0);
             let (_, nresults) = self.resume_inner(&lua, pushed_nargs)?;
 
             R::from_specified_stack_multi(nresults, &lua, thread_state)
@@ -191,11 +191,11 @@ impl Thread {
         let thread_state = self.state();
         unsafe {
             let _sg = StackGuard::new(state);
-            let _thread_sg = StackGuard::with_top(thread_state, 0);
 
             check_stack(thread_state, 1)?;
             error.push_into_specified_stack(&lua, thread_state)?;
 
+            let _thread_sg = StackGuard::with_top(thread_state, 0);
             let (_, nresults) = self.resume_inner(&lua, ffi::LUA_RESUMEERROR)?;
 
             R::from_specified_stack_multi(nresults, &lua, thread_state)
