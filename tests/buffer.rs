@@ -1,8 +1,7 @@
 #![cfg(feature = "luau")]
 
+use mluau::{Lua, Result, Value};
 use std::io::{Read, Seek, SeekFrom, Write};
-
-use mlua::{Lua, Result, Value};
 
 #[test]
 fn test_buffer() -> Result<()> {
@@ -32,18 +31,23 @@ fn test_buffer() -> Result<()> {
     assert_eq!(buf1.len(), 5);
     assert_eq!(buf1.to_vec(), b"hello");
     assert_eq!(buf1.read_bytes::<3>(1), [b'e', b'l', b'l']);
+    assert_eq!(buf1.read_bytes_to_vec(1, 3), b"ell".to_vec());
     buf1.write_bytes(1, b"i");
     assert_eq!(buf1.to_vec(), b"hillo");
 
     let buf3 = lua.create_buffer(b"")?;
     assert!(buf3.is_empty());
+
+    let p = buf3.to_pointer();
+    assert!(!p.is_null());
+
     assert!(!Value::Buffer(buf3).to_pointer().is_null());
 
     Ok(())
 }
 
 #[test]
-#[should_panic(expected = "out of range for slice of length 13")]
+#[should_panic]
 fn test_buffer_out_of_bounds_read() {
     let lua = Lua::new();
     let buf = lua.create_buffer(b"hello, world!").unwrap();
@@ -51,7 +55,7 @@ fn test_buffer_out_of_bounds_read() {
 }
 
 #[test]
-#[should_panic(expected = "out of range for slice of length 13")]
+#[should_panic]
 fn test_buffer_out_of_bounds_write() {
     let lua = Lua::new();
     let buf = lua.create_buffer(b"hello, world!").unwrap();

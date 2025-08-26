@@ -1,4 +1,5 @@
 use std::io;
+use std::os::raw::c_void;
 
 #[cfg(feature = "serde")]
 use serde::ser::{Serialize, Serializer};
@@ -46,6 +47,21 @@ impl Buffer {
         bytes
     }
 
+    /// Reads given number of bytes from the buffer at the given offset.
+    ///
+    /// Offset is 0-based.
+    ///
+    /// Unline read_bytes, this function returns a vector of bytes and is
+    /// not generic over the number of bytes.
+    #[track_caller]
+    pub fn read_bytes_to_vec(&self, offset: usize, len: usize) -> Vec<u8> {
+        let lua = self.0.lua.lock();
+        let data = self.as_slice(&lua);
+        let mut bytes = vec![0u8; len];
+        bytes.copy_from_slice(&data[offset..offset + len]);
+        bytes
+    }
+
     /// Writes given bytes to the buffer at the given offset.
     ///
     /// Offset is 0-based.
@@ -82,7 +98,7 @@ impl Buffer {
     #[cfg(feature = "luau")]
     unsafe fn as_raw_parts(&self, lua: &RawLua) -> (*mut u8, usize) {
         let mut size = 0usize;
-        let buf = ffi::lua_tobuffer(lua.ref_thread(), self.0.index, &mut size);
+        let buf = ffi::lua_tobuffer(lua.ref_thread(self.0.aux_thread), self.0.index, &mut size);
         mlua_assert!(!buf.is_null(), "invalid Luau buffer");
         (buf as *mut u8, size)
     }
@@ -90,6 +106,16 @@ impl Buffer {
     #[cfg(not(feature = "luau"))]
     unsafe fn as_raw_parts(&self, lua: &RawLua) -> (*mut u8, usize) {
         unreachable!()
+    }
+
+    /// Converts this buffer to a generic C pointer.
+    ///
+    /// There is no way to convert the pointer back to its original value.
+    ///
+    /// Typically this function is used only for hashing and debug information.
+    #[inline]
+    pub fn to_pointer(&self) -> *const c_void {
+        self.0.to_pointer()
     }
 }
 

@@ -267,6 +267,8 @@ pub const LUA_GCSETSTEPSIZE: c_int = 9;
 
 unsafe extern "C-unwind" {
     pub fn lua_gc(L: *mut lua_State, what: c_int, data: c_int) -> c_int;
+    pub fn lua_gcstatename(state: c_int) -> *const c_char;
+    pub fn lua_gcallocationrate(L: *mut lua_State) -> i64;
 }
 
 //
@@ -425,6 +427,11 @@ pub unsafe fn lua_pushcfunctiond(L: *mut lua_State, f: lua_CFunction, debugname:
 #[inline(always)]
 pub unsafe fn lua_pushcclosure(L: *mut lua_State, f: lua_CFunction, nup: c_int) {
     lua_pushcclosurek(L, f, ptr::null(), nup, None)
+}
+
+#[inline(always)]
+pub unsafe fn lua_pushcclosurec(L: *mut lua_State, f: lua_CFunction, cont: lua_Continuation, nup: c_int) {
+    lua_pushcclosurek(L, f, ptr::null(), nup, Some(cont))
 }
 
 #[inline(always)]

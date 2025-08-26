@@ -1,4 +1,4 @@
-use mlua::{Lua, Table};
+use mluau::{Lua, Table};
 
 fn main() {
     let lua = Lua::new();

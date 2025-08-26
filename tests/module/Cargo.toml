@@ -8,16 +8,14 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [workspace]
-members = [
-    "loader",
-]
+members = ["loader"]
 
 [features]
-lua54 = ["mlua/lua54"]
-lua53 = ["mlua/lua53"]
-lua52 = ["mlua/lua52"]
-lua51 = ["mlua/lua51"]
-luajit = ["mlua/luajit"]
+lua54 = ["mluau/lua54"]
+lua53 = ["mluau/lua53"]
+lua52 = ["mluau/lua52"]
+lua51 = ["mluau/lua51"]
+luajit = ["mluau/luajit"]
 
 [dependencies]
-mlua = { path = "../..", features = ["module"] }
+mluau = { path = "../..", features = ["module"], default-features = false }

@@ -1,4 +1,4 @@
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::UnsafeCell;
 
 #[cfg(feature = "serde")]
 use serde::ser::{Serialize, Serializer};
@@ -17,7 +17,6 @@ type DynSerialize = dyn erased_serde::Serialize + Send;
 
 pub(crate) enum UserDataStorage<T> {
     Owned(UserDataVariant<T>),
-    Scoped(ScopedUserDataVariant<T>),
 }
 
 // A enum for storing userdata values.
@@ -164,37 +163,10 @@ impl<T> UserDataCell<T> {
     }
 }
 
-pub(crate) enum ScopedUserDataVariant<T> {
-    Ref(*const T),
-    RefMut(RefCell<*mut T>),
-    Boxed(RefCell<*mut T>),
-}
-
-impl<T> Drop for ScopedUserDataVariant<T> {
-    #[inline]
-    fn drop(&mut self) {
-        if let Self::Boxed(value) = self {
-            if let Ok(value) = value.try_borrow_mut() {
-                unsafe { drop(Box::from_raw(*value)) };
-            }
-        }
-    }
-}
-
 impl<T: 'static> UserDataStorage<T> {
     #[inline(always)]
     pub(crate) fn new(data: T) -> Self {
         Self::Owned(UserDataVariant::Default(XRc::new(UserDataCell::new(data))))
-    }
-
-    #[inline(always)]
-    pub(crate) fn new_ref(data: &T) -> Self {
-        Self::Scoped(ScopedUserDataVariant::Ref(data))
-    }
-
-    #[inline(always)]
-    pub(crate) fn new_ref_mut(data: &mut T) -> Self {
-        Self::Scoped(ScopedUserDataVariant::RefMut(RefCell::new(data)))
     }
 
     #[cfg(feature = "serde")]
@@ -220,7 +192,6 @@ impl<T: 'static> UserDataStorage<T> {
     pub(crate) fn try_borrow_owned(&self) -> Result<UserDataRef<T>> {
         match self {
             Self::Owned(data) => data.try_borrow_owned(),
-            Self::Scoped(_) => Err(Error::UserDataTypeMismatch),
         }
     }
 
@@ -229,7 +200,6 @@ impl<T: 'static> UserDataStorage<T> {
     pub(crate) fn try_borrow_owned_mut(&self) -> Result<UserDataRefMut<T>> {
         match self {
             Self::Owned(data) => data.try_borrow_owned_mut(),
-            Self::Scoped(_) => Err(Error::UserDataTypeMismatch),
         }
     }
 
@@ -237,18 +207,11 @@ impl<T: 'static> UserDataStorage<T> {
     pub(crate) fn into_inner(self) -> Result<T> {
         match self {
             Self::Owned(data) => data.into_inner(),
-            Self::Scoped(_) => Err(Error::UserDataTypeMismatch),
         }
     }
 }
 
 impl<T> UserDataStorage<T> {
-    #[inline(always)]
-    pub(crate) fn new_scoped(data: T) -> Self {
-        let data = Box::into_raw(Box::new(data));
-        Self::Scoped(ScopedUserDataVariant::Boxed(RefCell::new(data)))
-    }
-
     /// Returns `true` if it's safe to destroy the container.
     ///
     /// It's safe to destroy the container if the reference count is greater than 1 or the lock is
@@ -257,7 +220,6 @@ impl<T> UserDataStorage<T> {
     pub(crate) fn is_safe_to_destroy(&self) -> bool {
         match self {
             Self::Owned(variant) => variant.strong_count() > 1 || !variant.raw_lock().is_locked(),
-            Self::Scoped(_) => false,
         }
     }
 
@@ -266,7 +228,6 @@ impl<T> UserDataStorage<T> {
     pub(crate) fn has_exclusive_access(&self) -> bool {
         match self {
             Self::Owned(variant) => !variant.raw_lock().is_locked(),
-            Self::Scoped(_) => false,
         }
     }
 
@@ -274,11 +235,6 @@ impl<T> UserDataStorage<T> {
     pub(crate) fn try_borrow_scoped<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
         match self {
             Self::Owned(data) => data.try_borrow_scoped(f),
-            Self::Scoped(ScopedUserDataVariant::Ref(value)) => Ok(f(unsafe { &**value })),
-            Self::Scoped(ScopedUserDataVariant::RefMut(value) | ScopedUserDataVariant::Boxed(value)) => {
-                let t = value.try_borrow().map_err(|_| Error::UserDataBorrowError)?;
-                Ok(f(unsafe { &**t }))
-            }
         }
     }
 
@@ -286,13 +242,6 @@ impl<T> UserDataStorage<T> {
     pub(crate) fn try_borrow_scoped_mut<R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R> {
         match self {
             Self::Owned(data) => data.try_borrow_scoped_mut(f),
-            Self::Scoped(ScopedUserDataVariant::Ref(_)) => Err(Error::UserDataBorrowMutError),
-            Self::Scoped(ScopedUserDataVariant::RefMut(value) | ScopedUserDataVariant::Boxed(value)) => {
-                let mut t = value
-                    .try_borrow_mut()
-                    .map_err(|_| Error::UserDataBorrowMutError)?;
-                Ok(f(unsafe { &mut **t }))
-            }
         }
     }
 }

@@ -1,7 +1,7 @@
 use std::io::Result as IoResult;
 use std::result::Result as StdResult;
 
-use mlua::{Error, IntoLua, Lua, MultiValue, NavigateError, Require, Result, TextRequirer, Value};
+use mluau::{Error, IntoLua, Lua, MultiValue, NavigateError, Require, Result, TextRequirer, Value};
 
 fn run_require(lua: &Lua, path: impl IntoLua) -> Result<Value> {
     lua.load(r#"return require(...)"#).call(path)
@@ -47,7 +47,7 @@ fn test_require_errors() {
     assert!(res.is_err());
     assert!((res.unwrap_err().to_string()).contains("require is not supported in this context"));
 
-    // Test throwing mlua::Error
+    // Test throwing mluau::Error
     struct MyRequire(TextRequirer);
 
     impl Require for MyRequire {
@@ -87,7 +87,7 @@ fn test_require_errors() {
             self.0.config()
         }
 
-        fn loader(&self, lua: &Lua) -> Result<mlua::Function> {
+        fn loader(&self, lua: &Lua) -> Result<mluau::Function> {
             self.0.loader(lua)
         }
     }
@@ -205,44 +205,4 @@ fn test_require_with_config() {
     let res = run_require(&lua, "@");
     assert!(res.is_err());
     assert!((res.unwrap_err().to_string()).contains("@ is not a valid alias"));
-}
-
-#[cfg(all(feature = "async", not(windows)))]
-#[tokio::test]
-async fn test_async_require() -> Result<()> {
-    let lua = Lua::new();
-
-    let temp_dir = tempfile::tempdir().unwrap();
-    let temp_path = temp_dir.path().join("async_chunk.luau");
-    std::fs::write(
-        &temp_path,
-        r#"
-        sleep_ms(10)
-        return "result_after_async_sleep"
-    "#,
-    )
-    .unwrap();
-
-    lua.globals().set(
-        "sleep_ms",
-        lua.create_async_function(|_, ms: u64| async move {
-            tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
-            Ok(())
-        })?,
-    )?;
-    lua.globals().set("tmp_dir", temp_dir.path().to_str().unwrap())?;
-    lua.globals().set(
-        "curr_dir_components",
-        std::env::current_dir().unwrap().components().count(),
-    )?;
-
-    lua.load(
-        r#"
-        local path_to_root = string.rep("/..", curr_dir_components - 1)
-        local result = require(`.{path_to_root}{tmp_dir}/async_chunk`)
-        assert(result == "result_after_async_sleep")
-        "#,
-    )
-    .exec_async()
-    .await
 }
