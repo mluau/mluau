@@ -482,3 +482,25 @@ fn test_table_object_like() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "error-value")]
+fn test_table_error_throw() -> Result<()> {
+    let lua = Lua::new();
+
+    let chunk1 = lua.load("local ok, err = pcall(error, {e = 123}); assert(type(err) == 'table')").into_function()?;
+    chunk1.call::<()>(())?;
+
+    let chunk = lua.load("error({e = 123})").into_function()?;
+    match chunk.call::<()>(()) {
+        Err(Error::Value(err)) => {
+            println!("Error: {err:#?}");
+
+            #[cfg(feature = "send")]
+            assert!(!lua.is_locked());
+        }
+        r => panic!("expected Value, got {r:?}"),
+    }
+
+    Ok(())
+}
