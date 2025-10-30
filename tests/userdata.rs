@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 
 use mluau::{
     AnyUserData, Error, ExternalError, Function, Lua, MetaMethod, Nil, ObjectLike, Result, String, UserData,
-    UserDataFields, UserDataMethods, UserDataRef, Value, Variadic,
+    UserDataFields, UserDataMethods, UserDataRef, UserDataRegistry, Value, Variadic,
 };
 
 #[test]
@@ -584,6 +584,11 @@ fn test_fields() -> Result<()> {
                 Ok(())
             });
 
+            // Field that emulates method
+            fields.add_field_function_get("val_fget", |lua, ud| {
+                lua.create_function(move |_, ()| Ok(ud.borrow::<MyUserData>()?.0))
+            });
+
             // Use userdata "uservalue" storage
             fields.add_field_function_get("uval", |_, ud| ud.user_value::<Option<String>>());
             fields.add_field_function_set("uval", |_, ud, s: Option<String>| ud.set_user_value(s));
@@ -596,6 +601,10 @@ fn test_fields() -> Result<()> {
                 })
             })
         }
+
+        fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+            methods.add_method("dummy", |_, _, ()| Ok(()));
+        }
     }
 
     globals.set("ud", MyUserData(7))?;
@@ -605,6 +614,7 @@ fn test_fields() -> Result<()> {
         assert(ud.val == 7)
         ud.val = 10
         assert(ud.val == 10)
+        assert(ud:val_fget() == 10)
 
         assert(ud.uval == nil)
         ud.uval = "hello"
@@ -1501,6 +1511,23 @@ fn test_userdata_dynamic() -> Result<()> {
     drop(dynamic_userdata);
     lua.gc_collect()?;
     assert!(dt.dropped_ref.load(std::sync::atomic::Ordering::Acquire));
+
+    Ok(())
+}
+
+#[test]
+fn test_userdata_get_path() -> Result<()> {
+    let lua = Lua::new();
+
+    struct MyUd;
+    impl UserData for MyUd {
+        fn register(registry: &mut UserDataRegistry<Self>) {
+            registry.add_field("value", "userdata_value");
+        }
+    }
+
+    let ud = lua.create_userdata(MyUd)?;
+    assert_eq!(ud.get_path::<String>(".value")?, "userdata_value");
 
     Ok(())
 }

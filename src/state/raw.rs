@@ -42,8 +42,8 @@ use crate::userdata::{
 use crate::util::{
     assert_stack, check_stack, get_destructed_userdata_metatable, get_internal_userdata, get_main_state,
     get_metatable_ptr, get_userdata, init_error_registry, init_internal_metatable, pop_error,
-    push_internal_userdata, push_string, push_table, rawset_field, safe_pcall, safe_xpcall, short_type_name,
-    to_string, StackGuard, WrappedFailure,
+    push_internal_userdata, push_string, push_table, push_userdata, rawset_field, safe_pcall, safe_xpcall,
+    short_type_name, to_string, StackGuard, WrappedFailure,
 };
 use crate::value::{Nil, Value};
 
@@ -1379,7 +1379,7 @@ impl RawLua {
         // We generate metatable first to make sure it *always* available when userdata pushed
         let mt_id = get_metatable_id()?;
         let protect = !self.unlikely_memory_error();
-        crate::util::push_userdata(state, data, protect)?;
+        push_userdata(state, data, protect)?;
         ffi::lua_rawgeti(state, ffi::LUA_REGISTRYINDEX, mt_id);
         ffi::lua_setmetatable(state, -2);
 

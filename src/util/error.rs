@@ -132,8 +132,7 @@ pub(crate) unsafe fn pop_error(state: *mut ffi::lua_State, err_code: c_int) -> E
                     _ => {
                         use crate::state::ExtraData;
                         // Special logic for error values that are not strings or numbers
-                        use crate::Value;
-                        use crate::FromLua;
+                        use crate::{FromLua, Value};
                         let ed = ExtraData::get(state);
                         let raw_lua = (*ed).raw_lua();
                         let value = Value::from_specified_stack(-1, raw_lua, state);
@@ -142,7 +141,7 @@ pub(crate) unsafe fn pop_error(state: *mut ffi::lua_State, err_code: c_int) -> E
                             return Error::Value((err, "".to_string()));
                         }
                     }
-                }   
+                }
             }
 
             let err_string = to_string(state, -1);
@@ -296,8 +295,7 @@ pub(crate) unsafe extern "C-unwind" fn error_traceback(state: *mut ffi::lua_Stat
                 ffi::LUA_TSTRING | ffi::LUA_TNUMBER => {}
                 _ => {
                     use crate::state::ExtraData;
-                    use crate::Value;
-                    use crate::FromLuaMulti;
+                    use crate::{FromLuaMulti, Value};
                     if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK + 3) != 0 {
                         ffi::luaL_traceback(state, state, std::ptr::null(), 0);
 
@@ -325,7 +323,7 @@ pub(crate) unsafe extern "C-unwind" fn error_traceback(state: *mut ffi::lua_Stat
                 }
             }
         }
-        
+
         let s = ffi::luaL_tolstring(state, -1, ptr::null_mut());
         if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {
             ffi::luaL_traceback(state, state, s, 0);
@@ -463,6 +461,8 @@ pub(crate) unsafe fn init_error_registry(state: *mut ffi::lua_State) -> Result<(
         "__ipairs",
         #[cfg(feature = "luau")]
         "__iter",
+        #[cfg(feature = "luau")]
+        "__namecall",
         #[cfg(feature = "lua54")]
         "__close",
     ] {

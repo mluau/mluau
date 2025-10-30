@@ -33,7 +33,8 @@ pub use crate::{
 #[cfg(feature = "serde")]
 #[doc(no_inline)]
 pub use crate::{
-    DeserializeOptions as LuaDeserializeOptions, LuaSerdeExt, SerializeOptions as LuaSerializeOptions,
+    DeserializeOptions as LuaDeserializeOptions, LuaSerdeExt, SerializableValue as LuaSerializableValue,
+    SerializeOptions as LuaSerializeOptions,
 };
 
 #[cfg(feature = "luau-lute")]

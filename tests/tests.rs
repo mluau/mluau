@@ -396,6 +396,7 @@ fn test_error() -> Result<()> {
 }
 
 #[test]
+#[cfg(not(panic = "abort"))]
 fn test_panic() -> Result<()> {
     fn make_lua(options: LuaOptions) -> Result<Lua> {
         let lua = Lua::new_with(StdLib::ALL_SAFE, options)?;
@@ -899,6 +900,7 @@ fn test_registry_value_reuse() -> Result<()> {
 }
 
 #[test]
+#[cfg(not(panic = "abort"))]
 fn test_application_data() -> Result<()> {
     let lua = Lua::new();
 

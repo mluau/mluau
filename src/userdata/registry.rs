@@ -496,10 +496,17 @@ impl<T> UserDataRegistry<T> {
         self.raw.dynamic_method = Some(callback);
     }
 
-    /// Disables namecall optimization for the userdata type.
+    /// Disables support for the namecall optimization in Luau.
     ///
     /// This will also disable the dynamic method for the userdata type, if it was set (as a side
     /// effect)
+    ///
+    /// Namecall optiomzation is a special method resolution optimization in Luau for complex
+    /// userdata types with methods. When enabled, Luau will use a faster lookup path for method
+    /// calls when a specific syntax is used (e.g. `obj:method()`).
+    ///
+    /// This optimization does not play well with custom `__index` metamethods (use dynamic methods
+    /// for that) and field getters as functions.
     #[cfg(feature = "luau")]
     pub fn disable_namecall_optimization(&mut self) {
         self.raw.disable_namecall_optimization = true;

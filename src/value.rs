@@ -28,9 +28,10 @@ use {
 /// The non-primitive variants (eg. string/table/function/thread/userdata) contain handle types
 /// into the internal Lua state. It is a logic error to mix handle types between separate
 /// `Lua` instances, and doing so will result in a panic.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub enum Value {
     /// The Lua value `nil`.
+    #[default]
     Nil,
     /// The Lua value `true` or `false`.
     Boolean(bool),
@@ -491,7 +492,6 @@ impl Value {
     /// This allows customizing serialization behavior using serde.
     #[cfg(feature = "serde")]
     #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
-    #[doc(hidden)]
     pub fn to_serializable(&self) -> SerializableValue<'_> {
         SerializableValue::new(self, Default::default(), None)
     }
@@ -577,12 +577,6 @@ impl Value {
             Value::Error(_) => write!(fmt, "error"),
             Value::Other(v) => write!(fmt, "other: {:?}", v.to_pointer()),
         }
-    }
-}
-
-impl Default for Value {
-    fn default() -> Self {
-        Self::Nil
     }
 }
 
@@ -684,7 +678,7 @@ impl<'a> SerializableValue<'a> {
     ///
     /// Default: **true**
     #[must_use]
-    pub const fn deny_unsupported_types(mut self, enabled: bool) -> Self {
+    pub fn deny_unsupported_types(mut self, enabled: bool) -> Self {
         self.options.deny_unsupported_types = enabled;
         self
     }
@@ -695,7 +689,7 @@ impl<'a> SerializableValue<'a> {
     ///
     /// Default: **true**
     #[must_use]
-    pub const fn deny_recursive_tables(mut self, enabled: bool) -> Self {
+    pub fn deny_recursive_tables(mut self, enabled: bool) -> Self {
         self.options.deny_recursive_tables = enabled;
         self
     }
@@ -704,7 +698,7 @@ impl<'a> SerializableValue<'a> {
     ///
     /// Default: **false**
     #[must_use]
-    pub const fn sort_keys(mut self, enabled: bool) -> Self {
+    pub fn sort_keys(mut self, enabled: bool) -> Self {
         self.options.sort_keys = enabled;
         self
     }
@@ -713,8 +707,19 @@ impl<'a> SerializableValue<'a> {
     ///
     /// Default: **false**
     #[must_use]
-    pub const fn encode_empty_tables_as_array(mut self, enabled: bool) -> Self {
+    pub fn encode_empty_tables_as_array(mut self, enabled: bool) -> Self {
         self.options.encode_empty_tables_as_array = enabled;
+        self
+    }
+
+    /// If true, enable detection of mixed tables.
+    ///
+    /// A mixed table is a table that has both array-like and map-like entries or several borders.
+    ///
+    /// Default: **false**
+    #[must_use]
+    pub fn detect_mixed_tables(mut self, enabled: bool) -> Self {
+        self.options.detect_mixed_tables = enabled;
         self
     }
 }
