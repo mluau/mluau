@@ -32,11 +32,13 @@ unsafe impl Send for LightUserData {}
 unsafe impl Sync for LightUserData {}
 
 #[cfg(feature = "send")]
-pub(crate) type Callback = Box<dyn Fn(&RawLua, c_int) -> Result<c_int> + Send + 'static>;
+type CallbackFn<'a> = dyn Fn(&RawLua, c_int) -> Result<c_int> + Send + 'a;
+
 #[cfg(not(feature = "send"))]
 type CallbackFn<'a> = dyn Fn(&RawLua, c_int) -> Result<c_int> + 'a;
 
 pub(crate) type Callback = Box<CallbackFn<'static>>;
+
 
 #[cfg(all(feature = "send", not(feature = "lua51"), not(feature = "luajit")))]
 pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> Result<c_int> + Send + 'static>;
