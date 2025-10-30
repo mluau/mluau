@@ -773,7 +773,7 @@ impl Table {
     #[cfg(feature = "serde")]
     fn find_array_len(&self) -> Option<(usize, usize)> {
         let lua = self.0.lua.lock();
-        let ref_thread = lua.ref_thread();
+        let ref_thread = lua.ref_thread(self.0.aux_thread);
         unsafe {
             let _sg = StackGuard::new(ref_thread);
 
