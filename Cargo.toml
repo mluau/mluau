@@ -53,6 +53,7 @@ anyhow = ["dep:anyhow", "error-send"]
 userdata-wrappers = ["parking_lot/send_guard"]
 dynamic-userdata = ["luau"]
 error-value = []
+unsafe-ffi = []
 
 # deprecated features
 serialize = ["serde"]

@@ -282,7 +282,9 @@ impl Lua {
     pub unsafe fn get_or_init_from_ptr<'a>(state: *mut ffi::lua_State) -> &'a Lua {
         debug_assert!(!state.is_null(), "Lua state is null");
         match ExtraData::get(state) {
-            extra if !extra.is_null() => (*extra).lua(),
+            extra if !extra.is_null() => {
+                (*extra).lua()
+            },
             _ => {
                 // The `owned` flag is set to `false` as we don't own the Lua state.
                 RawLua::init_from_ptr(state, false);
@@ -919,6 +921,22 @@ impl Lua {
         let lua = self.lock();
         unsafe {
             ffi::lua_warning(lua.state(), bytes.as_ptr() as *const _, incomplete as c_int);
+        }
+    }
+
+    /// Pushes an mluau `LuaValue` from mluau's internal stack onto the actual Luau stack.
+    /// This is useful for implementing C-compatible FFI interfaces.
+    /// 
+    /// # Safety
+    /// Messing with the Luau stack is inherently unsafe and can modify expected behavior.
+    /// Use this only when you need to return a value directly from a C function exposed as a dynamic library (or similar).
+    #[cfg(feature = "unsafe-ffi")]
+    pub unsafe fn push_to_stack<V: IntoLua>(&self, value: V) -> Result<()> {
+        let value = value.into_lua(self)?;
+        let lua = self.lock();
+        let state = lua.state();
+        unsafe {
+            lua.push_value_at(&value, state)
         }
     }
 

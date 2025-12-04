@@ -44,9 +44,54 @@ pub(crate) unsafe fn push_internal_userdata<T: TypeKey>(
     Ok(ud_ptr)
 }
 
+// unsafe fn dump_stack(state: *mut ffi::lua_State) {
+//     let top = ffi::lua_gettop(state);
+//     for i in 1..=top {
+//         let t = ffi::lua_type(state, i);
+//         let l_cstr = ffi::luaL_typename(state, t) as *const std::ffi::c_char;
+//         let l_typename = std::ffi::CStr::from_ptr(l_cstr).to_string_lossy();
+
+//         let cstr = ffi::lua_typename(state, t) as *const std::ffi::c_char;
+//         let typename = std::ffi::CStr::from_ptr(cstr).to_string_lossy();
+
+//         if ffi::lua_isuserdata(state, i) != 0 {
+//             let ptr = ffi::lua_touserdata(state, i);
+//             println!("stack[{}] = userdata of name L {}", i, l_typename);
+//             println!("  -> userdata at {:?}", ptr);
+//         } else {
+//             println!("stack[{}] = {}", i, typename);
+//         }
+//     }
+// }
+
 #[track_caller]
 pub(crate) unsafe fn get_internal_metatable<T: TypeKey>(state: *mut ffi::lua_State) {
+    // check registry for internal metatable, pushing whatever's there onto the luau stack
     ffi::lua_rawgetp(state, ffi::LUA_REGISTRYINDEX, T::type_key());
+
+    // #[cfg(feature = "unsafe-ffi")]
+    // {
+    //     // if we didn't find the internal metatable, we have to initialize it
+    //     // this can happen if you pass a luau_State created by mluau across c ffi
+    //     if ffi::lua_isnil(state, -1) == 1 {
+    //         eprintln!("called for T: {}", std::any::type_name::<T>());
+    //         // since lua_rawgetp pushed smth onto the stack, we need to pop it to keep stack balanced
+    //         ffi::lua_pop(state, 1);
+    //         // init_internal_metatable pushes the metatable onto the stack
+    //         if let Err(err) = init_internal_metatable::<T>(state, Some(|state| {
+    //             ffi::lua_createtable(state, 0, 3);
+    //             ffi::lua_pushstring(state, cstr!("idek"));
+    //             ffi::lua_setfield(state, -2, cstr!("__type"));
+    //         })) {
+    //             panic!("unable to set internal metatable due to err: {}", err);
+    //         }
+
+    //         ffi::lua_rawgetp(state, ffi::LUA_REGISTRYINDEX, T::type_key());
+    //         dump_stack(state);
+    //     }
+    // }
+
+    #[cfg(not(feature = "unsafe-ffi"))]
     debug_assert!(ffi::lua_isnil(state, -1) == 0, "internal metatable not found");
 }
 
