@@ -161,6 +161,9 @@ pub(crate) struct ExtraData {
     pub(super) on_close: Option<Box<dyn Fn() + Send + 'static>>,
     #[cfg(not(feature = "send"))]
     pub(super) on_close: Option<Box<dyn Fn() + 'static>>,
+
+    #[cfg(feature = "luau")]
+    pub(crate) mem_categories: Vec<std::ffi::CString>,
 }
 
 impl Drop for ExtraData {
@@ -253,6 +256,8 @@ impl ExtraData {
             yielded_values: None,
             disable_error_userdata: false,
             on_close: None,
+            #[cfg(feature = "luau")]
+            mem_categories: vec![std::ffi::CString::new("main").unwrap()],
         }));
 
         // Store it in the registry

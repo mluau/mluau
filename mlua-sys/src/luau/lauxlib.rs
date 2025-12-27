@@ -5,6 +5,9 @@ use std::ptr;
 
 use super::lua::{self, lua_CFunction, lua_Number, lua_State, lua_Unsigned, LUA_REGISTRYINDEX};
 
+// Key, in the registry, for table of loaded modules
+pub const LUA_LOADED_TABLE: *const c_char = cstr!("_LOADED");
+
 #[repr(C)]
 pub struct luaL_Reg {
     pub name: *const c_char,
@@ -208,4 +211,19 @@ pub unsafe fn luaL_addstring(B: *mut luaL_Strbuf, s: *const c_char) {
         len += 1;
     }
     luaL_addlstring(B, s, len);
+}
+
+pub unsafe fn luaL_addunsigned(B: *mut luaL_Strbuf, mut n: lua_Unsigned) {
+    let mut buf: [c_char; 32] = [0; 32];
+    let mut i = 32;
+    loop {
+        i -= 1;
+        let digit = (n % 10) as u8;
+        buf[i] = (b'0' + digit) as c_char;
+        n /= 10;
+        if n == 0 {
+            break;
+        }
+    }
+    luaL_addlstring(B, buf.as_ptr().add(i), 32 - i);
 }

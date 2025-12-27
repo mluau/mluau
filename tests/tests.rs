@@ -440,7 +440,7 @@ fn test_panic() -> Result<()> {
     {
         let lua = make_lua(LuaOptions::default())?;
         match catch_unwind(AssertUnwindSafe(|| -> Result<()> {
-            let _catched_panic = lua
+            let _caught_panic = lua
                 .load(
                     r#"
                     -- Set global
@@ -1383,6 +1383,80 @@ fn test_inspect_stack() -> Result<()> {
             -- luajit inline the "baz" function and returns the chunk itself
             assert(baz() == running_function())
         end
+    "#,
+    )
+    .exec()?;
+
+    Ok(())
+}
+
+#[test]
+fn test_traceback() -> Result<()> {
+    let lua = Lua::new();
+
+    // Test traceback at level 0 (not inside any function)
+    let traceback = lua.traceback(None, 0)?.to_string_lossy();
+    assert!(traceback.contains("stack traceback:"));
+
+    // Test traceback with a message prefix
+    let traceback = lua.traceback(Some("error occurred"), 0)?.to_string_lossy();
+    assert!(traceback.starts_with("error occurred"));
+    assert!(traceback.contains("stack traceback:"));
+
+    // Test traceback inside a function
+    let get_traceback = lua.create_function(|lua, (msg, level): (Option<StdString>, usize)| {
+        lua.traceback(msg.as_deref(), level)
+    })?;
+    lua.globals().set("get_traceback", get_traceback)?;
+
+    lua.load(
+        r#"
+        local function foo()
+            -- Level 1 is inside foo (the caller)
+            local traceback = get_traceback(nil, 1)
+            return traceback
+        end
+        local function bar()
+            local result = foo()
+            return result
+        end
+        local function baz()
+            local result = bar()
+            return result
+        end
+
+        local traceback = baz()
+        assert(traceback:match("in %a+ 'foo'"))
+        assert(traceback:match("in %a+ 'bar'"))
+        assert(traceback:match("in %a+ 'baz'"))
+    "#,
+    )
+    .exec()?;
+
+    // Test traceback at different levels
+    lua.load(
+        r#"
+        local function foo()
+            local tb0 = get_traceback(nil, 0)
+            local tb1 = get_traceback(nil, 1)
+            local tb2 = get_traceback(nil, 2)
+            return tb0, tb1, tb2
+        end
+        local function bar()
+            local tb0, tb1, tb2 = foo()
+            return tb0, tb1, tb2
+        end
+
+        local tb0, tb1, tb2 = bar()
+
+        assert(tb0:match("in %a+ 'get_traceback'"))
+        assert(tb0:match("in %a+ 'foo'"))
+
+        assert(not tb1:match("in %a+ 'get_traceback'"))
+        assert(tb1:match("in %a+ 'foo'"))
+
+        assert(not tb2:match("in %a+ 'foo'"))
+        assert(tb1:match("in %a+ 'bar'"))
     "#,
     )
     .exec()?;

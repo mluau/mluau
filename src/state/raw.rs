@@ -24,7 +24,7 @@ use crate::thread::Thread;
 use crate::traits::IntoLua;
 use crate::types::{
     AppDataRef, AppDataRefMut, Callback, CallbackUpvalue, DestructedUserdata, Integer, LightUserData,
-    MaybeSend, ReentrantMutex, RegistryKey, ValueRef, XRc,
+    LuaType, MaybeSend, ReentrantMutex, RegistryKey, ValueRef, XRc,
 };
 
 #[cfg(feature = "luau")]
@@ -903,16 +903,16 @@ impl RawLua {
     }
 
     /// See [`Lua::create_string`]
-    pub(crate) unsafe fn create_string(&self, s: impl AsRef<[u8]>) -> Result<String> {
+    pub(crate) unsafe fn create_string(&self, s: &[u8]) -> Result<String> {
         let state = self.state();
         if self.unlikely_memory_error() {
-            push_string(state, s.as_ref(), false)?;
+            push_string(state, s, false)?;
             return Ok(String(self.pop_ref()));
         }
 
         let _sg = StackGuard::new(state);
         check_stack(state, 3)?;
-        push_string(state, s.as_ref(), true)?;
+        push_string(state, s, true)?;
         Ok(String(self.pop_ref()))
     }
 
@@ -1025,6 +1025,46 @@ impl RawLua {
         let thread = Thread(self.pop_ref(), thread_state);
         ffi::lua_xpush(self.ref_thread(func.0.aux_thread), thread_state, func.0.index);
         Ok(thread)
+    }
+
+    /// Pushes a primitive type value onto the Lua stack.
+    pub(crate) unsafe fn push_primitive_type<T: LuaType>(&self, state: *mut ffi::lua_State) -> bool {
+        match T::TYPE_ID {
+            ffi::LUA_TBOOLEAN => {
+                ffi::lua_pushboolean(state, 0);
+            }
+            ffi::LUA_TLIGHTUSERDATA => {
+                ffi::lua_pushlightuserdata(state, ptr::null_mut());
+            }
+            ffi::LUA_TNUMBER => {
+                ffi::lua_pushnumber(state, 0.);
+            }
+            #[cfg(feature = "luau")]
+            ffi::LUA_TVECTOR => {
+                #[cfg(not(feature = "luau-vector4"))]
+                ffi::lua_pushvector(state, 0., 0., 0.);
+                #[cfg(feature = "luau-vector4")]
+                ffi::lua_pushvector(state, 0., 0., 0., 0.);
+            }
+            ffi::LUA_TSTRING => {
+                ffi::lua_pushstring(state, b"\0" as *const u8 as *const _);
+            }
+            ffi::LUA_TFUNCTION => {
+                unsafe extern "C-unwind" fn func(_state: *mut ffi::lua_State) -> c_int {
+                    0
+                }
+                ffi::lua_pushcfunction(state, func);
+            }
+            ffi::LUA_TTHREAD => {
+                ffi::lua_pushthread(state);
+            }
+            #[cfg(feature = "luau")]
+            ffi::LUA_TBUFFER => {
+                ffi::lua_newbuffer(state, 0);
+            }
+            _ => return false,
+        }
+        true
     }
 
     /// Pushes a value that implements `IntoLua` onto the Lua stack.
@@ -1983,10 +2023,6 @@ impl RawLua {
     #[inline]
     pub(crate) fn is_yieldable(&self) -> bool {
         unsafe { ffi::lua_isyieldable(self.state()) != 0 }
-    }
-
-    pub(crate) unsafe fn traceback(&self) -> Result<StdString> {
-        self.traceback_at(self.state())
     }
 
     pub(crate) unsafe fn traceback_at(&self, state: *mut ffi::lua_State) -> Result<StdString> {

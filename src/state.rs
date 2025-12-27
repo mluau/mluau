@@ -922,7 +922,7 @@ impl Lua {
         }
     }
 
-    /// Gets information about the interpreter runtime stack at a given level.
+    /// Gets information about the interpreter runtime stack at the given level.
     ///
     /// This function calls callback `f`, passing the [`Debug`] structure that can be used to get
     /// information about the function executing at a given level.
@@ -943,6 +943,26 @@ impl Lua {
             }
 
             Some(f(&Debug::new(&lua, level, &mut ar)))
+        }
+    }
+
+    /// Creates a traceback of the call stack at the given level.
+    ///
+    /// The `msg` parameter, if provided, is added at the beginning of the traceback.
+    /// The `level` parameter works the same way as in [`Lua::inspect_stack`].
+    pub fn traceback(&self, msg: Option<&str>, level: usize) -> Result<String> {
+        let lua = self.lock();
+        unsafe {
+            check_stack(lua.state(), 3)?;
+            protect_lua!(lua.state(), 0, 1, |state| {
+                let msg = match msg {
+                    Some(s) => ffi::lua_pushlstring(state, s.as_ptr() as *const c_char, s.len()),
+                    None => ptr::null(),
+                };
+                // `protect_lua` adds it's own call frame, so we need to increase level by 1
+                ffi::luaL_traceback(state, state, msg, (level + 1) as c_int);
+            })?;
+            Ok(String(lua.pop_ref()))
         }
     }
 
@@ -1220,7 +1240,7 @@ impl Lua {
     /// and `&String`, you can also pass plain `&[u8]` here.
     #[inline]
     pub fn create_string(&self, s: impl AsRef<[u8]>) -> Result<String> {
-        unsafe { self.lock().create_string(s) }
+        unsafe { self.lock().create_string(s.as_ref()) }
     }
 
     /// Creates and returns a Luau [buffer] object from a byte slice of data.
@@ -1565,7 +1585,27 @@ impl Lua {
         unsafe { self.lock().make_userdata(UserDataStorage::new(ud)) }
     }
 
-    /// Sets the metatable for a Lua builtin type.
+    /// Gets the metatable of a Lua built-in (primitive) type.
+    ///
+    /// The metatable is shared by all values of the given type.
+    ///
+    /// See [`Lua::set_type_metatable`] for examples.
+    #[allow(private_bounds)]
+    pub fn type_metatable<T: LuaType>(&self) -> Option<Table> {
+        let lua = self.lock();
+        let state = lua.state();
+        unsafe {
+            let _sg = StackGuard::new(state);
+            assert_stack(state, 2);
+
+            if lua.push_primitive_type::<T>(state) && ffi::lua_getmetatable(state, -1) != 0 {
+                return Some(Table(lua.pop_ref_at(state)));
+            }
+        }
+        None
+    }
+
+    /// Sets the metatable for a Lua built-in (primitive) type.
     ///
     /// The metatable will be shared by all values of the given type.
     ///
@@ -1592,44 +1632,13 @@ impl Lua {
             let _sg = StackGuard::new(state);
             assert_stack(state, 2);
 
-            match T::TYPE_ID {
-                ffi::LUA_TBOOLEAN => {
-                    ffi::lua_pushboolean(state, 0);
+            if lua.push_primitive_type::<T>(state) {
+                match metatable {
+                    Some(metatable) => lua.push_ref_at(&metatable.0, state),
+                    None => ffi::lua_pushnil(state),
                 }
-                ffi::LUA_TLIGHTUSERDATA => {
-                    ffi::lua_pushlightuserdata(state, ptr::null_mut());
-                }
-                ffi::LUA_TNUMBER => {
-                    ffi::lua_pushnumber(state, 0.);
-                }
-                #[cfg(feature = "luau")]
-                ffi::LUA_TVECTOR => {
-                    #[cfg(not(feature = "luau-vector4"))]
-                    ffi::lua_pushvector(state, 0., 0., 0.);
-                    #[cfg(feature = "luau-vector4")]
-                    ffi::lua_pushvector(state, 0., 0., 0., 0.);
-                }
-                ffi::LUA_TSTRING => {
-                    ffi::lua_pushstring(state, b"\0" as *const u8 as *const _);
-                }
-                ffi::LUA_TFUNCTION => match self.load("function() end").eval::<Function>() {
-                    Ok(func) => lua.push_ref_at(&func.0, state),
-                    Err(_) => return,
-                },
-                ffi::LUA_TTHREAD => {
-                    ffi::lua_pushthread(state);
-                }
-                #[cfg(feature = "luau")]
-                ffi::LUA_TBUFFER => {
-                    ffi::lua_newbuffer(state, 0);
-                }
-                _ => return,
+                ffi::lua_setmetatable(state, -2);
             }
-            match metatable {
-                Some(metatable) => lua.push_ref_at(&metatable.0, state),
-                None => ffi::lua_pushnil(state),
-            }
-            ffi::lua_setmetatable(state, -2);
         }
     }
 
@@ -2213,15 +2222,6 @@ impl Lua {
     #[inline]
     pub fn is_yieldable(&self) -> bool {
         self.lock_gc_safe().is_yieldable()
-    }
-
-    /// Returns a traceback of the currently running Lua thread/coroutine
-    ///
-    /// This returns an error if there is not enough stack space to create the traceback
-    #[inline]
-    pub fn traceback(&self) -> Result<StdString> {
-        let raw = self.lock();
-        unsafe { raw.traceback() }
     }
 
     /// Returns the address of the Lua main state as a string
