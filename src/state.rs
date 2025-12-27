@@ -221,12 +221,6 @@ impl Lua {
         }
         lua.lock().mark_safe();
 
-        #[cfg(feature = "luau-lute-autoload")]
-        {
-            // Autoload lute runtime here
-            mlua_expect!(lua.lock().setup_lute_runtime(), "Error loading lute runtime");
-        }
-
         Ok(lua)
     }
 

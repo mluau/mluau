@@ -900,7 +900,7 @@ impl AnyUserData {
     /// Returns the raw metatable of this [`AnyUserData`].
     /// without any additional checks.
     ///
-    /// This is mainly useful with lute and luau-created userdata
+    /// This is mainly useful with luau-created userdata
     /// which do not have a type id from mlua.
     ///
     /// Returns ``UserDataTypeMismatch`` if the userdata is empty or has no metatable.

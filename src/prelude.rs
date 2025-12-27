@@ -36,9 +36,3 @@ pub use crate::{
     DeserializeOptions as LuaDeserializeOptions, LuaSerdeExt, SerializableValue as LuaSerializableValue,
     SerializeOptions as LuaSerializeOptions,
 };
-
-#[cfg(feature = "luau-lute")]
-pub use crate::luau::lute::{
-    LuteChildVmType as LuaLuteChildVmType, LuteRuntimeHandle as LuaLuteRuntimeHandle,
-    LuteStdLib as LuaLuteStdLib,
-};

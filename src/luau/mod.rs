@@ -155,6 +155,3 @@ unsafe extern "C-unwind" fn lua_loadstring(state: *mut ffi::lua_State) -> c_int 
 mod heap_dump;
 mod json;
 mod require;
-
-#[cfg(feature = "luau-lute")]
-pub mod lute;

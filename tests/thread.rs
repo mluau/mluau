@@ -377,7 +377,7 @@ fn test_thread_yield_args() -> Result<()> {
 }
 
 #[test]
-#[cfg(all(not(feature = "lua51"), not(feature = "luajit"), not(feature = "luau-lute")))]
+#[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 fn test_continuation() {
     let lua = Lua::new();
     // No yielding continuation fflag test

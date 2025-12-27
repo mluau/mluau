@@ -132,31 +132,6 @@ jobs:
           TRYBUILD=overwrite cargo test --no-default-features --features "${{ matrix.lua }},vendored,send,serde,macros" --tests -- --ignored
         shell: bash
 
-  test_lute:
-    name: Test Lute
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        rust: [stable, nightly]
-        lua: [luau-lute-prebuilt]
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-    steps:
-      - uses: actions/checkout@main
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ matrix.rust }}
-          target: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-      - name: Run ${{ matrix.lua }} tests
-        run: |
-          cargo test --no-default-features --features "${{ matrix.lua }},vendored" --release
-          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers" --release 
-          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send" --release
-        shell: bash
-
   test_with_sanitizer:
     name: Test with address sanitizer
     runs-on: ${{ matrix.os }}

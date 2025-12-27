@@ -25,9 +25,6 @@ use crate::MultiValue;
 
 use super::{Lua, WeakLua};
 
-#[cfg(feature = "luau-lute")]
-use crate::luau::lute::{LuteChildVmType, LuteRuntimeHandle};
-
 // Unique key to store `ExtraData` in the registry
 static EXTRA_REGISTRY_KEY: u8 = 0;
 
@@ -135,19 +132,6 @@ pub(crate) struct ExtraData {
     #[cfg(feature = "luau-jit")]
     pub(super) enable_jit: bool,
 
-    #[cfg(feature = "luau-lute")]
-    pub(crate) lute_handle: Option<LuteRuntimeHandle>,
-
-    #[cfg(all(feature = "luau-lute", feature = "send"))]
-    pub(crate) lute_runtimeinitter:
-        Option<Box<dyn Fn(&Lua, &Lua, LuteChildVmType) -> Result<()> + Send + Sync + 'static>>,
-    #[cfg(all(feature = "luau-lute", not(feature = "send")))]
-    pub(crate) lute_runtimeinitter: Option<Box<dyn Fn(&Lua, &Lua, LuteChildVmType) -> Result<()> + 'static>>,
-
-    // Child lua VM's may not be dropped from mluau
-    #[cfg(feature = "luau-lute")]
-    pub(crate) no_drop: bool,
-
     // Disable error userdata in mlua errors
     pub disable_error_userdata: bool,
     // Optional fallback lua string
@@ -246,12 +230,6 @@ impl ExtraData {
             enable_jit: true,
             #[cfg(feature = "luau")]
             running_gc: false,
-            #[cfg(feature = "luau-lute")]
-            lute_handle: None,
-            #[cfg(feature = "luau-lute")]
-            lute_runtimeinitter: None,
-            #[cfg(feature = "luau-lute")]
-            no_drop: false,
             #[cfg(not(feature = "lua51"))]
             yielded_values: None,
             disable_error_userdata: false,

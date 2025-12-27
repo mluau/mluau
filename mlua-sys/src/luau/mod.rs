@@ -15,8 +15,3 @@ pub mod luacode;
 pub mod luacodegen;
 pub mod lualib;
 pub mod luarequire;
-
-#[cfg(feature = "luau-lute")]
-pub mod lutec;
-#[cfg(feature = "luau-lute")]
-pub use lutec::*;
