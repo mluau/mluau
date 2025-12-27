@@ -233,7 +233,11 @@ impl IntoLuaMulti for &MultiValue {
     }
 
     #[inline]
-    unsafe fn push_into_specified_stack_multi(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<c_int> {
+    unsafe fn push_into_specified_stack_multi(
+        self,
+        lua: &RawLua,
+        state: *mut ffi::lua_State,
+    ) -> Result<c_int> {
         let nresults = self.len() as i32;
         check_stack(state, nresults + 1)?;
         for value in &self.0 {
