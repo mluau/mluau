@@ -2,6 +2,8 @@ use std::fmt;
 use std::os::raw::{c_int, c_void};
 use std::string::String as StdString;
 
+#[cfg(feature = "luau")]
+use crate::MaybeSend;
 use crate::error::{Error, Result};
 use crate::function::Function;
 use crate::state::RawLua;
@@ -101,6 +103,81 @@ impl Thread {
             let nresults = ffi::lua_gettop(thread_state);
             R::from_specified_stack_multi(nresults, &lua, thread_state)
         }
+    }
+
+    /// Returns a reference to the set thread data.
+    /// 
+    /// Returns `None` if no data was set for the current lua thread or if the provided type
+    /// does not match the stored data type.
+    ///
+    /// This is a Luau specific extension.
+    #[cfg(feature = "luau")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+    pub fn thread_data<T: 'static + MaybeSend>(&self) -> Option<&T> {
+        let _lua = self.0.lua.lock();
+        let thread_state = self.state();
+        unsafe {
+            let current = ffi::lua_getthreaddata(thread_state);
+            if current.is_null() {
+                return None;
+            }
+            let thread_data = &*(current as *mut crate::types::ThreadData);
+            let any_ref = thread_data.inner.as_ref();
+            match any_ref.downcast_ref::<T>() {
+                Some(typed_ref) => Some(typed_ref),
+                None => None,
+            }
+        }
+    }
+
+    /// Takes out the thread data, consuming it.
+    /// 
+    /// This is a Luau specific extension.
+    #[cfg(feature = "luau")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+    pub fn take_thread_data<T: 'static + MaybeSend>(&self) -> Option<T> {
+        let _lua = self.0.lua.lock();
+        let thread_state = self.state();
+        unsafe {
+            let current = ffi::lua_getthreaddata(thread_state);
+            if current.is_null() {
+                return None;
+            }
+            let thread_data = Box::from_raw(current as *mut crate::types::ThreadData);
+            ffi::lua_setthreaddata(thread_state, std::ptr::null_mut());
+            let any_box = thread_data.inner;
+            match any_box.downcast::<T>() {
+                Ok(typed_box) => Some(*typed_box),
+                Err(_) => None,
+            }
+        }
+    }
+
+    /// Sets the thread data
+    /// 
+    /// Errors if thread data was already set for the current lua thread.
+    ///
+    /// This is a Luau specific extension.
+    #[cfg(feature = "luau")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+    pub fn set_thread_data<T: 'static + MaybeSend>(&self, data: T) -> Result<()> {
+        let lua = self.0.lua.lock();
+        let thread_state = self.state();
+        unsafe {
+            let current = ffi::lua_getthreaddata(thread_state);
+            if !current.is_null() {
+                return Err(Error::runtime("thread data was already set for this thread"));
+            }
+            let boxed = Box::new(crate::types::ThreadData { inner: Box::new(data)});
+            ffi::lua_setthreaddata(
+                thread_state,
+                Box::into_raw(boxed) as *mut c_void,
+            );
+            let extra = lua.extra();
+            (*extra).have_thread_data = true;
+            (*ffi::lua_callbacks(lua.main_state())).userthread = Some(crate::Lua::userthread_proc);
+        }
+        Ok(())
     }
 
     /// Resumes execution of this thread.

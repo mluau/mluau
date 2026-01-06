@@ -36,6 +36,10 @@ use crate::{debug::HookTriggers, types::HookKind};
 
 #[cfg(any(feature = "luau", doc))]
 use crate::{buffer::Buffer, chunk::Compiler};
+#[cfg(feature = "luau")]
+use crate::types::ThreadData;
+#[cfg(feature = "luau")]
+use std::ffi::c_void;
 
 #[cfg(feature = "serde")]
 use serde::Serialize;
@@ -794,7 +798,7 @@ impl Lua {
     }
 
     #[cfg(feature = "luau")]
-    unsafe extern "C-unwind" fn userthread_proc(parent: *mut ffi::lua_State, child: *mut ffi::lua_State) {
+    pub(crate) unsafe extern "C-unwind" fn userthread_proc(parent: *mut ffi::lua_State, child: *mut ffi::lua_State) {
         let extra = ExtraData::get(child);
         if !parent.is_null() {
             // Thread is created
@@ -817,6 +821,23 @@ impl Lua {
             })
         } else {
             // Thread is about to be collected
+
+            let tdp = ffi::lua_getthreaddata(child);
+            if !tdp.is_null() {
+                ffi::lua_setthreaddata(child, ptr::null_mut());
+                // We need to wrap the threaddata drop in non-unwind function as it's not safe to unwind when
+                // Luau GC is running.
+                // This will trigger `abort()` if dropping ThreadData panics.
+                unsafe extern "C" fn drop_threaddata(tdp: *mut c_void) {
+                    let td = Box::from_raw(tdp as *mut ThreadData); 
+                    drop(td);
+                }
+
+                (*extra).running_gc = true; 
+                drop_threaddata(tdp);
+                (*extra).running_gc = false;
+            }
+
             let callback = match (*extra).thread_collection_callback {
                 Some(ref cb) => cb.clone(),
                 None => return,
@@ -841,7 +862,8 @@ impl Lua {
     /// Removes any thread creation or collection callbacks previously set by
     /// [`Lua::set_thread_creation_callback`] or [`Lua::set_thread_collection_callback`].
     ///
-    /// This function has no effect if a thread callbacks were not previously set.
+    /// This function has no effect if a thread callbacks were not previously set or if 
+    /// thread data was ever used.
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn remove_thread_callbacks(&self) {
@@ -850,7 +872,9 @@ impl Lua {
             let extra = lua.extra.get();
             (*extra).thread_creation_callback = None;
             (*extra).thread_collection_callback = None;
-            (*ffi::lua_callbacks(lua.main_state())).userthread = None;
+            if !(*extra).have_thread_data {
+                (*ffi::lua_callbacks(lua.main_state())).userthread = None;
+            }
         }
     }
 

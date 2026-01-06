@@ -622,6 +622,7 @@ fn test_continuation() {
 }
 
 //#[test]
+#[allow(dead_code)] // only enable when wanted, not in CI/default
 fn test_large_thread_creation() {
     let lua = Lua::new();
     lua.set_memory_limit(100_000_000_000).unwrap();
@@ -841,4 +842,61 @@ fn test_large_thread_creation() {
         let v = th.resume::<String>(v).expect("Failed to load continuation");
         assert!(v.contains("Reached continuation which should panic!"));
     }
+}
+
+#[test]
+#[cfg(feature = "luau")]
+pub fn test_thread_set_thread_data() -> Result<()> {
+    use std::sync::{Arc, atomic::AtomicU64};
+
+    let lua = Lua::new();
+
+    let thread = lua.create_thread(lua.load(r#""#).into_function()?)?;
+
+    let count = Arc::new(AtomicU64::new(0));
+    pub struct TestData {
+        pub value: Arc<AtomicU64>,
+    }
+
+    impl Drop for TestData {
+        fn drop(&mut self) {
+            self.value.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    thread.set_thread_data(TestData {
+        value: count.clone(),
+    })?;
+
+    // Check if we can get a ref to TestData
+    {
+        let data = thread.thread_data::<TestData>().ok_or(Error::runtime("No thread data found"))?;
+        assert!(Arc::ptr_eq(&data.value, &count));
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    drop(thread); // This should lead to thread being collected 
+
+    lua.gc_collect()?;
+    lua.gc_collect()?;
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    let thread_2 = lua.create_thread(lua.load(r#""#).into_function()?)?;
+    let count_2 = Arc::new(AtomicU64::new(0));
+    thread_2.set_thread_data(TestData {
+        value: count_2.clone(),
+    })?;
+
+    {
+        let data = thread_2.take_thread_data::<TestData>().ok_or(Error::runtime("No thread data found"))?;
+        assert!(Arc::ptr_eq(&data.value, &count_2));
+        assert_eq!(count_2.load(std::sync::atomic::Ordering::SeqCst), 0);
+        thread_2.set_thread_data(data)?; // Put it back
+    }
+
+    drop(lua); // This should also lead to thread being collected
+
+    assert_eq!(count_2.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    Ok(())
 }

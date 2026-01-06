@@ -122,7 +122,8 @@ pub(crate) struct ExtraData {
     pub(super) thread_creation_callback: Option<crate::types::ThreadCreationCallback>,
     #[cfg(feature = "luau")]
     pub(super) thread_collection_callback: Option<crate::types::ThreadCollectionCallback>,
-
+    #[cfg(feature = "luau")]
+    pub(crate) have_thread_data: bool, // It is a memory leak in this case
     #[cfg(feature = "luau")]
     pub(crate) running_gc: bool,
     #[cfg(feature = "luau")]
@@ -222,6 +223,8 @@ impl ExtraData {
             thread_creation_callback: None,
             #[cfg(feature = "luau")]
             thread_collection_callback: None,
+            #[cfg(feature = "luau")]
+            have_thread_data: false,
             #[cfg(feature = "luau")]
             sandboxed: false,
             #[cfg(feature = "luau")]

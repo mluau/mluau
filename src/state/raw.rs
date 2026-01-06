@@ -87,7 +87,7 @@ impl Drop for RawLua {
             {
                 // Reset any callbacks
                 (*ffi::lua_callbacks(self.main_state())).interrupt = None;
-                (*ffi::lua_callbacks(self.main_state())).userthread = None;
+                //(*ffi::lua_callbacks(self.main_state())).userthread = None;
             }
 
             ffi::lua_close(self.main_state());

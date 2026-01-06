@@ -22,6 +22,14 @@ pub type Integer = ffi::lua_Integer;
 /// Type of Lua floating point numbers.
 pub type Number = ffi::lua_Number;
 
+#[cfg(feature = "luau")]
+pub(crate) struct ThreadData {
+    #[cfg(feature = "send")]
+    pub(crate) inner: Box<dyn std::any::Any + Send>,
+    #[cfg(not(feature = "send"))]
+    pub(crate) inner: Box<dyn std::any::Any>,
+}
+
 /// A "light" userdata value. Equivalent to an unmanaged raw pointer.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct LightUserData(pub *mut c_void);
