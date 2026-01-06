@@ -869,7 +869,7 @@ pub fn test_thread_set_thread_data() -> Result<()> {
     })?;
 
     // Check if we can get a ref to TestData
-    {
+    let weak = {
         use mluau::XRc;
 
         let data = thread.thread_data::<TestData>().ok_or(Error::runtime("No thread data found"))?;
@@ -884,14 +884,21 @@ pub fn test_thread_set_thread_data() -> Result<()> {
         drop(data); // Drop the ref we got earlier
 
         // Put it back
+        let weak = Arc::downgrade(&take_data.value);
+        assert_eq!(weak.strong_count(), 2); 
         let take_data = XRc::into_inner(take_data).ok_or(Error::runtime("Failed to get inner TestData"))?;
         thread.set_thread_data(take_data)?;
-    }
+        assert_eq!(weak.strong_count(), 2);
+        weak
+    };
 
     drop(thread); // This should lead to thread being collected 
 
     lua.gc_collect()?;
     lua.gc_collect()?;
+
+    assert_eq!(weak.strong_count(), 1); 
+
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
 
     let thread_2 = lua.create_thread(lua.load(r#""#).into_function()?)?;

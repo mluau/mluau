@@ -26,7 +26,7 @@ pub type Number = ffi::lua_Number;
 #[cfg(feature = "luau")]
 pub(crate) struct ThreadData {
     #[cfg(feature = "send")]
-    pub(crate) inner: XRc<dyn std::any::Any + Send>,
+    pub(crate) inner: XRc<dyn std::any::Any + Send + Sync>,
     #[cfg(not(feature = "send"))]
     pub(crate) inner: XRc<dyn std::any::Any>,
 }
@@ -143,6 +143,18 @@ impl<T: Send> MaybeSend for T {}
 pub trait MaybeSend {}
 #[cfg(not(feature = "send"))]
 impl<T> MaybeSend for T {}
+
+/// A trait that adds `Sync` requirement if `send` feature is enabled.
+#[cfg(feature = "send")]
+pub trait MaybeSync: Sync {}
+#[cfg(feature = "send")]
+impl<T: Sync> MaybeSync for T {}
+
+/// A trait that adds `Sync` requirement if `send` feature is enabled.
+#[cfg(not(feature = "send"))]
+pub trait MaybeSync {}
+#[cfg(not(feature = "send"))]
+impl<T> MaybeSync for T {}
 
 pub(crate) struct DestructedUserdata;
 

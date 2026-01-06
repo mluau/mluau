@@ -9,7 +9,7 @@ use crate::function::Function;
 use crate::state::RawLua;
 use crate::traits::{FromLuaMulti, IntoLuaMulti};
 #[cfg(feature = "luau")]
-use crate::types::XRc;
+use crate::types::{MaybeSync, XRc};
 use crate::types::{LuaType, ValueRef};
 use crate::util::{check_stack, error_traceback_thread, pop_error, StackGuard};
 
@@ -118,7 +118,7 @@ impl Thread {
     /// This is a Luau specific extension.
     #[cfg(feature = "luau")]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn thread_data<T: 'static + MaybeSend>(&self) -> Option<XRc<T>> {
+    pub fn thread_data<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<XRc<T>> {
         let _lua = self.0.lua.lock();
         let thread_state = self.state();
         unsafe {
@@ -139,7 +139,7 @@ impl Thread {
     /// This is a Luau specific extension.
     #[cfg(feature = "luau")]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn take_thread_data<T: 'static + MaybeSend>(&self) -> Option<XRc<T>> {
+    pub fn take_thread_data<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<XRc<T>> {
         let _lua = self.0.lua.lock();
         let thread_state = self.state();
         unsafe {
@@ -164,7 +164,7 @@ impl Thread {
     /// This is a Luau specific extension.
     #[cfg(feature = "luau")]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn set_thread_data<T: 'static + MaybeSend>(&self, data: T) -> Result<()> {
+    pub fn set_thread_data<T: 'static + MaybeSend + MaybeSync>(&self, data: T) -> Result<()> {
         let lua = self.0.lua.lock();
         let thread_state = self.state();
         unsafe {
