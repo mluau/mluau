@@ -34,10 +34,10 @@ use crate::value::{Nil, Value};
 #[cfg(not(feature = "luau"))]
 use crate::{debug::HookTriggers, types::HookKind};
 
-#[cfg(any(feature = "luau", doc))]
-use crate::{buffer::Buffer, chunk::Compiler};
 #[cfg(feature = "luau")]
 use crate::types::ThreadData;
+#[cfg(any(feature = "luau", doc))]
+use crate::{buffer::Buffer, chunk::Compiler};
 #[cfg(feature = "luau")]
 use std::ffi::c_void;
 
@@ -798,7 +798,10 @@ impl Lua {
     }
 
     #[cfg(feature = "luau")]
-    pub(crate) unsafe extern "C-unwind" fn userthread_proc(parent: *mut ffi::lua_State, child: *mut ffi::lua_State) {
+    pub(crate) unsafe extern "C-unwind" fn userthread_proc(
+        parent: *mut ffi::lua_State,
+        child: *mut ffi::lua_State,
+    ) {
         let extra = ExtraData::get(child);
         if !parent.is_null() {
             // Thread is created
@@ -829,11 +832,11 @@ impl Lua {
                 // Luau GC is running.
                 // This will trigger `abort()` if dropping ThreadData panics.
                 unsafe extern "C" fn drop_threaddata(tdp: *mut c_void) {
-                    let td = Box::from_raw(tdp as *mut ThreadData); 
+                    let td = Box::from_raw(tdp as *mut ThreadData);
                     drop(td);
                 }
 
-                (*extra).running_gc = true; 
+                (*extra).running_gc = true;
                 drop_threaddata(tdp);
                 (*extra).running_gc = false;
             }
@@ -862,7 +865,7 @@ impl Lua {
     /// Removes any thread creation or collection callbacks previously set by
     /// [`Lua::set_thread_creation_callback`] or [`Lua::set_thread_collection_callback`].
     ///
-    /// This function has no effect if a thread callbacks were not previously set or if 
+    /// This function has no effect if a thread callbacks were not previously set or if
     /// thread data was ever used.
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]

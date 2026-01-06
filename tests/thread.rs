@@ -847,7 +847,8 @@ fn test_large_thread_creation() {
 #[test]
 #[cfg(feature = "luau")]
 pub fn test_thread_set_thread_data() -> Result<()> {
-    use std::sync::{Arc, atomic::AtomicU64};
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
 
     let lua = Lua::new();
 
@@ -864,20 +865,22 @@ pub fn test_thread_set_thread_data() -> Result<()> {
         }
     }
 
-    thread.set_thread_data(TestData {
-        value: count.clone(),
-    })?;
+    thread.set_thread_data(TestData { value: count.clone() })?;
 
     // Check if we can get a ref to TestData
     let weak = {
         use mluau::XRc;
 
-        let data = thread.thread_data::<TestData>().ok_or(Error::runtime("No thread data found"))?;
+        let data = thread
+            .thread_data::<TestData>()
+            .ok_or(Error::runtime("No thread data found"))?;
         assert!(Arc::ptr_eq(&data.value, &count));
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 0);
 
         // Now ensure take works with the ref from above also being alive
-        let take_data = thread.take_thread_data::<TestData>().ok_or(Error::runtime("No thread data found"))?;
+        let take_data = thread
+            .take_thread_data::<TestData>()
+            .ok_or(Error::runtime("No thread data found"))?;
         assert!(Arc::ptr_eq(&take_data.value, &count));
         assert!(Arc::ptr_eq(&data.value, &count));
         assert_eq!(data.value.load(std::sync::atomic::Ordering::SeqCst), 0);
@@ -885,19 +888,19 @@ pub fn test_thread_set_thread_data() -> Result<()> {
 
         // Put it back
         let weak = Arc::downgrade(&take_data.value);
-        assert_eq!(weak.strong_count(), 2); 
+        assert_eq!(weak.strong_count(), 2);
         let take_data = XRc::into_inner(take_data).ok_or(Error::runtime("Failed to get inner TestData"))?;
         thread.set_thread_data(take_data)?;
         assert_eq!(weak.strong_count(), 2);
         weak
     };
 
-    drop(thread); // This should lead to thread being collected 
+    drop(thread); // This should lead to thread being collected
 
     lua.gc_collect()?;
     lua.gc_collect()?;
 
-    assert_eq!(weak.strong_count(), 1); 
+    assert_eq!(weak.strong_count(), 1);
 
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
 
@@ -908,7 +911,9 @@ pub fn test_thread_set_thread_data() -> Result<()> {
     })?;
 
     {
-        let data = thread_2.take_thread_data::<TestData>().ok_or(Error::runtime("No thread data found"))?;
+        let data = thread_2
+            .take_thread_data::<TestData>()
+            .ok_or(Error::runtime("No thread data found"))?;
         assert!(Arc::ptr_eq(&data.value, &count_2));
         assert_eq!(count_2.load(std::sync::atomic::Ordering::SeqCst), 0);
         thread_2.set_thread_data(data)?; // Put it back

@@ -2,16 +2,16 @@ use std::fmt;
 use std::os::raw::{c_int, c_void};
 use std::string::String as StdString;
 
-#[cfg(feature = "luau")]
-use crate::MaybeSend;
 use crate::error::{Error, Result};
 use crate::function::Function;
 use crate::state::RawLua;
 use crate::traits::{FromLuaMulti, IntoLuaMulti};
+use crate::types::{LuaType, ValueRef};
 #[cfg(feature = "luau")]
 use crate::types::{MaybeSync, XRc};
-use crate::types::{LuaType, ValueRef};
 use crate::util::{check_stack, error_traceback_thread, pop_error, StackGuard};
+#[cfg(feature = "luau")]
+use crate::MaybeSend;
 
 use crate::WeakLua;
 #[cfg(not(feature = "luau"))]
@@ -108,10 +108,10 @@ impl Thread {
     }
 
     /// Returns the thread data without removing it from the thread.
-    /// 
+    ///
     /// Note that the returned value is a *XRc<T>* to avoid dangling references if
     /// the thread data is removed while there are still references to it.
-    /// 
+    ///
     /// Returns `None` if no data was set for the current lua thread or if the provided type
     /// does not match the stored data type.
     ///
@@ -135,7 +135,7 @@ impl Thread {
     }
 
     /// Takes out the thread data, consuming it.
-    /// 
+    ///
     /// This is a Luau specific extension.
     #[cfg(feature = "luau")]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
@@ -158,7 +158,7 @@ impl Thread {
     }
 
     /// Sets the thread data. The set thread data will automatically be dropped upon Luau GC
-    /// 
+    ///
     /// Errors if thread data was already set for the current lua thread.
     ///
     /// This is a Luau specific extension.
@@ -172,14 +172,15 @@ impl Thread {
             if !current.is_null() {
                 return Err(Error::runtime("thread data was already set for this thread"));
             }
-            let boxed = Box::new(crate::types::ThreadData { inner: XRc::new(data)});
-            ffi::lua_setthreaddata(
-                thread_state,
-                Box::into_raw(boxed) as *mut c_void,
-            );
+            let boxed = Box::new(crate::types::ThreadData {
+                inner: XRc::new(data),
+            });
+            ffi::lua_setthreaddata(thread_state, Box::into_raw(boxed) as *mut c_void);
             let extra = lua.extra();
-            (*extra).have_thread_data = true;
-            (*ffi::lua_callbacks(lua.main_state())).userthread = Some(crate::Lua::userthread_proc);
+            if !(*extra).have_thread_data {
+                (*extra).have_thread_data = true;
+                (*ffi::lua_callbacks(lua.main_state())).userthread = Some(crate::Lua::userthread_proc);
+            }
         }
         Ok(())
     }

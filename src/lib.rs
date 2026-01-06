@@ -124,8 +124,8 @@ pub use crate::{
     chunk::{CompileConstant, Compiler},
     function::CoverageInfo,
     luau::{HeapDump, NavigateError, Require, TextRequirer},
+    types::XRc,
     vector::Vector,
-    types::XRc
 };
 
 #[cfg(feature = "serde")]
