@@ -7,7 +7,8 @@ use crate::error::Result;
 use crate::state::{ExtraData, Lua, RawLua};
 
 // Re-export mutex wrappers
-pub(crate) use sync::{ArcReentrantMutexGuard, ReentrantMutex, ReentrantMutexGuard, XRc, XWeak};
+pub use sync::XRc;
+pub(crate) use sync::{ArcReentrantMutexGuard, ReentrantMutex, ReentrantMutexGuard, XWeak};
 
 pub use app_data::{AppData, AppDataRef, AppDataRefMut};
 pub use either::Either;
@@ -25,9 +26,9 @@ pub type Number = ffi::lua_Number;
 #[cfg(feature = "luau")]
 pub(crate) struct ThreadData {
     #[cfg(feature = "send")]
-    pub(crate) inner: Box<dyn std::any::Any + Send>,
+    pub(crate) inner: XRc<dyn std::any::Any + Send>,
     #[cfg(not(feature = "send"))]
-    pub(crate) inner: Box<dyn std::any::Any>,
+    pub(crate) inner: XRc<dyn std::any::Any>,
 }
 
 /// A "light" userdata value. Equivalent to an unmanaged raw pointer.

@@ -870,9 +870,22 @@ pub fn test_thread_set_thread_data() -> Result<()> {
 
     // Check if we can get a ref to TestData
     {
+        use mluau::XRc;
+
         let data = thread.thread_data::<TestData>().ok_or(Error::runtime("No thread data found"))?;
         assert!(Arc::ptr_eq(&data.value, &count));
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+        // Now ensure take works with the ref from above also being alive
+        let take_data = thread.take_thread_data::<TestData>().ok_or(Error::runtime("No thread data found"))?;
+        assert!(Arc::ptr_eq(&take_data.value, &count));
+        assert!(Arc::ptr_eq(&data.value, &count));
+        assert_eq!(data.value.load(std::sync::atomic::Ordering::SeqCst), 0);
+        drop(data); // Drop the ref we got earlier
+
+        // Put it back
+        let take_data = XRc::into_inner(take_data).ok_or(Error::runtime("Failed to get inner TestData"))?;
+        thread.set_thread_data(take_data)?;
     }
 
     drop(thread); // This should lead to thread being collected 
