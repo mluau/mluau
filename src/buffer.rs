@@ -24,6 +24,18 @@ impl Buffer {
         self.as_slice(&lua).to_vec()
     }
 
+    /// Calls a function f with the byte slice of the buffer.
+    /// 
+    /// Safety: The byte slice must not outlive the buffer.
+    pub fn with_bytes<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&[u8]) -> R,
+    {
+        let lua = self.0.lua.lock();
+        let data = self.as_slice(&lua);
+        f(data)
+    }
+
     /// Returns the length of the buffer.
     pub fn len(&self) -> usize {
         let lua = self.0.lua.lock();
