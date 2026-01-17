@@ -25,7 +25,7 @@ impl Buffer {
     }
 
     /// Calls a function f with the byte slice of the buffer.
-    /// 
+    ///
     /// Safety: The byte slice must not outlive the buffer.
     pub fn with_bytes<F, R>(&self, f: F) -> R
     where

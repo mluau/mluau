@@ -388,6 +388,7 @@ fn test_continuation() {
                 println!("Reached cont");
                 Ok(a + 39)
             },
+            Some(c"test"),
         )
         .expect("Failed to create cont_func");
 
@@ -418,6 +419,7 @@ fn test_continuation() {
         .create_function_with_continuation(
             |lua, _: ()| lua.yield_with(()),
             |_lua, _status, mv: mluau::MultiValue| Ok(mv.len()),
+            Some(c"test2"),
         )
         .expect("Failed to create cont_func");
 
@@ -450,6 +452,7 @@ fn test_continuation() {
                 println!("Reached cont");
                 Ok(a + 2)
             },
+            Some(c"test3"),
         )
         .expect("Failed to create cont_func");
 
@@ -480,6 +483,7 @@ fn test_continuation() {
                 println!("Reached cont");
                 Ok(a + 39)
             },
+            Some(c"test"),
         )
         .expect("Failed to create cont_func");
 
@@ -515,6 +519,7 @@ fn test_continuation() {
                 }
                 Err(mluau::Error::external(format!("a{}", mv.len())))
             },
+            Some(c"test4"),
         )
         .unwrap();
 
@@ -544,6 +549,7 @@ fn test_continuation() {
                 lua.yield_with((args.len() + 1, args))?; // thread state becomes LEN, LEN-1... 1
                 Ok(1_i32) // this will be ignored
             },
+            Some(c"test1"),
         )
         .expect("Failed to create cont_func");
 
@@ -594,6 +600,7 @@ fn test_continuation() {
                 #[allow(unreachable_code)]
                 Ok(())
             },
+            Some(c"test"),
         )
         .expect("Failed to create cont_func");
 
@@ -672,6 +679,7 @@ fn test_large_thread_creation() {
                     println!("Reached cont");
                     Ok(a + 2)
                 },
+                Some(c"test"),
             )
             .expect("Failed to create cont_func");
 
@@ -702,6 +710,7 @@ fn test_large_thread_creation() {
                     println!("Reached cont");
                     Ok(a + 39)
                 },
+                Some(c"test"),
             )
             .expect("Failed to create cont_func");
 
@@ -737,6 +746,7 @@ fn test_large_thread_creation() {
                     }
                     Err(mluau::Error::external(format!("a{}", mv.len())))
                 },
+                Some(c"test"),
             )
             .unwrap();
 
@@ -766,6 +776,7 @@ fn test_large_thread_creation() {
                     lua.yield_with((args.len() + 1, args))?; // thread state becomes LEN, LEN-1... 1
                     Ok(1_i32) // this will be ignored
                 },
+                Some(c"test"),
             )
             .expect("Failed to create cont_func");
 
@@ -816,6 +827,7 @@ fn test_large_thread_creation() {
                     #[allow(unreachable_code)]
                     Ok(())
                 },
+                Some(c"test"),
             )
             .expect("Failed to create cont_func");
 

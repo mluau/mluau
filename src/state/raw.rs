@@ -1139,7 +1139,7 @@ impl RawLua {
         let metatable_nrec = registry.meta_methods.len() + registry.meta_fields.len();
         push_table(state, 0, metatable_nrec, true)?;
         for (k, m) in registry.meta_methods {
-            self.push_at(state, self.create_callback(m)?)?;
+            self.push_at(state, self.create_callback_with_debug(m, std::ptr::null())?)?;
             rawset_field(state, -2, MetaMethod::validate(&k)?)?;
         }
         let mut has_name = false;
@@ -1185,7 +1185,7 @@ impl RawLua {
         if field_getters_nrec > 0 {
             push_table(state, 0, field_getters_nrec, true)?;
             for (k, m) in registry.field_getters {
-                self.push_at(state, self.create_callback(m)?)?;
+                self.push_at(state, self.create_callback_with_debug(m, std::ptr::null())?)?;
                 rawset_field(state, -2, &k)?;
             }
             for (k, v) in registry.fields {
@@ -1207,7 +1207,7 @@ impl RawLua {
         if field_setters_nrec > 0 {
             push_table(state, 0, field_setters_nrec, true)?;
             for (k, m) in registry.field_setters {
-                self.push_at(state, self.create_callback(m)?)?;
+                self.push_at(state, self.create_callback_with_debug(m, std::ptr::null())?)?;
                 rawset_field(state, -2, &k)?;
             }
             field_setters_index = Some(ffi::lua_absindex(state, -1));
@@ -1243,19 +1243,45 @@ impl RawLua {
                     push_table(state, 0, methods_nrec, true)?;
                 }
             }
-            for (k, m) in registry.methods {
-                #[cfg(not(feature = "luau"))]
-                self.push_at(state, self.create_callback(m)?)?; // without namecall support
-                #[cfg(feature = "luau")]
-                self.push_at(state, self.create_callback_namecall(m)?)?; // with namecall support
+
+            #[cfg(feature = "luau")]
+            for (k, m, dbgname) in registry.methods {
+                self.push_at(
+                    state,
+                    self.create_callback_namecall(
+                        m,
+                        dbgname.map(|x| x.as_ptr()).unwrap_or(std::ptr::null()),
+                    )?,
+                )?; // with namecall support
                 rawset_field(state, -2, &k)?;
             }
 
+            #[cfg(not(feature = "luau"))]
+            for (k, m) in registry.methods {
+                self.push_at(state, self.create_callback(m)?)?; // without namecall support
+                rawset_field(state, -2, &k)?;
+            }
+
+            #[cfg(feature = "luau")]
+            for (k, m, dbgname) in registry.functions {
+                self.push_at(
+                    state,
+                    self.create_callback_namecall(
+                        m,
+                        dbgname.map(|x| x.as_ptr()).unwrap_or(std::ptr::null()),
+                    )?,
+                )?; // with namecall support
+                rawset_field(state, -2, &k)?;
+            }
+
+            #[cfg(not(feature = "luau"))]
             for (k, m) in registry.functions {
                 #[cfg(not(feature = "luau"))]
                 self.push_at(state, self.create_callback(m)?)?; // without namecall support
                 #[cfg(feature = "luau")]
-                self.push_at(state, self.create_callback_namecall(m)?)?; // with namecall support
+                {
+                    self.push_at(state, self.create_callback_namecall(m, std::ptr::null())?)?; // with namecall support
+                }
                 rawset_field(state, -2, &k)?;
             }
 
@@ -1407,9 +1433,70 @@ impl RawLua {
         }
     }
 
+    // Creates a Function out of a Callback containing a 'static Fn and debug name
+    //
+    // Does nothing on non-luau
+    #[allow(unused_variables)]
+    pub(crate) fn create_callback_with_debug(
+        &self,
+        func: Callback,
+        debugname: *const i8,
+    ) -> Result<Function> {
+        #[cfg(not(feature = "luau"))]
+        {
+            self.create_callback(func)
+        }
+        #[cfg(feature = "luau")]
+        {
+            unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
+                let upvalue = get_userdata::<CallbackUpvalue>(state, ffi::lua_upvalueindex(1));
+                callback_error_ext_yieldable(
+                    state,
+                    (*upvalue).extra.get(),
+                    true,
+                    |extra, nargs| {
+                        // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
+                        // arguments) The lock must be already held as the callback is
+                        // executed
+                        let rawlua = (*extra).raw_lua();
+                        match (*upvalue).data {
+                            Some(ref func) => func(rawlua, nargs),
+                            None => Err(Error::CallbackDestructed),
+                        }
+                    },
+                    false,
+                )
+            }
+
+            let state = self.state();
+            unsafe {
+                let _sg = StackGuard::new(state);
+                check_stack(state, 4)?;
+
+                let func = Some(func);
+                let extra = XRc::clone(&self.extra);
+                let protect = !self.unlikely_memory_error();
+                push_internal_userdata(state, CallbackUpvalue { data: func, extra }, protect)?;
+                if protect {
+                    protect_lua!(state, 1, 1, |state| {
+                        ffi::lua_pushcclosurek(state, call_callback, debugname, 1, None);
+                    })?;
+                } else {
+                    ffi::lua_pushcclosurek(state, call_callback, debugname, 1, None);
+                }
+
+                Ok(Function(self.pop_ref()))
+            }
+        }
+    }
+
     #[cfg(feature = "luau")]
     // Creates a Function out of a NamecallCallback containing a 'static Fn.
-    pub(crate) fn create_callback_namecall(&self, func: NamecallCallback) -> Result<Function> {
+    pub(crate) fn create_callback_namecall(
+        &self,
+        func: NamecallCallback,
+        debugname: *const i8,
+    ) -> Result<Function> {
         unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
             let upvalue = get_userdata::<NamecallCallbackUpvalue>(state, ffi::lua_upvalueindex(1));
             callback_error_ext_yieldable(
@@ -1439,11 +1526,11 @@ impl RawLua {
             let protect = !self.unlikely_memory_error();
             push_internal_userdata(state, NamecallCallbackUpvalue { data: func, extra }, protect)?;
             if protect {
-                protect_lua!(state, 1, 1, fn(state) {
-                    ffi::lua_pushcclosure(state, call_callback, 1);
+                protect_lua!(state, 1, 1, |state| {
+                    ffi::lua_pushcclosurek(state, call_callback, debugname, 1, None);
                 })?;
             } else {
-                ffi::lua_pushcclosure(state, call_callback, 1);
+                ffi::lua_pushcclosurek(state, call_callback, debugname, 1, None);
             }
 
             Ok(Function(self.pop_ref()))
@@ -1510,11 +1597,11 @@ impl RawLua {
             let protect = !self.unlikely_memory_error();
             push_internal_userdata(state, NamecallMapUpvalue { data: func, extra }, protect)?;
             if protect {
-                protect_lua!(state, 1, 1, fn(state) {
-                    ffi::lua_pushcclosure(state, call_callback, 1);
+                protect_lua!(state, 1, 1, |state| {
+                    ffi::lua_pushcclosurek(state, call_callback, c"__namecall".as_ptr(), 1, None);
                 })?;
             } else {
-                ffi::lua_pushcclosure(state, call_callback, 1);
+                ffi::lua_pushcclosurek(state, call_callback, c"__namecall".as_ptr(), 1, None);
             }
 
             Ok(Function(self.pop_ref()))
@@ -1527,10 +1614,12 @@ impl RawLua {
     //
     // In Lua 5.2/5.3/5.4/JIT, makes a normal function that then yields to the continuation via yieldk
     #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
+    #[allow(unused_variables)]
     pub(crate) fn create_callback_with_continuation(
         &self,
         func: Callback,
         cont: Continuation,
+        debugname: *const i8,
     ) -> Result<Function> {
         #[cfg(feature = "luau")]
         {
@@ -1584,11 +1673,11 @@ impl RawLua {
                 let protect = !self.unlikely_memory_error();
                 push_internal_userdata(state, ContinuationUpvalue { data: func, extra }, protect)?;
                 if protect {
-                    protect_lua!(state, 1, 1, fn(state) {
-                        ffi::lua_pushcclosurec(state, call_callback, cont_callback, 1);
+                    protect_lua!(state, 1, 1, |state| {
+                        ffi::lua_pushcclosurek(state, call_callback, debugname, 1, Some(cont_callback));
                     })?;
                 } else {
-                    ffi::lua_pushcclosurec(state, call_callback, cont_callback, 1);
+                    ffi::lua_pushcclosurek(state, call_callback, debugname, 1, Some(cont_callback));
                 }
 
                 Ok(Function(self.pop_ref()))

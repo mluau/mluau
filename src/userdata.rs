@@ -265,6 +265,24 @@ pub trait UserDataMethods<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
+    /// Same as add_method but with added support for a static debugname for the method.
+    ///
+    /// Refer to [`add_method`] for more information about the implementation.
+    ///
+    /// Will disable namecall optimization if enabled
+    ///
+    /// [`add_method`]: UserDataMethods::add_method
+    #[cfg(feature = "luau")]
+    fn add_method_with_debug<M, A, R>(
+        &mut self,
+        name: impl Into<StdString>,
+        debugname: &'static CStr,
+        method: M,
+    ) where
+        M: Fn(&Lua, &T, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti;
+
     /// Add a regular method which accepts a `&mut T` as the first parameter.
     ///
     /// Refer to [`add_method`] for more information about the implementation.
@@ -272,6 +290,24 @@ pub trait UserDataMethods<T> {
     /// [`add_method`]: UserDataMethods::add_method
     fn add_method_mut<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
     where
+        M: FnMut(&Lua, &mut T, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti;
+
+    /// Same as add_method_mut but with added support for a static debugname for the method.
+    ///
+    /// Refer to [`add_method_mut`] for more information about the implementation.
+    ///
+    /// Will disable namecall optimization if enabled
+    ///
+    /// [`add_method_mut`]: UserDataMethods::add_method_mut
+    #[cfg(feature = "luau")]
+    fn add_method_mut_with_debug<M, A, R>(
+        &mut self,
+        name: impl Into<StdString>,
+        debugname: &'static CStr,
+        method: M,
+    ) where
         M: FnMut(&Lua, &mut T, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;
@@ -310,6 +346,22 @@ pub trait UserDataMethods<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
+    /// Add a regular method as a function with debugname which accepts generic arguments
+    ///
+    /// This is a version of [`add_function`] that accepts a debug name
+    ///
+    /// [`add_function`]: UserDataMethods::add_function
+    #[cfg(feature = "luau")]
+    fn add_function_with_debug<F, A, R>(
+        &mut self,
+        name: impl Into<StdString>,
+        debugname: &'static CStr,
+        function: F,
+    ) where
+        F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti;
+
     /// Add a regular method as a mutable function which accepts generic arguments.
     ///
     /// This is a version of [`add_function`] that accepts a `FnMut` argument.
@@ -317,6 +369,23 @@ pub trait UserDataMethods<T> {
     /// [`add_function`]: UserDataMethods::add_function
     fn add_function_mut<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
     where
+        F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti;
+
+    /// Add a regular method as a mutable function with debugname which accepts generic arguments.
+    ///
+    /// This is a version of [`add_function`] that accepts a `FnMut` argument and accepts a debug
+    /// name
+    ///
+    /// [`add_function`]: UserDataMethods::add_function
+    #[cfg(feature = "luau")]
+    fn add_function_mut_with_debug<F, A, R>(
+        &mut self,
+        name: impl Into<StdString>,
+        debugname: &'static CStr,
+        function: F,
+    ) where
         F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;

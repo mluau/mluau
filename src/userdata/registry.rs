@@ -4,6 +4,8 @@
 use std::any::Any;
 use std::any::TypeId;
 use std::cell::RefCell;
+#[cfg(feature = "luau")]
+use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::string::String as StdString;
 
@@ -47,13 +49,13 @@ pub(crate) struct RawUserDataRegistry {
     #[cfg(not(feature = "luau"))] // luau has namecalls as a optimization for this
     pub(crate) functions: Vec<(String, Callback)>,
     #[cfg(feature = "luau")]
-    pub(crate) functions: Vec<(String, NamecallCallback)>,
+    pub(crate) functions: Vec<(String, NamecallCallback, Option<&'static CStr>)>,
 
     // Methods
     #[cfg(not(feature = "luau"))] // luau has namecalls as a optimization for this
     pub(crate) methods: Vec<(String, Callback)>,
     #[cfg(feature = "luau")]
-    pub(crate) methods: Vec<(String, NamecallCallback)>,
+    pub(crate) methods: Vec<(String, NamecallCallback, Option<&'static CStr>)>,
 
     // Metamethods
     pub(crate) meta_methods: Vec<(String, Callback)>,
@@ -542,6 +544,12 @@ impl<T> UserDataRegistry<T> {
             }
         }
 
+        #[cfg(feature = "luau")]
+        for (name, _, _) in &self.raw.methods {
+            fields.push(name.as_str());
+        }
+
+        #[cfg(not(feature = "luau"))]
         for (name, _) in &self.raw.methods {
             fields.push(name.as_str());
         }
@@ -552,7 +560,13 @@ impl<T> UserDataRegistry<T> {
             }
         }
 
+        #[cfg(not(feature = "luau"))]
         for (name, _) in &self.raw.functions {
+            fields.push(name.as_str());
+        }
+
+        #[cfg(feature = "luau")]
+        for (name, _, _) in &self.raw.functions {
             fields.push(name.as_str());
         }
 
@@ -648,7 +662,7 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         #[cfg(feature = "luau")]
         {
             let callback = self.box_method_namecall(&name, method);
-            self.raw.methods.push((name.clone(), callback.clone()));
+            self.raw.methods.push((name.clone(), callback.clone(), None));
             self.raw.namecalls.insert(name, callback);
         }
 
@@ -657,6 +671,27 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
             let callback = self.box_method(&name, method);
             self.raw.methods.push((name, callback));
         }
+    }
+
+    #[cfg(feature = "luau")]
+    fn add_method_with_debug<M, A, R>(
+        &mut self,
+        name: impl Into<StdString>,
+        debugname: &'static CStr,
+        method: M,
+    ) where
+        M: Fn(&Lua, &T, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+        let name = name.into();
+
+        let callback = self.box_method_namecall(&name, method);
+        self.raw
+            .methods
+            .push((name.clone(), callback.clone(), Some(debugname)));
+        self.raw.namecalls.insert(name, callback);
+        self.raw.disable_namecall_optimization = true;
     }
 
     fn add_method_mut<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
@@ -670,7 +705,7 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         #[cfg(feature = "luau")]
         {
             let callback = self.box_method_mut_namecall(&name, method);
-            self.raw.methods.push((name.clone(), callback.clone()));
+            self.raw.methods.push((name.clone(), callback.clone(), None));
             self.raw.namecalls.insert(name, callback);
         }
 
@@ -679,6 +714,27 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
             let callback = self.box_method_mut(&name, method);
             self.raw.methods.push((name, callback));
         }
+    }
+
+    #[cfg(feature = "luau")]
+    fn add_method_mut_with_debug<M, A, R>(
+        &mut self,
+        name: impl Into<StdString>,
+        debugname: &'static CStr,
+        method: M,
+    ) where
+        M: FnMut(&Lua, &mut T, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+        let name = name.into();
+
+        let callback = self.box_method_mut_namecall(&name, method);
+        self.raw
+            .methods
+            .push((name.clone(), callback.clone(), Some(debugname)));
+        self.raw.namecalls.insert(name, callback);
+        self.raw.disable_namecall_optimization = true;
     }
 
     fn add_function<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
@@ -691,7 +747,7 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         {
             let name = name.into();
             let callback = self.box_function_namecall(&name, function);
-            self.raw.functions.push((name.clone(), callback.clone()));
+            self.raw.functions.push((name.clone(), callback.clone(), None));
             self.raw.namecalls.insert(name, callback);
         }
         #[cfg(not(feature = "luau"))]
@@ -700,6 +756,26 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
             let callback = self.box_function(&name, function);
             self.raw.functions.push((name, callback));
         }
+    }
+
+    #[cfg(feature = "luau")]
+    fn add_function_with_debug<F, A, R>(
+        &mut self,
+        name: impl Into<StdString>,
+        debugname: &'static CStr,
+        function: F,
+    ) where
+        F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+        let name = name.into();
+        let callback = self.box_function_namecall(&name, function);
+        self.raw
+            .functions
+            .push((name.clone(), callback.clone(), Some(debugname)));
+        self.raw.namecalls.insert(name, callback);
+        self.raw.disable_namecall_optimization = true;
     }
 
     fn add_function_mut<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
@@ -712,7 +788,35 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         {
             let name = name.into();
             let callback = self.box_function_namecall_mut(&name, function);
-            self.raw.functions.push((name.clone(), callback.clone()));
+            self.raw.functions.push((name.clone(), callback.clone(), None));
+            self.raw.namecalls.insert(name, callback);
+        }
+        #[cfg(not(feature = "luau"))]
+        {
+            let name = name.into();
+            let callback = self.box_function_mut(&name, function);
+            self.raw.functions.push((name, callback));
+        }
+    }
+
+    #[cfg(feature = "luau")]
+    fn add_function_mut_with_debug<F, A, R>(
+        &mut self,
+        name: impl Into<StdString>,
+        debugname: &'static CStr,
+        function: F,
+    ) where
+        F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+        #[cfg(feature = "luau")]
+        {
+            let name = name.into();
+            let callback = self.box_function_namecall_mut(&name, function);
+            self.raw
+                .functions
+                .push((name.clone(), callback.clone(), Some(debugname)));
             self.raw.namecalls.insert(name, callback);
         }
         #[cfg(not(feature = "luau"))]

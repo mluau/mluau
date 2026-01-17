@@ -1461,6 +1461,33 @@ fn test_traceback() -> Result<()> {
     )
     .exec()?;
 
+    #[cfg(feature = "luau")]
+    {
+        // debug name support
+        struct MyUd {}
+        impl UserData for MyUd {
+            fn add_fields<F: mluau::UserDataFields<Self>>(fields: &mut F) {
+                fields.add_meta_field("__type", "Pi");
+            }
+            fn add_methods<M: mluau::UserDataMethods<Self>>(methods: &mut M) {
+                methods.add_method_with_debug("errorer", c"errorer_testerrorC", |_lua, _this, _: ()| {
+                    Err::<(), Error>(Error::external("hello"))
+                });
+            }
+        }
+
+        let err = lua
+            .load(
+                r#"
+            local ud = ...
+            ud:errorer()
+        "#,
+            )
+            .call::<()>(MyUd {})
+            .unwrap_err();
+        assert!(err.to_string().contains("[C]: in function 'errorer_testerrorC'"));
+    }
+
     Ok(())
 }
 

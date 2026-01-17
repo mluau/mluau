@@ -11,6 +11,8 @@ use crate::table::Table;
 use crate::thread::Thread;
 use std::any::TypeId;
 use std::cell::{BorrowError, BorrowMutError, RefCell};
+#[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
+use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::os::raw::{c_char, c_int};
@@ -1394,6 +1396,7 @@ impl Lua {
         &self,
         func: F,
         cont: FC,
+        debugname: Option<&'static CStr>,
     ) -> Result<Function>
     where
         F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
@@ -1415,6 +1418,10 @@ impl Lua {
                 let status = ContinuationStatus::from_status(status);
                 cont(rawlua.lua(), status, args)?.push_into_specified_stack_multi(rawlua, state)
             }),
+            match debugname {
+                Some(s) => s.as_ptr(),
+                None => std::ptr::null(),
+            },
         )
     }
 
@@ -1431,6 +1438,47 @@ impl Lua {
         self.create_function(move |lua, args| {
             (*func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?)(lua, args)
         })
+    }
+
+    /// Same as ``create_function`` but with an added ``debugname``
+    #[cfg(feature = "luau")]
+    pub fn create_function_with_debug<F, A, R>(
+        &self,
+        func: F,
+        debugname: Option<&'static CStr>,
+    ) -> Result<Function>
+    where
+        F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+        (self.lock()).create_callback_with_debug(
+            Box::new(move |rawlua, nargs| unsafe {
+                let state = rawlua.state();
+                let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state)?;
+                func(rawlua.lua(), args)?.push_into_specified_stack_multi(rawlua, state)
+            }),
+            debugname.map(|x| x.as_ptr()).unwrap_or(std::ptr::null()),
+        )
+    }
+
+    /// Same as ``create_function_mut`` but with an added ``debugname``
+    #[cfg(feature = "luau")]
+    pub fn create_function_mut_with_debug<F, A, R>(
+        &self,
+        func: F,
+        debugname: Option<&'static CStr>,
+    ) -> Result<Function>
+    where
+        F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaMulti,
+    {
+        let func = RefCell::new(func);
+        self.create_function_with_debug(
+            move |lua, args| (*func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?)(lua, args),
+            debugname,
+        )
     }
 
     /// Wraps a C function, creating a callable Lua function handle to it.
