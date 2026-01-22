@@ -741,6 +741,12 @@ impl RawLua {
             Value::Buffer(buf) => self.push_ref_at(&buf.0, state),
             Value::Error(err) => {
                 let protect = !self.unlikely_memory_error();
+
+                //let ed = &*self.extra.get();
+                //if ed.disable_error_userdata {
+                //    
+                //}
+
                 push_internal_userdata(state, WrappedFailure::Error(*err.clone()), protect)?;
             }
             Value::Other(vref) => self.push_ref_at(vref, state),

@@ -13,12 +13,14 @@ use crate::userdata::collect_userdata_dyn;
 use crate::userdata::DynamicUserDataPtr;
 
 // Pushes the userdata and attaches a metatable with __gc method.
-// Internally uses 3 stack spaces, does not call checkstack.
+// Internally uses 3 stack spaces
 pub(crate) unsafe fn push_internal_userdata<T: TypeKey>(
     state: *mut ffi::lua_State,
     t: T,
     protect: bool,
 ) -> Result<*mut T> {
+    check_stack(state, 3)?;
+
     #[cfg(not(feature = "luau"))]
     let ud_ptr = if protect {
         protect_lua!(state, 0, 1, move |state| {
@@ -34,7 +36,9 @@ pub(crate) unsafe fn push_internal_userdata<T: TypeKey>(
 
     #[cfg(feature = "luau")]
     let ud_ptr = if protect {
-        protect_lua!(state, 0, 1, move |state| ffi::lua_newuserdata_t::<T>(state, t))?
+        protect_lua!(state, 0, 1, move |state| {
+            ffi::lua_newuserdata_t::<T>(state, t)
+        })?
     } else {
         ffi::lua_newuserdata_t::<T>(state, t)
     };
