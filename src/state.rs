@@ -2360,24 +2360,26 @@ impl Lua {
     }
 
     /// Tries to execute a Rust closure `L` inside of a C++ try/catch block
-    /// 
-    /// If the underlying Luau VM throws a C++ exception, it will be caught and converted into a Rust error
-    /// 
-    /// This can be useful for more safety critical users of mluau as the Luau VM may throw exceptions in some cases
-    /// that may not be protected by mluau's normal protect_lua heuristics
+    ///
+    /// If the underlying Luau VM throws a C++ exception, it will be caught and converted into a
+    /// Rust error
+    ///
+    /// This can be useful for more safety critical users of mluau as the Luau VM may throw
+    /// exceptions in some cases that may not be protected by mluau's normal protect_lua
+    /// heuristics
     #[cfg(feature = "luau")]
-    pub fn try_call<F, R>(&self, func: F) -> Result<R> 
+    pub fn try_call<F, R>(&self, func: F) -> Result<R>
     where
         F: FnOnce(&Lua) -> R + MaybeSend + 'static,
         R: 'static,
-    {   
+    {
         #[repr(C)]
         struct CallData<F, R> {
             func: Option<F>,
             result: Option<R>,
         }
-        unsafe extern "C-unwind" fn call<F, R>(state: *mut ffi::lua_State, data: *mut c_void) 
-        where 
+        unsafe extern "C-unwind" fn call<F, R>(state: *mut ffi::lua_State, data: *mut c_void)
+        where
             F: FnOnce(&Lua) -> R + MaybeSend + 'static,
             R: 'static,
         {
@@ -2407,7 +2409,7 @@ impl Lua {
                     } else {
                         Err(Error::RuntimeError("Unknown error in luau_try".to_string()))
                     }
-                },
+                }
                 1 => {
                     // Pop error message from stack
                     use crate::util::to_string;

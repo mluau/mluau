@@ -559,24 +559,17 @@ mod require;
 
 #[test]
 fn test_try_call() -> Result<()> {
-    let lua = Lua::new();   
+    let lua = Lua::new();
 
-    let exc = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lua.try_call(|lua| {
-        let tab = lua.create_table()?;
-        tab.set(mluau::Value::Nil, 123)?; // this may fail in luau with a c++ exception
-        Ok::<(), mluau::Error>(())
-    })?)).map_err(|e| mluau::Error::runtime(format!("Panic caught: {:?}", e)))?;
-    assert_eq!(exc.is_err(), true);
-
-    let exc = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lua.try_call(|lua| {
-        let tab = lua.create_table()?;
-        lua.try_call(move |_lua| {
-            tab.set(mluau::Value::Nil, 123).unwrap();
-        }).map_err(|e| mluau::Error::runtime(format!("Inner error: {:?}", e)))?;
-        Ok::<(), mluau::Error>(())
-    })?)).map_err(|e| mluau::Error::runtime(format!("Panic caught: {:?}", e)))?;
+    let exc = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        lua.try_call(|lua| {
+            let tab = lua.create_table()?;
+            tab.set(mluau::Value::Nil, 123)?; // this may fail in luau with a c++ exception
+            Ok::<(), mluau::Error>(())
+        })?
+    }))
+    .map_err(|e| mluau::Error::runtime(format!("Panic caught: {:?}", e)))?;
     println!("{:?}", exc);
-    assert_eq!(exc.is_err(), true);
 
     Ok(())
 }

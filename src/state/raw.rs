@@ -744,7 +744,7 @@ impl RawLua {
 
                 //let ed = &*self.extra.get();
                 //if ed.disable_error_userdata {
-                //    
+                //
                 //}
 
                 push_internal_userdata(state, WrappedFailure::Error(*err.clone()), protect)?;

@@ -281,7 +281,7 @@ impl Thread {
         let lua = self.0.lua.lock();
         let mut has_yielded = false;
         match self.status_inner(&lua) {
-            ThreadStatusInner::New(_) => {},
+            ThreadStatusInner::New(_) => {}
             ThreadStatusInner::Yielded(_) => has_yielded = true,
             _ => return Err(Error::CoroutineUnresumable),
         };
