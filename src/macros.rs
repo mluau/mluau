@@ -114,3 +114,28 @@ macro_rules! protect_lua {
         crate::util::protect_lua_call($state, $nargs, do_call)
     }};
 }
+
+/// Fast-protect uses luau_try on Luau to call a function and catch panics/exceptions.
+#[cfg(feature = "luau")]
+macro_rules! fast_protect {
+    ($state:expr, fn($state_inner:ident) $code:expr) => {
+        // Make use of luau_try for performance
+        {
+            unsafe extern "C-unwind" fn do_call($state_inner: *mut ffi::lua_State, _data: *mut ::std::ffi::c_void) {
+                $code;
+            }
+
+            match crate::ffi::luau_try($state, do_call, ::std::ptr::null_mut()) {
+                0 => Ok(()),
+                1 => {
+                    // Pop error message from stack
+                    use crate::util::to_string;
+                    let s = to_string($state, -1);
+                    ffi::lua_pop($state, 1);
+                    Err(Error::RuntimeError(s))
+                }
+                _ => Err(Error::RuntimeError("Unknown error in luau_try".to_string())),
+            }
+        }
+    }
+}

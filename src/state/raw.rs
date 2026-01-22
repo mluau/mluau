@@ -646,21 +646,27 @@ impl RawLua {
     pub(crate) unsafe fn create_thread(&self, func: &Function) -> Result<Thread> {
         let state = self.state();
         let _sg = StackGuard::new(state);
-        check_stack(state, 3)?;
 
-        let protect = !self.unlikely_memory_error();
-        #[cfg(feature = "luau")]
-        let protect = protect || (*self.extra.get()).thread_creation_callback.is_some();
-
-        let thread_state = if !protect {
-            ffi::lua_newthread(state)
+        if cfg!(feature = "luau") {
+            check_stack(state, 1)?;
+            fast_protect!(state, fn(state) ffi::lua_newthread(state))?;
         } else {
-            protect_lua!(state, 0, 1, |state| ffi::lua_newthread(state))?
-        };
+            check_stack(state, 3)?;
 
-        // Inherit global hook if set
-        #[cfg(not(feature = "luau"))]
-        self.set_thread_hook(thread_state, HookKind::Global)?;
+            let protect = !self.unlikely_memory_error();
+            #[cfg(feature = "luau")]
+            let protect = protect || (*self.extra.get()).thread_creation_callback.is_some();
+
+            let thread_state = if !protect {
+                ffi::lua_newthread(state)
+            } else {
+                protect_lua!(state, 0, 1, |state| ffi::lua_newthread(state))?
+            };
+
+            // Inherit global hook if set
+            #[cfg(not(feature = "luau"))]
+            self.set_thread_hook(thread_state, HookKind::Global)?;
+        }
 
         let thread = Thread(self.pop_ref(), thread_state);
         ffi::lua_xpush(self.ref_thread(func.0.aux_thread), thread_state, func.0.index);
