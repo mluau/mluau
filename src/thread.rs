@@ -234,8 +234,13 @@ impl Thread {
         R: FromLuaMulti,
     {
         let lua = self.0.lua.lock();
+        let mut has_yielded = false;
         let mut pushed_nargs = match self.status_inner(&lua) {
-            ThreadStatusInner::New(nargs) | ThreadStatusInner::Yielded(nargs) => nargs,
+            ThreadStatusInner::New(nargs) => nargs,
+            ThreadStatusInner::Yielded(nargs) => {
+                has_yielded = true;
+                nargs
+            }
             _ => return Err(Error::CoroutineUnresumable),
         };
 
@@ -244,8 +249,18 @@ impl Thread {
         unsafe {
             let _sg = StackGuard::new(state);
 
-            let nargs = args.push_into_specified_stack_multi(&lua, thread_state)?;
-            pushed_nargs += nargs;
+            if has_yielded {
+                // We need to use the mainthread here as pcall over a yielded thread is not allowed
+                let nargs = args.push_into_specified_stack_multi(&lua, state)?;
+                if nargs > 0 {
+                    check_stack(thread_state, nargs)?;
+                    ffi::lua_xmove(state, thread_state, nargs);
+                }
+                pushed_nargs += nargs;
+            } else {
+                let nargs = args.push_into_specified_stack_multi(&lua, thread_state)?;
+                pushed_nargs += nargs;
+            }
 
             let _thread_sg = StackGuard::with_top(thread_state, 0);
             let (_, nresults) = self.resume_inner(&lua, pushed_nargs)?;
