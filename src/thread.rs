@@ -274,7 +274,7 @@ impl Thread {
         unsafe {
             let _sg = StackGuard::new(state);
 
-            check_stack(thread_state, 1)?;
+            check_stack(thread_state, 3)?;
             error.push_into_specified_stack(&lua, thread_state)?;
 
             let _thread_sg = StackGuard::with_top(thread_state, 0);

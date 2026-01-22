@@ -239,7 +239,7 @@ impl IntoLuaMulti for &MultiValue {
         state: *mut ffi::lua_State,
     ) -> Result<c_int> {
         let nresults = self.len() as i32;
-        check_stack(state, nresults + 1)?;
+        check_stack(state, nresults + 3)?;
         for value in &self.0 {
             lua.push_value_at(value, state)?;
         }

@@ -717,7 +717,7 @@ impl RawLua {
 
     /// Pushes a `Value` (by reference) onto the specified Lua stack.
     ///
-    /// Uses 2 stack spaces, does not call `checkstack`.
+    /// Uses 3 stack spaces, does not call `checkstack`.
     pub(crate) unsafe fn push_value_at(&self, value: &Value, state: *mut ffi::lua_State) -> Result<()> {
         match value {
             Value::Nil => ffi::lua_pushnil(state),
