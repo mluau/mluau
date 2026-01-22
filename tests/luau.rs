@@ -413,6 +413,7 @@ fn test_thread_events() -> Result<()> {
     lua.set_thread_creation_callback(move |_, _| Err(Error::runtime("error when processing thread event")));
     let result = lua.create_thread(lua.load("return 123").into_function()?);
     assert!(result.is_err());
+    println!("{:?}", result);
     assert!(
         matches!(result, Err(Error::RuntimeError(err)) if err.contains("error when processing thread event"))
     );

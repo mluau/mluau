@@ -6,7 +6,7 @@ use mluau::{Error, Function, IntoLua, Lua, Result, Thread, ThreadStatus, Value};
 fn test_thread() -> Result<()> {
     let lua = Lua::new();
 
-    let thread = lua.create_thread(
+    let thread = lua.create_thread_fast(
         lua.load(
             r#"
             function (s)
@@ -33,7 +33,7 @@ fn test_thread() -> Result<()> {
     assert_eq!(thread.resume::<i64>(4)?, 10);
     assert_eq!(thread.status(), ThreadStatus::Finished);
 
-    let accumulate = lua.create_thread(
+    let accumulate = lua.create_thread_fast(
         lua.load(
             r#"
             function (sum)
@@ -91,7 +91,7 @@ fn test_thread() -> Result<()> {
     }
 
     // Already running thread must be unresumable
-    let thread = lua.create_thread(lua.create_function(|lua, ()| {
+    let thread = lua.create_thread_fast(lua.create_function(|lua, ()| {
         assert_eq!(lua.current_thread().status(), ThreadStatus::Running);
         let result = lua.current_thread().resume::<()>(());
         assert!(
@@ -119,7 +119,7 @@ fn test_thread_reset() -> Result<()> {
     let arc = Arc::new(());
 
     let func: Function = lua.load(r#"function(ud) coroutine.yield(ud) end"#).eval()?;
-    let thread = lua.create_thread(lua.load("return 0").into_function()?)?; // Dummy function first
+    let thread = lua.create_thread_fast(lua.load("return 0").into_function()?)?; // Dummy function first
     assert!(thread.reset(func.clone()).is_ok());
 
     for _ in 0..2 {
@@ -136,7 +136,7 @@ fn test_thread_reset() -> Result<()> {
 
     // Check for errors
     let func: Function = lua.load(r#"function(ud) error("test error") end"#).eval()?;
-    let thread = lua.create_thread(func.clone())?;
+    let thread = lua.create_thread_fast(func.clone())?;
     let _ = thread.resume::<AnyUserData>(MyUserData(arc.clone()));
     assert_eq!(thread.status(), ThreadStatus::Error);
     assert_eq!(Arc::strong_count(&arc), 2);
@@ -156,7 +156,7 @@ fn test_thread_reset() -> Result<()> {
     }
 
     // Try reset running thread
-    let thread = lua.create_thread(lua.create_function(|lua, ()| {
+    let thread = lua.create_thread_fast(lua.create_function(|lua, ()| {
         let this = lua.current_thread();
         this.reset(lua.create_function(|_, ()| Ok(()))?)?;
         Ok(())
@@ -208,7 +208,7 @@ fn test_coroutine_panic() {
             panic!("test_panic");
         })?;
         lua.globals().set("main", &thrd_main)?;
-        let thrd: Thread = lua.create_thread(thrd_main)?;
+        let thrd: Thread = lua.create_thread_fast(thrd_main)?;
         thrd.resume(())
     }) {
         Ok(r) => panic!("coroutine panic not propagated, instead returned {:?}", r),
@@ -221,7 +221,7 @@ fn test_thread_pointer() -> Result<()> {
     let lua = Lua::new();
 
     let func = lua.load("return 123").into_function()?;
-    let thread = lua.create_thread(func.clone())?;
+    let thread = lua.create_thread_fast(func.clone())?;
 
     assert_eq!(thread.to_pointer(), thread.clone().to_pointer());
     assert_ne!(thread.to_pointer(), lua.current_thread().to_pointer());
@@ -266,7 +266,7 @@ fn test_thread_resume_bad_arg() -> Result<()> {
         }
     }
 
-    let f = lua.create_thread(lua.create_function(|_, ()| Ok("okay"))?)?;
+    let f = lua.create_thread_fast(lua.create_function(|_, ()| Ok("okay"))?)?;
     let res = f.resume::<()>((123, BadArg));
     assert!(matches!(res, Err(Error::RuntimeError(msg)) if msg == "bad arg"));
     let res = f.resume::<String>(()).unwrap();
@@ -281,7 +281,7 @@ fn test_thread_yield_args() -> Result<()> {
     let lua = Lua::new();
     let always_yield = lua.create_function(|lua, ()| lua.yield_with((42, "69420".to_string(), 45.6)))?;
 
-    let thread = lua.create_thread(always_yield)?;
+    let thread = lua.create_thread_fast(always_yield)?;
     assert_eq!(
         thread.resume::<(i32, String, f32)>(())?,
         (42, String::from("69420"), 45.6)
@@ -304,7 +304,7 @@ fn test_thread_yield_args() -> Result<()> {
         )
         .into_function()?;
 
-    let thread = lua.create_thread(my_lua_func)?;
+    let thread = lua.create_thread_fast(my_lua_func)?;
     let intermediate =
         thread.resume::<mluau::MultiValue>(lua.create_function(|lua, ()| lua.yield_with(100))?);
     assert!(
@@ -343,7 +343,7 @@ fn test_thread_yield_args() -> Result<()> {
         )
         .into_function()?;
 
-    let thread = lua.create_thread(my_lua_func)?;
+    let thread = lua.create_thread_fast(my_lua_func)?;
     let intermediate = thread.resume::<mluau::MultiValue>(my_data);
     println!("intermediate={:?}", intermediate);
     assert!(
@@ -367,7 +367,7 @@ fn test_thread_yield_args() -> Result<()> {
     // mlua khvzak yield
     let func = lua.create_function(|lua, ()| lua.yield_with("yielded value"))?;
 
-    let thread = lua.create_thread(func)?;
+    let thread = lua.create_thread_fast(func)?;
     assert_eq!(thread.resume::<String>(())?, "yielded value");
     assert_eq!(thread.status(), ThreadStatus::Resumable);
     thread.resume::<()>(())?;
@@ -404,7 +404,7 @@ fn test_continuation() {
         .expect("Failed to create function");
 
     let th = lua
-        .create_thread(luau_func)
+        .create_thread_fast(luau_func)
         .expect("Failed to create luau thread");
 
     let v = th
@@ -435,7 +435,7 @@ fn test_continuation() {
         .expect("Failed to create function");
 
     let th = lua
-        .create_thread(luau_func)
+        .create_thread_fast(luau_func)
         .expect("Failed to create luau thread");
 
     let v = th
@@ -469,7 +469,7 @@ fn test_continuation() {
         .create_function(|lua, ()| lua.yield_with((42, "69420".to_string(), 45.6)))
         .unwrap();
 
-    let thread = lua.create_thread(always_yield).unwrap();
+    let thread = lua.create_thread_fast(always_yield).unwrap();
     assert_eq!(
         thread.resume::<(i32, String, f32)>(()).unwrap(),
         (42, String::from("69420"), 45.6)
@@ -499,7 +499,7 @@ fn test_continuation() {
         .expect("Failed to create function");
 
     let th = lua
-        .create_thread(luau_func)
+        .create_thread_fast(luau_func)
         .expect("Failed to create luau thread");
 
     let v = th
@@ -523,7 +523,7 @@ fn test_continuation() {
         )
         .unwrap();
 
-    let thread = lua.create_thread(always_yield).unwrap();
+    let thread = lua.create_thread_fast(always_yield).unwrap();
     let mv = thread.resume::<mluau::MultiValue>(()).unwrap();
     assert!(thread
         .resume::<String>(mv)
@@ -564,7 +564,7 @@ fn test_continuation() {
         .into_function()
         .expect("Failed to create function");
     let th = lua
-        .create_thread(luau_func)
+        .create_thread_fast(luau_func)
         .expect("Failed to create luau thread");
 
     let v = th
@@ -617,7 +617,7 @@ fn test_continuation() {
         .expect("Failed to create function");
 
     let th = lua
-        .create_thread(luau_func)
+        .create_thread_fast(luau_func)
         .expect("Failed to create luau thread");
 
     let v = th
@@ -634,18 +634,18 @@ fn test_large_thread_creation() {
     let lua = Lua::new();
     lua.set_memory_limit(100_000_000_000).unwrap();
     let th1 = lua
-        .create_thread(lua.create_function(|_lua, _: ()| Ok(())).unwrap())
+        .create_thread_fast(lua.create_function(|_lua, _: ()| Ok(())).unwrap())
         .unwrap();
 
     let mut this = Vec::new();
     for _i in 1..2000000 {
         let th = lua
-            .create_thread(lua.create_function(|_, ()| Ok(())).unwrap())
+            .create_thread_fast(lua.create_function(|_, ()| Ok(())).unwrap())
             .expect("Failed to create thread");
         this.push(th);
     }
     let th2 = lua
-        .create_thread(lua.create_function(|_lua, _: ()| Ok(())).unwrap())
+        .create_thread_fast(lua.create_function(|_lua, _: ()| Ok(())).unwrap())
         .unwrap();
 
     for rth in this {
@@ -696,7 +696,7 @@ fn test_large_thread_creation() {
             .create_function(|lua, ()| lua.yield_with((42, "69420".to_string(), 45.6)))
             .unwrap();
 
-        let thread = lua.create_thread(always_yield).unwrap();
+        let thread = lua.create_thread_fast(always_yield).unwrap();
         assert_eq!(
             thread.resume::<(i32, String, f32)>(()).unwrap(),
             (42, String::from("69420"), 45.6)
@@ -726,7 +726,7 @@ fn test_large_thread_creation() {
             .expect("Failed to create function");
 
         let th = lua
-            .create_thread(luau_func)
+            .create_thread_fast(luau_func)
             .expect("Failed to create luau thread");
 
         let v = th
@@ -750,7 +750,7 @@ fn test_large_thread_creation() {
             )
             .unwrap();
 
-        let thread = lua.create_thread(always_yield).unwrap();
+        let thread = lua.create_thread_fast(always_yield).unwrap();
         let mv = thread.resume::<mluau::MultiValue>(()).unwrap();
         assert!(thread
             .resume::<String>(mv)
@@ -791,7 +791,7 @@ fn test_large_thread_creation() {
             .into_function()
             .expect("Failed to create function");
         let th = lua
-            .create_thread(luau_func)
+            .create_thread_fast(luau_func)
             .expect("Failed to create luau thread");
 
         let v = th
@@ -844,7 +844,7 @@ fn test_large_thread_creation() {
             .expect("Failed to create function");
 
         let th = lua
-            .create_thread(luau_func)
+            .create_thread_fast(luau_func)
             .expect("Failed to create luau thread");
 
         let v = th
@@ -864,7 +864,7 @@ pub fn test_thread_set_thread_data() -> Result<()> {
 
     let lua = Lua::new();
 
-    let thread = lua.create_thread(lua.load(r#""#).into_function()?)?;
+    let thread = lua.create_thread_fast(lua.load(r#""#).into_function()?)?;
 
     let count = Arc::new(AtomicU64::new(0));
     pub struct TestData {
@@ -916,7 +916,7 @@ pub fn test_thread_set_thread_data() -> Result<()> {
 
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
 
-    let thread_2 = lua.create_thread(lua.load(r#""#).into_function()?)?;
+    let thread_2 = lua.create_thread_fast(lua.load(r#""#).into_function()?)?;
     let count_2 = Arc::new(AtomicU64::new(0));
     thread_2.set_thread_data(TestData {
         value: count_2.clone(),

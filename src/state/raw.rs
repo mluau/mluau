@@ -643,13 +643,14 @@ impl RawLua {
     /// Wraps a Lua function into a new thread (or coroutine).
     ///
     /// Takes function by reference.
-    pub(crate) unsafe fn create_thread(&self, func: &Function) -> Result<Thread> {
+    pub(crate) unsafe fn create_thread(&self, func: &Function, fast: bool) -> Result<Thread> {
         let state = self.state();
         let _sg = StackGuard::new(state);
 
-        if cfg!(feature = "luau") {
-            check_stack(state, 1)?;
-            fast_protect!(state, fn(state) ffi::lua_newthread(state))?;
+        let thread_state = if fast && cfg!(feature = "luau") {
+            check_stack(state, 3)?;
+            let res = fast_protect!(state, fn(state) ffi::lua_newthread(state))?;
+            res as *mut ffi::lua_State
         } else {
             check_stack(state, 3)?;
 
@@ -666,7 +667,9 @@ impl RawLua {
             // Inherit global hook if set
             #[cfg(not(feature = "luau"))]
             self.set_thread_hook(thread_state, HookKind::Global)?;
-        }
+
+            thread_state
+        };
 
         let thread = Thread(self.pop_ref(), thread_state);
         ffi::lua_xpush(self.ref_thread(func.0.aux_thread), thread_state, func.0.index);

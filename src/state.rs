@@ -1516,7 +1516,17 @@ impl Lua {
     ///
     /// Equivalent to `coroutine.create`.
     pub fn create_thread(&self, func: Function) -> Result<Thread> {
-        unsafe { self.lock().create_thread(&func) }
+        unsafe { self.lock().create_thread(&func, false) }
+    }
+
+    /// Wraps a Lua function into a new thread (or coroutine).
+    ///
+    /// Equivalent to `coroutine.create`.
+    /// 
+    /// This differs from `create_thread` by avoiding some VM operations
+    /// at the cost of not having good tracebacks in case of errors.
+    pub fn create_thread_fast(&self, func: Function) -> Result<Thread> {
+        unsafe { self.lock().create_thread(&func, true) }
     }
 
     /// Creates a Lua userdata object from a custom userdata type.
@@ -2378,18 +2388,19 @@ impl Lua {
             func: Option<F>,
             result: Option<R>,
         }
-        unsafe extern "C-unwind" fn call<F, R>(state: *mut ffi::lua_State, data: *mut c_void)
+        unsafe extern "C-unwind" fn call<F, R>(state: *mut ffi::lua_State, data: *mut c_void) -> *mut c_void
         where
             F: FnOnce(&Lua) -> R + MaybeSend + 'static,
             R: 'static,
         {
             let data = &mut *(data as *mut CallData<F, R>);
             let Some(func) = data.func.take() else {
-                return;
+                return std::ptr::null_mut();
             };
             let extra = ExtraData::get(state);
             let lua = (*&*extra).lua();
             data.result = Some(func(&lua));
+            std::ptr::null_mut()
         }
 
         let data: Box<CallData<F, R>> = Box::new(CallData {
@@ -2402,7 +2413,7 @@ impl Lua {
             let state = self.lock_gc_safe().main_state();
             let res = ffi::luau_try(state, call::<F, R>, data_ptr);
             let data: Box<CallData<F, R>> = Box::from_raw(data_ptr as *mut CallData<F, R>);
-            match res {
+            match res.status {
                 0 => {
                     if let Some(result) = data.result {
                         Ok(result)

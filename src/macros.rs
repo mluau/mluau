@@ -121,12 +121,14 @@ macro_rules! fast_protect {
     ($state:expr, fn($state_inner:ident) $code:expr) => {
         // Make use of luau_try for performance
         {
-            unsafe extern "C-unwind" fn do_call($state_inner: *mut ffi::lua_State, _data: *mut ::std::ffi::c_void) {
-                $code;
+            unsafe extern "C-unwind" fn do_call($state_inner: *mut ffi::lua_State, _data: *mut ::std::ffi::c_void) -> *mut ::std::ffi::c_void {
+                let ret = $code;
+                ret as *mut ::std::ffi::c_void
             }
 
-            match crate::ffi::luau_try($state, do_call, ::std::ptr::null_mut()) {
-                0 => Ok(()),
+            let ret = crate::ffi::luau_try($state, do_call, ::std::ptr::null_mut());
+            match ret.status {
+                0 => Ok(ret.ret),
                 1 => {
                     // Pop error message from stack
                     use crate::util::to_string;

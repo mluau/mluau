@@ -561,7 +561,13 @@ unsafe extern "C" {
     );
 }
 
-type RustCallback = unsafe extern "C-unwind" fn(L: *mut lua_State, data: *mut c_void);
+#[repr(C)]
+pub struct RustCallbackRet {
+    pub status: c_int,
+    pub ret: *mut c_void,
+}
+
+type RustCallback = unsafe extern "C-unwind" fn(L: *mut lua_State, data: *mut c_void) -> *mut c_void;
 unsafe extern "C-unwind" {
-    pub fn luau_try(L: *mut lua_State, func: RustCallback, data: *mut c_void) -> c_int;
+    pub fn luau_try(L: *mut lua_State, func: RustCallback, data: *mut c_void) -> RustCallbackRet;
 }
