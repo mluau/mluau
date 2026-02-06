@@ -1455,7 +1455,7 @@ impl RawLua {
     pub(crate) fn create_callback_with_debug(
         &self,
         func: Callback,
-        debugname: *const i8,
+        debugname: *const c_char,
     ) -> Result<Function> {
         #[cfg(not(feature = "luau"))]
         {
@@ -1510,7 +1510,7 @@ impl RawLua {
     pub(crate) fn create_callback_namecall(
         &self,
         func: NamecallCallback,
-        debugname: *const i8,
+        debugname: *const c_char,
     ) -> Result<Function> {
         unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
             let upvalue = get_userdata::<NamecallCallbackUpvalue>(state, ffi::lua_upvalueindex(1));
@@ -1634,7 +1634,7 @@ impl RawLua {
         &self,
         func: Callback,
         cont: Continuation,
-        debugname: *const i8,
+        debugname: *const c_char,
     ) -> Result<Function> {
         #[cfg(feature = "luau")]
         {
