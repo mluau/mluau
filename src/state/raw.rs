@@ -643,15 +643,11 @@ impl RawLua {
     /// Wraps a Lua function into a new thread (or coroutine).
     ///
     /// Takes function by reference.
-    pub(crate) unsafe fn create_thread(&self, func: &Function, fast: bool) -> Result<Thread> {
+    pub(crate) unsafe fn create_thread(&self, func: &Function) -> Result<Thread> {
         let state = self.state();
         let _sg = StackGuard::new(state);
 
-        let thread_state = if fast && cfg!(feature = "luau") {
-            check_stack(state, 3)?;
-            let res = fast_protect!(state, fn(state) ffi::lua_newthread(state))?;
-            res as *mut ffi::lua_State
-        } else {
+        let thread_state = {
             check_stack(state, 3)?;
 
             let protect = !self.unlikely_memory_error();

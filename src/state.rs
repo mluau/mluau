@@ -1516,17 +1516,7 @@ impl Lua {
     ///
     /// Equivalent to `coroutine.create`.
     pub fn create_thread(&self, func: Function) -> Result<Thread> {
-        unsafe { self.lock().create_thread(&func, false) }
-    }
-
-    /// Wraps a Lua function into a new thread (or coroutine).
-    ///
-    /// Equivalent to `coroutine.create`.
-    /// 
-    /// This differs from `create_thread` by avoiding some VM operations
-    /// at the cost of not having good tracebacks in case of errors.
-    pub fn create_thread_fast(&self, func: Function) -> Result<Thread> {
-        unsafe { self.lock().create_thread(&func, true) }
+        unsafe { self.lock().create_thread(&func) }
     }
 
     /// Creates a Lua userdata object from a custom userdata type.
