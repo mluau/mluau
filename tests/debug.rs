@@ -54,7 +54,17 @@ fn test_gc_interrupt() -> Result<()> {
 
     let interrupted = Arc::new(AtomicBool::new(false));
     let interrupted_clone = interrupted.clone();
-    lua.set_gc_interrupt(move |_lua, _gc_state| {
+    lua.set_gc_interrupt(move |lua, _gc_state| {
+        let mut level = 0;
+        loop {
+            if lua.inspect_stack(level, |dbg| {
+                println!("GC Interrupt: {:?}", dbg.names().name);
+            }).is_none() {
+                break;
+            }
+            level += 1;
+        }
+
         interrupted_clone.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 

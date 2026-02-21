@@ -13,7 +13,7 @@ use mluau::{
 #[test]
 fn test_version() -> Result<()> {
     let lua = Lua::new();
-    assert!(lua.globals().get::<String>("_VERSION")?.starts_with("Luau 0."));
+    assert!(lua.globals().get::<String>("_VERSION")?.starts_with("Luau 0.709"));
     Ok(())
 }
 
