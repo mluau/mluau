@@ -46,6 +46,9 @@ pub enum Value {
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     /// A luau (64-bit) `integer` (not to be confused with number)
+    /// 
+    /// Note that in `luau`, an 64-bit `integer` is a distinct (and completely unrelated type) 
+    /// to a number (``Value::Number`` and ``Value::Integer``)
     Int64(i64),
     /// A Luau vector.
     #[cfg(any(feature = "luau", doc))]
@@ -255,8 +258,6 @@ impl Value {
     pub fn as_integer(&self) -> Option<Integer> {
         match *self {
             Value::Integer(i) => Some(i),
-            #[cfg(feature = "luau")]
-            Value::Int64(i) => Some(i),
             _ => None,
         }
     }
@@ -535,13 +536,8 @@ impl Value {
             (Value::Integer(a), Value::Number(b)) => cmp_num(*a as Number, *b),
             (Value::Number(a), Value::Integer(b)) => cmp_num(*a, *b as Number),
             (Value::Number(a), Value::Number(b)) => cmp_num(*a, *b),
-            // Int64 && Number
+            // Int64 && Int64
             (Value::Int64(a), Value::Int64(b)) => a.cmp(b),
-            (Value::Int64(a), Value::Integer(b)) => a.cmp(b),
-            (Value::Integer(a), Value::Int64(b)) => a.cmp(b),
-            (Value::Int64(a), Value::Number(b)) => cmp_num(*a as Number, *b),
-            (Value::Number(a), Value::Int64(b)) => cmp_num(*a, *b as Number),
-
             (Value::Integer(_) | Value::Number(_), _) => Ordering::Less,
             (_, Value::Integer(_) | Value::Number(_)) => Ordering::Greater,
             // Vector (Luau)
@@ -635,6 +631,7 @@ impl PartialEq for Value {
             (Value::Boolean(a), Value::Boolean(b)) => a == b,
             (Value::LightUserData(a), Value::LightUserData(b)) => a == b,
             (Value::Integer(a), Value::Integer(b)) => *a == *b,
+            (Value::Int64(a), Value::Int64(b)) => *a == *b,
             (Value::Integer(a), Value::Number(b)) => *a as Number == *b,
             (Value::Number(a), Value::Integer(b)) => *a == *b as Number,
             (Value::Number(a), Value::Number(b)) => *a == *b,
