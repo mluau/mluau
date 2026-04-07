@@ -32,6 +32,9 @@ unsafe extern "C-unwind" {
     ) -> *const c_char;
     pub fn luaL_checknumber(L: *mut lua_State, narg: c_int) -> lua_Number;
     pub fn luaL_optnumber(L: *mut lua_State, narg: c_int, def: lua_Number) -> lua_Number;
+    
+    pub fn luaL_checkinteger64(L: *mut lua_State, narg: c_int) -> i64;
+    pub fn luaL_optinteger64(L: *mut lua_State, narg: c_int) -> i64;
 
     pub fn luaL_checkboolean(L: *mut lua_State, narg: c_int) -> c_int;
     pub fn luaL_optboolean(L: *mut lua_State, narg: c_int, def: c_int) -> c_int;

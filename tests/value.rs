@@ -139,7 +139,9 @@ fn test_value_to_string() -> Result<()> {
         "lightuserdata: 0x1"
     );
     assert_eq!(Value::Integer(1).to_string()?, "1");
-    assert_eq!(Value::Integer(1).type_name(), "integer");
+    assert_eq!(Value::Integer(1).type_name(), "number");
+    #[cfg(feature = "luau")]
+    assert_eq!(Value::Int64(1).type_name(), "integer");
     assert_eq!(Value::Number(34.59).to_string()?, "34.59");
     assert_eq!(Value::Number(34.59).type_name(), "number");
     #[cfg(all(feature = "luau", not(feature = "luau-vector4")))]
@@ -295,6 +297,7 @@ fn test_value_exhaustive_match() {
         Value::Boolean(_) => {}
         Value::LightUserData(_) => {}
         Value::Integer(_) => {}
+        Value::Int64(_) => {}
         Value::Number(_) => {}
         #[cfg(feature = "luau")]
         Value::Vector(_) => {}

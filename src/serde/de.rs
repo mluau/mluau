@@ -178,6 +178,8 @@ impl<'de> serde::Deserializer<'de> for Deserializer {
             #[allow(clippy::useless_conversion)]
             Value::Integer(i) => visitor.visit_i64(i.into()),
             #[allow(clippy::useless_conversion)]
+            Value::Int64(i) => visitor.visit_i64(i.into()),
+            #[allow(clippy::useless_conversion)]
             Value::Number(n) => visitor.visit_f64(n.into()),
             #[cfg(feature = "luau")]
             Value::Vector(_) => self.deserialize_seq(visitor),

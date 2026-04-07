@@ -26,8 +26,7 @@ use crate::thread::ContinuationStatus;
 
 use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaMulti};
 use crate::types::{
-    AppDataRef, AppDataRefMut, ArcReentrantMutexGuard, Integer, LuaType, MaybeSend, Number, ReentrantMutex,
-    ReentrantMutexGuard, RegistryKey, VmState, XRc, XWeak,
+    AppDataRef, AppDataRefMut, ArcReentrantMutexGuard, Integer, LuaType, MaybeSend, MaybeSync, Number, ReentrantMutex, ReentrantMutexGuard, RegistryKey, VmState, XRc, XWeak
 };
 use crate::userdata::{AnyUserData, UserData, UserDataProxy, UserDataRegistry, UserDataStorage};
 use crate::util::{assert_stack, check_stack, protect_lua_closure, push_string, rawset_field, StackGuard};
@@ -1216,7 +1215,6 @@ impl Lua {
     ///
     /// See https://github.com/luau-lang/luau/blob/master/CONTRIBUTING.md#feature-flags for details.
     #[cfg(feature = "luau")]
-    #[doc(hidden)]
     #[allow(clippy::result_unit_err)]
     pub fn set_fflag(name: &str, enabled: bool) -> StdResult<(), ()> {
         if let Ok(name) = std::ffi::CString::new(name) {
@@ -1525,7 +1523,7 @@ impl Lua {
     #[inline]
     pub fn create_userdata<T>(&self, data: T) -> Result<AnyUserData>
     where
-        T: UserData + MaybeSend + 'static,
+        T: UserData + MaybeSend + MaybeSync + 'static,
     {
         unsafe { self.lock().make_userdata(UserDataStorage::new(data)) }
     }
@@ -1536,7 +1534,7 @@ impl Lua {
     #[inline]
     pub fn create_ser_userdata<T>(&self, data: T) -> Result<AnyUserData>
     where
-        T: UserData + Serialize + MaybeSend + 'static,
+        T: UserData + Serialize + MaybeSend + MaybeSync + 'static,
     {
         unsafe { self.lock().make_userdata(UserDataStorage::new_ser(data)) }
     }
@@ -1551,7 +1549,7 @@ impl Lua {
     #[inline]
     pub fn create_any_userdata<T>(&self, data: T) -> Result<AnyUserData>
     where
-        T: MaybeSend + 'static,
+        T: MaybeSend + MaybeSync + 'static,
     {
         unsafe { self.lock().make_any_userdata(UserDataStorage::new(data)) }
     }
@@ -1564,7 +1562,7 @@ impl Lua {
     #[inline]
     pub fn create_ser_any_userdata<T>(&self, data: T) -> Result<AnyUserData>
     where
-        T: Serialize + MaybeSend + 'static,
+        T: Serialize + MaybeSend + MaybeSync + 'static,
     {
         unsafe { (self.lock()).make_any_userdata(UserDataStorage::new_ser(data)) }
     }
@@ -2421,6 +2419,15 @@ impl Lua {
                 _ => Err(Error::RuntimeError("Unknown error in luau_try".to_string())),
             }
         }
+    }
+
+    /// Runs callback with the inner RawLua value. It can be used to manually push and get values on the stack.
+    ///
+    /// This function is safe because all unsafe actions with RawLua can only be done with unsafe
+    #[doc(hidden)]
+    pub fn exec_raw_lua<R>(&self, f: impl FnOnce(&RawLua) -> R) -> R {
+        let lua = self.lock();
+        f(&lua)
     }
 }
 

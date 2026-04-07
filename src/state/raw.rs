@@ -723,12 +723,14 @@ impl RawLua {
     /// Pushes a `Value` (by reference) onto the specified Lua stack.
     ///
     /// Uses 3 stack spaces, does not call `checkstack`.
-    pub(crate) unsafe fn push_value_at(&self, value: &Value, state: *mut ffi::lua_State) -> Result<()> {
+    pub unsafe fn push_value_at(&self, value: &Value, state: *mut ffi::lua_State) -> Result<()> {
         match value {
             Value::Nil => ffi::lua_pushnil(state),
             Value::Boolean(b) => ffi::lua_pushboolean(state, *b as c_int),
             Value::LightUserData(ud) => ffi::lua_pushlightuserdata(state, ud.0),
             Value::Integer(i) => ffi::lua_pushinteger(state, *i),
+            #[cfg(feature = "luau")]
+            Value::Int64(i) => ffi::lua_pushinteger64(state, *i),
             Value::Number(n) => ffi::lua_pushnumber(state, *n),
             #[cfg(feature = "luau")]
             Value::Vector(v) => {
@@ -759,14 +761,14 @@ impl RawLua {
         Ok(())
     }
 
-    pub(crate) unsafe fn pop_value_at(&self, state: *mut ffi::lua_State) -> Result<Value> {
+    pub unsafe fn pop_value_at(&self, state: *mut ffi::lua_State) -> Result<Value> {
         let value = self.stack_value_at(-1, None, state)?;
         ffi::lua_pop(state, 1);
         Ok(value)
     }
 
     /// Returns value at given stack index without popping it.
-    pub(crate) unsafe fn stack_value_at(
+    pub unsafe fn stack_value_at(
         &self,
         idx: c_int,
         type_hint: Option<c_int>,
@@ -800,6 +802,9 @@ impl RawLua {
                     _ => Ok(Value::Number(n)),
                 }
             }
+
+            #[cfg(feature = "luau")]
+            ffi::LUA_TINTEGER => Ok(Value::Int64(ffi::lua_tointeger64(state, idx))),
 
             #[cfg(feature = "luau")]
             ffi::LUA_TVECTOR => {
@@ -1353,8 +1358,10 @@ impl RawLua {
             Ok(type_id) => Ok(type_id),
             Err(Error::UserDataTypeMismatch) if ffi::lua_type(state, idx) != ffi::LUA_TUSERDATA => {
                 // Report `FromLuaConversionError` instead
-                let idx_type_name = CStr::from_ptr(ffi::luaL_typename(state, idx));
-                let idx_type_name = idx_type_name.to_str().unwrap();
+                // In Luau `luaL_typename` return heap-allocated string that is valid only for
+                // the `state` lifetime.
+                // `lua_typename` is used instead to get a truly static string.
+                let idx_type_name = CStr::from_ptr(ffi::lua_typename(state, ffi::lua_type(state, idx)));                let idx_type_name = idx_type_name.to_str().unwrap();
                 let message = format!("expected userdata of type '{}'", short_type_name::<T>());
                 Err(Error::from_lua_conversion(idx_type_name, "userdata", message))
             }
@@ -1865,6 +1872,11 @@ unsafe fn load_std_libs(state: *mut ffi::lua_State, libs: StdLib) -> Result<()> 
     #[cfg(feature = "luau")]
     if libs.contains(StdLib::VECTOR) {
         requiref(state, ffi::LUA_VECLIBNAME, ffi::luaopen_vector, 1)?;
+    }
+
+    #[cfg(feature = "luau")]
+    if libs.contains(StdLib::INTEGER) {
+        requiref(state, ffi::LUA_INTLIBNAME, ffi::luaopen_integer, 1)?;
     }
 
     if libs.contains(StdLib::MATH) {

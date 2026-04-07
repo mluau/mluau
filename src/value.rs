@@ -43,6 +43,10 @@ pub enum Value {
     Integer(Integer),
     /// A floating point number.
     Number(Number),
+    #[cfg(any(feature = "luau", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+    /// A luau (64-bit) `integer` (not to be confused with number)
+    Int64(i64),
     /// A Luau vector.
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
@@ -85,8 +89,10 @@ impl Value {
             Value::Nil => "nil",
             Value::Boolean(_) => "boolean",
             Value::LightUserData(_) => "lightuserdata",
-            Value::Integer(_) => "integer",
+            Value::Integer(_) => "number",
             Value::Number(_) => "number",
+            #[cfg(feature = "luau")]
+            Value::Int64(_) => "integer",
             #[cfg(feature = "luau")]
             Value::Vector(_) => "vector",
             Value::String(_) => "string",
@@ -171,6 +177,8 @@ impl Value {
             Value::LightUserData(ud) if ud.0.is_null() => Ok("null".to_string()),
             Value::LightUserData(ud) => Ok(format!("lightuserdata: {:p}", ud.0)),
             Value::Integer(i) => Ok(i.to_string()),
+            #[cfg(feature = "luau")]
+            Value::Int64(i) =>Ok(i.to_string()),
             Value::Number(n) => Ok(n.to_string()),
             #[cfg(feature = "luau")]
             Value::Vector(v) => Ok(v.to_string()),
@@ -247,6 +255,8 @@ impl Value {
     pub fn as_integer(&self) -> Option<Integer> {
         match *self {
             Value::Integer(i) => Some(i),
+            #[cfg(feature = "luau")]
+            Value::Int64(i) => Some(i),
             _ => None,
         }
     }
@@ -525,6 +535,13 @@ impl Value {
             (Value::Integer(a), Value::Number(b)) => cmp_num(*a as Number, *b),
             (Value::Number(a), Value::Integer(b)) => cmp_num(*a, *b as Number),
             (Value::Number(a), Value::Number(b)) => cmp_num(*a, *b),
+            // Int64 && Number
+            (Value::Int64(a), Value::Int64(b)) => a.cmp(b),
+            (Value::Int64(a), Value::Integer(b)) => a.cmp(b),
+            (Value::Integer(a), Value::Int64(b)) => a.cmp(b),
+            (Value::Int64(a), Value::Number(b)) => cmp_num(*a as Number, *b),
+            (Value::Number(a), Value::Int64(b)) => cmp_num(*a, *b as Number),
+
             (Value::Integer(_) | Value::Number(_), _) => Ordering::Less,
             (_, Value::Integer(_) | Value::Number(_)) => Ordering::Greater,
             // Vector (Luau)
@@ -553,6 +570,8 @@ impl Value {
             Value::LightUserData(ud) => write!(fmt, "lightuserdata: {:?}", ud.0),
             Value::Integer(i) => write!(fmt, "{i}"),
             Value::Number(n) => write!(fmt, "{n}"),
+            #[cfg(feature = "luau")]
+            Value::Int64(i) => write!(fmt, "{i}"),
             #[cfg(feature = "luau")]
             Value::Vector(v) => write!(fmt, "{v}"),
             Value::String(s) => write!(fmt, "{s:?}"),
@@ -592,6 +611,8 @@ impl fmt::Debug for Value {
             Value::LightUserData(ud) => write!(fmt, "{ud:?}"),
             Value::Integer(i) => write!(fmt, "Integer({i})"),
             Value::Number(n) => write!(fmt, "Number({n})"),
+            #[cfg(feature = "luau")]
+            Value::Int64(i) => write!(fmt, "Int64({i})"),
             #[cfg(feature = "luau")]
             Value::Vector(v) => write!(fmt, "{v:?}"),
             Value::String(s) => write!(fmt, "String({s:?})"),
@@ -735,6 +756,8 @@ impl Serialize for SerializableValue<'_> {
             Value::Boolean(b) => serializer.serialize_bool(*b),
             #[allow(clippy::useless_conversion)]
             Value::Integer(i) => serializer.serialize_i64((*i).into()),
+            #[allow(clippy::useless_conversion)]
+            Value::Int64(i) => serializer.serialize_i64((*i).into()),
             Value::Number(n) => serializer.serialize_f64(*n),
             #[cfg(feature = "luau")]
             Value::Vector(v) => v.serialize(serializer),

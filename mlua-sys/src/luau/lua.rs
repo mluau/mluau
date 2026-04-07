@@ -55,14 +55,15 @@ pub const LUA_TBOOLEAN: c_int = 1;
 
 pub const LUA_TLIGHTUSERDATA: c_int = 2;
 pub const LUA_TNUMBER: c_int = 3;
-pub const LUA_TVECTOR: c_int = 4;
+pub const LUA_TINTEGER: c_int = 4;
+pub const LUA_TVECTOR: c_int = 5;
 
-pub const LUA_TSTRING: c_int = 5;
-pub const LUA_TTABLE: c_int = 6;
-pub const LUA_TFUNCTION: c_int = 7;
-pub const LUA_TUSERDATA: c_int = 8;
-pub const LUA_TTHREAD: c_int = 9;
-pub const LUA_TBUFFER: c_int = 10;
+pub const LUA_TSTRING: c_int = 6;
+pub const LUA_TTABLE: c_int = 7;
+pub const LUA_TFUNCTION: c_int = 8;
+pub const LUA_TUSERDATA: c_int = 9;
+pub const LUA_TTHREAD: c_int = 10;
+pub const LUA_TBUFFER: c_int = 11;
 
 /// Guaranteed number of Lua stack slots available to a C function.
 pub const LUA_MINSTACK: c_int = 20;
@@ -140,6 +141,8 @@ unsafe extern "C-unwind" {
     pub fn lua_tonumberx(L: *mut lua_State, idx: c_int, isnum: *mut c_int) -> lua_Number;
     #[link_name = "lua_tointegerx"]
     pub fn lua_tointegerx_(L: *mut lua_State, idx: c_int, isnum: *mut c_int) -> c_int;
+    #[link_name = "lua_tointeger64"]
+    pub fn lua_tointeger64_(L: *mut lua_State, idx: c_int, isinteger: *mut c_int) -> i64;
     pub fn lua_tounsignedx(L: *mut lua_State, idx: c_int, isnum: *mut c_int) -> lua_Unsigned;
     pub fn lua_tovector(L: *mut lua_State, idx: c_int) -> *const c_float;
     pub fn lua_toboolean(L: *mut lua_State, idx: c_int) -> c_int;
@@ -165,6 +168,7 @@ unsafe extern "C-unwind" {
     pub fn lua_pushnumber(L: *mut lua_State, n: lua_Number);
     #[link_name = "lua_pushinteger"]
     pub fn lua_pushinteger_(L: *mut lua_State, n: c_int);
+    pub fn lua_pushinteger64(L: *mut lua_State, n: i64);
     pub fn lua_pushunsigned(L: *mut lua_State, n: lua_Unsigned);
     #[cfg(not(feature = "luau-vector4"))]
     pub fn lua_pushvector(L: *mut lua_State, x: c_float, y: c_float, z: c_float);
@@ -324,6 +328,11 @@ pub unsafe fn lua_tonumber(L: *mut lua_State, idx: c_int) -> lua_Number {
 }
 
 #[inline(always)]
+pub unsafe fn lua_tointeger64(L: *mut lua_State, idx: c_int) -> i64 {
+    lua_tointeger64_(L, idx, ptr::null_mut())
+}
+
+#[inline(always)]
 pub unsafe fn lua_tointeger_(L: *mut lua_State, idx: c_int) -> c_int {
     lua_tointegerx_(L, idx, ptr::null_mut())
 }
@@ -390,6 +399,12 @@ pub unsafe fn lua_isboolean(L: *mut lua_State, n: c_int) -> c_int {
 pub unsafe fn lua_isvector(L: *mut lua_State, n: c_int) -> c_int {
     (lua_type(L, n) == LUA_TVECTOR) as c_int
 }
+
+#[inline(always)]
+pub unsafe fn lua_isinteger64(L: *mut lua_State, n: c_int) -> c_int {
+    (lua_type(L, n) == LUA_TINTEGER) as c_int
+}
+
 
 #[inline(always)]
 pub unsafe fn lua_isthread(L: *mut lua_State, n: c_int) -> c_int {
@@ -480,6 +495,12 @@ pub type lua_Coverage = unsafe extern "C-unwind" fn(
     size: usize,
 );
 
+pub type lua_CounterFunction =
+    unsafe extern "C-unwind" fn(context: *mut c_void, function: *const c_char, linedefined: c_int);
+
+pub type lua_CounterValue =
+    unsafe extern "C-unwind" fn(context: *mut c_void, kind: c_int, line: c_int, hits: u64);
+
 unsafe extern "C-unwind" {
     pub fn lua_stackdepth(L: *mut lua_State) -> c_int;
     pub fn lua_getinfo(L: *mut lua_State, level: c_int, what: *const c_char, ar: *mut lua_Debug) -> c_int;
@@ -493,6 +514,14 @@ unsafe extern "C-unwind" {
     pub fn lua_breakpoint(L: *mut lua_State, funcindex: c_int, line: c_int, enabled: c_int) -> c_int;
 
     pub fn lua_getcoverage(L: *mut lua_State, funcindex: c_int, context: *mut c_void, callback: lua_Coverage);
+
+    pub fn lua_getcounters(
+        L: *mut lua_State,
+        funcindex: c_int,
+        context: *mut c_void,
+        functionvisit: lua_CounterFunction,
+        countervisit: lua_CounterValue,
+    );
 
     pub fn lua_debugtrace(L: *mut lua_State) -> *const c_char;
 }
@@ -531,7 +560,7 @@ pub struct lua_Callbacks {
     /// gets called when L is created (LP == parent) or destroyed (LP == NULL)
     pub userthread: Option<unsafe extern "C-unwind" fn(LP: *mut lua_State, L: *mut lua_State)>,
     /// gets called when a string is created; returned atom can be retrieved via tostringatom
-    pub useratom: Option<unsafe extern "C-unwind" fn(s: *const c_char, l: usize) -> i16>,
+    pub useratom: Option<unsafe extern "C-unwind" fn(L: *mut lua_State, s: *const c_char, l: usize) -> i16>,
 
     /// gets called when BREAK instruction is encountered
     pub debugbreak: Option<unsafe extern "C-unwind" fn(L: *mut lua_State, ar: *mut lua_Debug)>,

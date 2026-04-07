@@ -13,7 +13,7 @@ use mluau::{
 #[test]
 fn test_version() -> Result<()> {
     let lua = Lua::new();
-    assert!(lua.globals().get::<String>("_VERSION")?.starts_with("Luau 0.709"));
+    assert!(lua.globals().get::<String>("_VERSION")?.starts_with("Luau 0.715"));
     Ok(())
 }
 
@@ -95,6 +95,23 @@ fn test_vectors() -> Result<()> {
     )
     .set_compiler(Compiler::new().set_vector_ctor("vector"))
     .exec()?;
+
+    Ok(())
+}
+
+#[test]
+fn test_int64() -> Result<()> {
+    let lua = Lua::new();
+
+    let v: i64 = lua
+        .load("return 123i")
+        .eval()?;
+    assert_eq!(v, 123);
+
+    let v: i64 = lua
+        .load("return integer.add(..., 1i)")
+        .call(Value::Int64(10))?;
+    assert_eq!(v, 11);
 
     Ok(())
 }

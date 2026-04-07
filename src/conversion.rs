@@ -18,7 +18,7 @@ use crate::string::{BorrowedBytes, BorrowedStr, String};
 use crate::table::Table;
 use crate::thread::Thread;
 use crate::traits::{FromLua, IntoLua, ShortTypeName as _};
-use crate::types::{Either, LightUserData, MaybeSend, RegistryKey};
+use crate::types::{Either, LightUserData, MaybeSend, MaybeSync, RegistryKey};
 use crate::userdata::{AnyUserData, UserData};
 use crate::value::{Nil, Value};
 
@@ -319,7 +319,7 @@ impl FromLua for AnyUserData {
     }
 }
 
-impl<T: UserData + MaybeSend + 'static> IntoLua for T {
+impl<T: UserData + MaybeSend + MaybeSync + 'static> IntoLua for T {
     #[inline]
     fn into_lua(self, lua: &Lua) -> Result<Value> {
         Ok(Value::UserData(lua.create_userdata(self)?))
@@ -835,6 +835,7 @@ macro_rules! lua_convert_int {
                 let ty = value.type_name();
                 (match value {
                     Value::Integer(i) => cast(i),
+                    Value::Int64(i) => cast(i),
                     Value::Number(n) => cast(n),
                     _ => {
                         if let Some(i) = lua.coerce_integer(value.clone())? {
@@ -1203,7 +1204,8 @@ impl<L: FromLua, R: FromLua> FromLua for Either<L, R> {
             Err(_) => match R::from_specified_stack(idx, lua, state).map(Either::Right) {
                 Ok(r) => Ok(r),
                 Err(_) => {
-                    let value_type_name = CStr::from_ptr(ffi::luaL_typename(state, idx));
+                    let value_type_name =
+                        CStr::from_ptr(ffi::lua_typename(lua.state(), ffi::lua_type(lua.state(), idx)));
                     Err(Error::FromLuaConversionError {
                         from: value_type_name.to_str().unwrap(),
                         to: Self::type_name(),

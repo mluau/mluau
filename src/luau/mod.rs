@@ -1,6 +1,8 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_int;
 use std::ptr;
+#[cfg(feature = "luau")]
+use std::sync::atomic::AtomicBool;
 
 use crate::chunk::ChunkMode;
 use crate::error::{Error, Result};
@@ -11,6 +13,9 @@ use crate::types::MaybeSend;
 
 pub use heap_dump::HeapDump;
 pub use require::{NavigateError, Require, TextRequirer};
+
+#[cfg(feature = "luau")]
+static HAVE_SET_INTEGER_FFLAG: AtomicBool = AtomicBool::new(false);
 
 // Since Luau has some missing standard functions, we re-implement them here
 
@@ -88,6 +93,17 @@ impl Lua {
         // Enable default `require` implementation
         let require = self.create_require_function(require::TextRequirer::new())?;
         self.globals().raw_set("require", require)?;
+
+        // Unconditionally enable integer fflags to ensure safety on Luau
+        // TODO: Remove later
+        #[cfg(feature = "luau")]
+        {
+            if !HAVE_SET_INTEGER_FFLAG.swap(true, std::sync::atomic::Ordering::Acquire) {
+                for fflag in ["LuauIntegerType", "LuauIntegerFastcalls", "LuauIntegerLibrary"] {
+                    mlua_expect!(Self::set_fflag(fflag, true), "integer fflag not set")
+                }
+            }
+        }
 
         Ok(())
     }
