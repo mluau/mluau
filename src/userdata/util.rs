@@ -407,7 +407,7 @@ pub(crate) unsafe extern "C-unwind" fn collect_userdata<T>(state: *mut ffi::lua_
 }
 
 // This method is called by Luau GC when it's time to collect the userdata.
-#[cfg(feature = "luau")]
+
 pub(crate) unsafe extern "C" fn collect_userdata<T>(
     state: *mut ffi::lua_State,
     ud: *mut std::os::raw::c_void,

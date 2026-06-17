@@ -33,7 +33,7 @@ fn test_gc_state_name() -> Result<()> {
 }
 
 #[test]
-#[cfg(feature = "luau")]
+
 fn test_gc_allocation_rate() -> Result<()> {
     let lua = Lua::new();
 
@@ -43,7 +43,7 @@ fn test_gc_allocation_rate() -> Result<()> {
 }
 
 #[test]
-#[cfg(feature = "luau")]
+
 fn test_gc_interrupt() -> Result<()> {
     let lua = Lua::new_with(
         mluau::StdLib::ALL_SAFE,

@@ -22,7 +22,7 @@ pub use crate::{
 #[doc(no_inline)]
 pub use crate::HookTriggers as LuaHookTriggers;
 
-#[cfg(feature = "luau")]
+
 #[doc(no_inline)]
 pub use crate::{
     CompileConstant as LuaCompileConstant, CoverageInfo as LuaCoverageInfo,

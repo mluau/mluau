@@ -7,15 +7,15 @@ edition = "2021"
 repository = "https://github.com/mluau/mluau"
 documentation = "https://docs.rs/mlua"
 readme = "README.md"
-keywords = ["luau", "lua", "luajit", "scripting"]
+keywords = ["luau", "scripting"]
 categories = ["api-bindings"]
 license = "MIT"
 description = """
-High level bindings to Luau (and Lua 5.4-5.1/JIT, but mostly focused on Luau).
+High level bindings to Luau.
 """
 
 [package.metadata.docs.rs]
-features = ["lua54", "vendored", "send", "serde", "macros"]
+features = ["luau", "vendored", "send", "serde", "macros"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
@@ -23,16 +23,9 @@ members = ["mlua_derive", "mlua-sys"]
 
 [features]
 default = ["luau", "dynamic-userdata"]
-lua54 = ["ffi/lua54"]
-lua53 = ["ffi/lua53"]
-lua52 = ["ffi/lua52"]
-lua51 = ["ffi/lua51"]
-luajit = ["ffi/luajit"]
-luajit52 = ["luajit", "ffi/luajit52"]
 luau = ["ffi/luau"]
 luau-jit = ["luau", "ffi/luau-codegen"]
 luau-vector4 = ["luau", "ffi/luau-vector4"]
-vendored = ["ffi/vendored"]
 module = ["mlua_derive", "ffi/module"]
 send = ["error-send"]
 error-send = []
@@ -45,6 +38,7 @@ error-value = []
 
 # deprecated features
 serialize = ["serde"]
+vendored = []
 
 [dependencies]
 mlua_derive = { version = "=0.11.0", optional = true, path = "mlua_derive" }

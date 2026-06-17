@@ -24,7 +24,7 @@
 [Benchmarks]: https://github.com/khvzak/script-bench-rs
 [FAQ]: FAQ.md
 
-This repository is a fork of `mlua` with a greater focus on Luau, with the following changes (so far):
+This repository is a fork of `mlua` with sole focus on Luau, with the following changes (so far):
 
 - More reliable coroutine and yielding support:
   - `mluau` allows Rust functions to yield back to Luau directly, improving support for iterators, coroutines, and task schedulers.
@@ -53,6 +53,7 @@ This repository is a fork of `mlua` with a greater focus on Luau, with the follo
 operate on the dynamic userdata.
 - Support for getting weak_lua from Threads and other primitives
 - Support for GC interrupts in Luau.
+- Sole focus on Luau (non-luau code removed)
 
 As an example of dynamic userdata:
 
@@ -107,17 +108,9 @@ WebAssembly (WASM) is supported through the `wasm32-unknown-emscripten` target f
 `mlua` uses feature flags to reduce the number of dependencies and compiled code, and allow choosing only the required set of features.
 Below is a list of the available feature flags. By default `mlua` does not enable any features.
 
-- `lua54`: enable Lua [5.4] support
-- `lua53`: enable Lua [5.3] support
-- `lua52`: enable Lua [5.2] support
-- `lua51`: enable Lua [5.1] support
-- `luajit`: enable [LuaJIT] support
-- `luajit52`: enable [LuaJIT] support with partial compatibility with Lua 5.2
 - `luau`: enable [Luau] support (auto vendored mode)
 - `luau-jit`: enable [Luau] support with JIT backend.
 - `luau-vector4`: enable [Luau] support with 4-dimensional vector.
-- `vendored`: build static Lua(JIT) libraries from sources during `mlua` compilation using [lua-src] or [luajit-src]
-- `module`: enable module mode (building loadable `cdylib` library for Lua)
 <!-- * `async`: enable async/await support (any executor can be used, eg. [tokio] or [async-std]) -->
 - `send`: make `mluau::Lua: Send + Sync` (adds [`Send`] requirement to `mluau::Function` and `mluau::UserData`)
 - `error-send`: make `mlua:Error: Send + Sync`
@@ -126,13 +119,6 @@ Below is a list of the available feature flags. By default `mlua` does not enabl
 - `anyhow`: enable `anyhow::Error` conversion into Lua
 - `userdata-wrappers`: opt into `impl UserData` for `Rc<T>`/`Arc<T>`/`Rc<RefCell<T>>`/`Arc<Mutex<T>>` where `T: UserData`
 
-[5.4]: https://www.lua.org/manual/5.4/manual.html
-[5.3]: https://www.lua.org/manual/5.3/manual.html
-[5.2]: https://www.lua.org/manual/5.2/manual.html
-[5.1]: https://www.lua.org/manual/5.1/manual.html
-[LuaJIT]: https://luajit.org/
-[lua-src]: https://github.com/mlua-rs/lua-src-rs
-[luajit-src]: https://github.com/mlua-rs/luajit-src-rs
 [`Send`]: https://doc.rust-lang.org/std/marker/trait.Send.html
 [serde]: https://github.com/serde-rs/serde
 
@@ -145,136 +131,6 @@ With the `serde` feature flag enabled, `mlua` allows you to serialize/deserializ
 [`serde::Serialize`]: https://docs.serde.rs/serde/ser/trait.Serialize.html
 [`serde::Deserialize`]: https://docs.serde.rs/serde/de/trait.Deserialize.html
 [`mluau::Value`]: https://docs.rs/mlua/latest/mlua/enum.Value.html
-
-### Compiling
-
-You have to enable one of the features: `lua54`, `lua53`, `lua52`, `lua51`, `luajit(52)` or `luau`, according to the chosen Lua version.
-
-By default `mlua` uses `pkg-config` to find Lua includes and libraries for the chosen Lua version.
-In most cases it works as desired, although sometimes it may be preferable to use a custom Lua library.
-To achieve this, mlua supports the `LUA_LIB`, `LUA_LIB_NAME` and `LUA_LINK` environment variables.
-`LUA_LINK` is optional and may be `dylib` (a dynamic library) or `static` (a static library, `.a` archive).
-
-An example of how to use them:
-
-```sh
-my_project $ LUA_LIB=$HOME/tmp/lua-5.2.4/src LUA_LIB_NAME=lua LUA_LINK=static cargo build
-```
-
-`mlua` also supports vendored Lua/LuaJIT using the auxiliary crates [lua-src](https://crates.io/crates/lua-src) and
-[luajit-src](https://crates.io/crates/luajit-src).
-Just enable the `vendored` feature and cargo will automatically build and link the specified Lua/LuaJIT version. This is the easiest way to get started with `mlua`.
-
-### Standalone mode
-
-In standalone mode, `mlua` allows adding scripting support to your application with a gently configured Lua runtime to ensure safety and soundness.
-
-Add to `Cargo.toml`:
-
-```toml
-[dependencies]
-mlua = { version = "0.11", features = ["lua54", "vendored"] }
-```
-
-`main.rs`
-
-```rust
-use mluau::prelude::*;
-
-fn main() -> LuaResult<()> {
-    let lua = Lua::new();
-
-    let map_table = lua.create_table()?;
-    map_table.set(1, "one")?;
-    map_table.set("two", 2)?;
-
-    lua.globals().set("map_table", map_table)?;
-
-    lua.load("for k,v in pairs(map_table) do print(k,v) end").exec()?;
-
-    Ok(())
-}
-```
-
-### Module mode
-
-In module mode, `mlua` allows creating a compiled Lua module that can be loaded from Lua code using [`require`](https://www.lua.org/manual/5.4/manual.html#pdf-require). In this case `mlua` uses an external Lua runtime which could lead to potential unsafety due to the unpredictability of the Lua environment and usage of libraries such as [`debug`](https://www.lua.org/manual/5.4/manual.html#6.10).
-
-[Example](examples/module)
-
-Add to `Cargo.toml`:
-
-```toml
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-mlua = { version = "0.11", features = ["lua54", "module"] }
-```
-
-`lib.rs`:
-
-```rust
-use mluau::prelude::*;
-
-fn hello(_: &Lua, name: String) -> LuaResult<()> {
-    println!("hello, {}!", name);
-    Ok(())
-}
-
-#[mluau::lua_module]
-fn my_module(lua: &Lua) -> LuaResult<LuaTable> {
-    let exports = lua.create_table()?;
-    exports.set("hello", lua.create_function(hello)?)?;
-    Ok(exports)
-}
-```
-
-And then (**macOS** example):
-
-```sh
-$ cargo rustc -- -C link-arg=-undefined -C link-arg=dynamic_lookup
-$ ln -s ./target/debug/libmy_module.dylib ./my_module.so
-$ lua5.4 -e 'require("my_module").hello("world")'
-hello, world!
-```
-
-On macOS, you need to set additional linker arguments. One option is to compile with `cargo rustc --release -- -C link-arg=-undefined -C link-arg=dynamic_lookup`, the other is to create a `.cargo/config.toml` with the following content:
-
-```toml
-[target.x86_64-apple-darwin]
-rustflags = [
-  "-C", "link-arg=-undefined",
-  "-C", "link-arg=dynamic_lookup",
-]
-
-[target.aarch64-apple-darwin]
-rustflags = [
-  "-C", "link-arg=-undefined",
-  "-C", "link-arg=dynamic_lookup",
-]
-```
-
-On Linux you can build modules normally with `cargo build --release`.
-
-On Windows the target module will be linked with the `lua5x.dll` library (depending on your feature flags).
-Your main application should provide this library.
-
-Module builds don't require Lua binaries or headers to be installed on the system.
-
-### Publishing to luarocks.org
-
-There is a LuaRocks build backend for mlua modules: [`luarocks-build-rust-mlua`].
-
-Modules written in Rust and published to luarocks:
-
-- [`decasify`](https://github.com/alerque/decasify)
-- [`lua-ryaml`](https://github.com/khvzak/lua-ryaml)
-- [`tiktoken_core`](https://github.com/gptlang/lua-tiktoken)
-- [`toml-edit`](https://github.com/vhyrro/toml-edit.lua)
-- [`typst-lua`](https://github.com/rousbound/typst-lua)
-
-[`luarocks-build-rust-mlua`]: https://luarocks.org/modules/khvzak/luarocks-build-rust-mlua
 
 ## Safety
 

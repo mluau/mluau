@@ -811,7 +811,7 @@ fn test_arbitrary_precision() {
     );
 }
 
-#[cfg(feature = "luau")]
+
 #[test]
 fn test_buffer_serialize() -> LuaResult<()> {
     let lua = Lua::new();
@@ -828,7 +828,7 @@ fn test_buffer_serialize() -> LuaResult<()> {
     Ok(())
 }
 
-#[cfg(feature = "luau")]
+
 #[test]
 fn test_buffer_from_value() -> LuaResult<()> {
     let lua = Lua::new();

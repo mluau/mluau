@@ -107,7 +107,7 @@ impl Buffer {
         }
     }
 
-    #[cfg(feature = "luau")]
+    
     unsafe fn as_raw_parts(&self, lua: &RawLua) -> (*mut u8, usize) {
         let mut size = 0usize;
         let buf = ffi::lua_tobuffer(lua.ref_thread(self.0.aux_thread), self.0.index, &mut size);
@@ -199,7 +199,7 @@ impl Serialize for Buffer {
     }
 }
 
-#[cfg(feature = "luau")]
+
 impl crate::types::LuaType for Buffer {
     const TYPE_ID: std::os::raw::c_int = ffi::LUA_TBUFFER;
 }

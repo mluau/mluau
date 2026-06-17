@@ -230,7 +230,7 @@ fn test_thread_pointer() -> Result<()> {
 }
 
 #[test]
-#[cfg(feature = "luau")]
+
 fn test_thread_resume_error() -> Result<()> {
     let lua = Lua::new();
 
@@ -857,7 +857,7 @@ fn test_large_thread_creation() {
 }
 
 #[test]
-#[cfg(feature = "luau")]
+
 pub fn test_thread_set_thread_data() -> Result<()> {
     use std::sync::atomic::AtomicU64;
     use std::sync::Arc;

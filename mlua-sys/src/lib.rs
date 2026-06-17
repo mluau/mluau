@@ -1,4 +1,4 @@
-//! Low level bindings to Lua 5.4/5.3/5.2/5.1 (including LuaJIT) and Luau.
+//! Low level bindings to Luau.
 
 #![allow(non_camel_case_types, non_snake_case)]
 #![allow(clippy::missing_safety_doc)]
@@ -8,30 +8,8 @@
 
 use std::os::raw::c_int;
 
-#[cfg(any(feature = "lua54", doc))]
-pub use lua54::*;
-
-#[cfg(any(feature = "lua53", doc))]
-pub use lua53::*;
-
-#[cfg(any(feature = "lua52", doc))]
-pub use lua52::*;
-
-#[cfg(any(feature = "lua51", feature = "luajit", doc))]
-pub use lua51::*;
-
-#[cfg(any(feature = "luau", doc))]
 pub use luau::*;
 
-#[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-#[doc(hidden)]
-pub const LUA_MAX_UPVALUES: c_int = 255;
-
-#[cfg(any(feature = "lua51", feature = "luajit"))]
-#[doc(hidden)]
-pub const LUA_MAX_UPVALUES: c_int = 60;
-
-#[cfg(feature = "luau")]
 #[doc(hidden)]
 pub const LUA_MAX_UPVALUES: c_int = 200;
 
@@ -87,22 +65,4 @@ pub const SYS_MIN_ALIGN: usize = if cfg!(any(
 #[macro_use]
 mod macros;
 
-#[cfg(any(feature = "lua54", doc))]
-#[cfg_attr(docsrs, doc(cfg(feature = "lua54")))]
-pub mod lua54;
-
-#[cfg(any(feature = "lua53", doc))]
-#[cfg_attr(docsrs, doc(cfg(feature = "lua53")))]
-pub mod lua53;
-
-#[cfg(any(feature = "lua52", doc))]
-#[cfg_attr(docsrs, doc(cfg(feature = "lua52")))]
-pub mod lua52;
-
-#[cfg(any(feature = "lua51", feature = "luajit", doc))]
-#[cfg_attr(docsrs, doc(cfg(any(feature = "lua51", feature = "luajit"))))]
-pub mod lua51;
-
-#[cfg(any(feature = "luau", doc))]
-#[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
 pub mod luau;

@@ -181,7 +181,7 @@ impl<'de> serde::Deserializer<'de> for Deserializer {
             Value::Int64(i) => visitor.visit_i64(i.into()),
             #[allow(clippy::useless_conversion)]
             Value::Number(n) => visitor.visit_f64(n.into()),
-            #[cfg(feature = "luau")]
+            
             Value::Vector(_) => self.deserialize_seq(visitor),
             Value::String(s) => match s.to_str() {
                 Ok(s) => visitor.visit_str(&s),
@@ -198,7 +198,7 @@ impl<'de> serde::Deserializer<'de> for Deserializer {
             Value::UserData(ud) if ud.is_serializable() => {
                 serde_userdata(ud, |value| value.deserialize_any(visitor))
             }
-            #[cfg(feature = "luau")]
+            
             Value::Buffer(buf) => {
                 let lua = buf.0.lua.lock();
                 visitor.visit_bytes(buf.as_slice(&lua))
@@ -291,7 +291,7 @@ impl<'de> serde::Deserializer<'de> for Deserializer {
         V: de::Visitor<'de>,
     {
         match self.value {
-            #[cfg(feature = "luau")]
+            
             Value::Vector(vec) => {
                 let mut deserializer = VecDeserializer {
                     vec,
@@ -473,7 +473,7 @@ impl<'de> de::SeqAccess<'de> for SeqDeserializer<'_> {
     }
 }
 
-#[cfg(feature = "luau")]
+
 struct VecDeserializer {
     vec: crate::Vector,
     next: usize,
@@ -481,7 +481,7 @@ struct VecDeserializer {
     visited: Rc<RefCell<FxHashSet<*const c_void>>>,
 }
 
-#[cfg(feature = "luau")]
+
 impl<'de> de::SeqAccess<'de> for VecDeserializer {
     type Error = Error;
 

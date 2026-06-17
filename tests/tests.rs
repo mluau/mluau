@@ -160,7 +160,7 @@ fn test_replace_globals() -> Result<()> {
     assert_eq!(val, "bar");
 
     // Updating globals in sandboxed Lua state is not allowed
-    #[cfg(feature = "luau")]
+    
     {
         lua.sandbox(true)?;
         match lua.set_globals(globals) {
@@ -188,7 +188,7 @@ fn test_load_mode() -> Result<()> {
 
     #[cfg(not(feature = "luau"))]
     let bytecode = lua.load("return 1 + 1").into_function()?.dump(true);
-    #[cfg(feature = "luau")]
+    
     let bytecode = mluau::Compiler::new().compile("return 1 + 1")?;
     assert_eq!(lua.load(&bytecode).eval::<i32>()?, 2);
     assert_eq!(lua.load(&bytecode).set_mode(ChunkMode::Binary).eval::<i32>()?, 2);
@@ -1235,7 +1235,7 @@ fn test_register_module() -> Result<()> {
     )
     .exec()?;
 
-    #[cfg(feature = "luau")]
+    
     {
         // Luau registered modules must have '@' prefix
         let res = lua.register_module("my_module", 123);
@@ -1445,7 +1445,7 @@ fn test_traceback() -> Result<()> {
     )
     .exec()?;
 
-    #[cfg(feature = "luau")]
+    
     {
         // debug name support
         struct MyUd {}

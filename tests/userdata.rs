@@ -549,7 +549,7 @@ fn test_functions() -> Result<()> {
     assert_eq!(get.call::<i64>(())?, 100);
     assert_eq!(get_constant.call::<i64>(())?, 7);
 
-    #[cfg(feature = "luau")]
+    
     assert!(globals.get::<Function>("not_me")?.call::<bool>(()).unwrap());
 
     Ok(())
@@ -557,7 +557,7 @@ fn test_functions() -> Result<()> {
 
 // Small test to ensure a failed namecall works right
 #[test]
-#[cfg(feature = "luau")]
+
 fn test_methods_namecall() -> Result<()> {
     struct MyUserData(i64);
 
@@ -713,7 +713,7 @@ fn test_metatable() -> Result<()> {
     #[cfg(any(feature = "lua54", feature = "lua53", feature = "luau"))]
     lua.load(r#"assert(tostring(ud):sub(1, 11) == "MyUserData:")"#)
         .exec()?;
-    #[cfg(feature = "luau")]
+    
     lua.load(r#"assert(typeof(ud) == "MyUserData")"#).exec()?;
 
     let ud: AnyUserData = globals.get("ud")?;
@@ -740,7 +740,7 @@ fn test_metatable() -> Result<()> {
 
     #[cfg(not(feature = "luau"))]
     assert_eq!(methods, vec!["__index", MetaMethod::Type.name()]);
-    #[cfg(feature = "luau")]
+    
     assert_eq!(methods, vec!["__index", "__namecall", MetaMethod::Type.name()]);
 
     #[derive(Copy, Clone)]

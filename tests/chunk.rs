@@ -112,7 +112,7 @@ fn test_chunk_macro() -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "luau")]
+
 #[test]
 fn test_compiler() -> Result<()> {
     let compiler = mluau::Compiler::new()
@@ -139,7 +139,7 @@ fn test_compiler() -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "luau")]
+
 #[test]
 fn test_compiler_library_constants() {
     use mluau::{Compiler, Vector};

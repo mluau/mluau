@@ -6,7 +6,7 @@ use crate::types::{Callback, CallbackUpvalue};
 #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 use crate::types::ContinuationUpvalue;
 
-#[cfg(feature = "luau")]
+
 use crate::types::{NamecallCallbackUpvalue, NamecallMapUpvalue};
 
 pub(crate) trait TypeKey: Any {
@@ -46,7 +46,7 @@ impl TypeKey for ContinuationUpvalue {
     }
 }
 
-#[cfg(feature = "luau")]
+
 impl TypeKey for NamecallCallbackUpvalue {
     #[inline(always)]
     fn type_key() -> *const c_void {
@@ -55,7 +55,7 @@ impl TypeKey for NamecallCallbackUpvalue {
     }
 }
 
-#[cfg(feature = "luau")]
+
 impl TypeKey for NamecallMapUpvalue {
     #[inline(always)]
     fn type_key() -> *const c_void {

@@ -3,7 +3,7 @@ use std::os::raw::{c_int, c_void};
 use std::{mem, ptr, slice};
 
 use crate::error::{Error, Result};
-#[cfg(feature = "luau")]
+
 use crate::state::util::get_next_spot;
 use crate::state::Lua;
 use crate::table::Table;
@@ -313,7 +313,7 @@ impl Function {
             lua.push_ref_at(&self.0, state);
             #[cfg(not(feature = "luau"))]
             let res = ffi::lua_getinfo(state, cstr!(">Snu"), &mut ar);
-            #[cfg(feature = "luau")]
+            
             let res = ffi::lua_getinfo(state, -1, cstr!("sn"), &mut ar);
             mlua_assert!(res != 0, "lua_getinfo failed with `>Snu`");
 
@@ -324,18 +324,18 @@ impl Function {
                     Some("") => None,
                     val => val,
                 },
-                #[cfg(feature = "luau")]
+                
                 name_what: None,
                 what: ptr_to_str(ar.what).unwrap_or("main"),
                 source: ptr_to_lossy_str(ar.source).map(|s| s.into_owned()),
                 #[cfg(not(feature = "luau"))]
                 short_src: ptr_to_lossy_str(ar.short_src.as_ptr()).map(|s| s.into_owned()),
-                #[cfg(feature = "luau")]
+                
                 short_src: ptr_to_lossy_str(ar.short_src).map(|s| s.into_owned()),
                 line_defined: linenumber_to_usize(ar.linedefined),
                 #[cfg(not(feature = "luau"))]
                 last_line_defined: linenumber_to_usize(ar.lastlinedefined),
-                #[cfg(feature = "luau")]
+                
                 last_line_defined: None,
                 #[cfg(not(any(feature = "lua51", feature = "luajit")))]
                 num_params: ar.nparams as usize,

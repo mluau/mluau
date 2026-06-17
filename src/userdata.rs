@@ -206,7 +206,7 @@ impl MetaMethod {
             MetaMethod::Pairs => "__pairs",
             #[cfg(any(feature = "lua52", feature = "luajit52"))]
             MetaMethod::IPairs => "__ipairs",
-            #[cfg(feature = "luau")]
+            
             MetaMethod::Iter => "__iter",
 
             #[cfg(feature = "lua54")]
@@ -272,7 +272,7 @@ pub trait UserDataMethods<T> {
     /// Will disable namecall optimization if enabled
     ///
     /// [`add_method`]: UserDataMethods::add_method
-    #[cfg(feature = "luau")]
+    
     fn add_method_with_debug<M, A, R>(
         &mut self,
         name: impl Into<StdString>,
@@ -301,7 +301,7 @@ pub trait UserDataMethods<T> {
     /// Will disable namecall optimization if enabled
     ///
     /// [`add_method_mut`]: UserDataMethods::add_method_mut
-    #[cfg(feature = "luau")]
+    
     fn add_method_mut_with_debug<M, A, R>(
         &mut self,
         name: impl Into<StdString>,
@@ -351,7 +351,7 @@ pub trait UserDataMethods<T> {
     /// This is a version of [`add_function`] that accepts a debug name
     ///
     /// [`add_function`]: UserDataMethods::add_function
-    #[cfg(feature = "luau")]
+    
     fn add_function_with_debug<F, A, R>(
         &mut self,
         name: impl Into<StdString>,
@@ -379,7 +379,7 @@ pub trait UserDataMethods<T> {
     /// name
     ///
     /// [`add_function`]: UserDataMethods::add_function
-    #[cfg(feature = "luau")]
+    
     fn add_function_mut_with_debug<F, A, R>(
         &mut self,
         name: impl Into<StdString>,
@@ -738,7 +738,7 @@ impl AnyUserData {
             check_stack(state, 3)?;
 
             // Luau does not have __gc
-            #[cfg(feature = "luau")]
+            
             {
                 match lua.get_userdata_ref_type_id(&self.0)? {
                     Some(type_id) => {

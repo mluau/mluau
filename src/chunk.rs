@@ -140,7 +140,7 @@ pub struct Chunk<'a> {
     pub(crate) env: Result<Option<Table>>,
     pub(crate) mode: Option<ChunkMode>,
     pub(crate) source: IoResult<Cow<'a, [u8]>>,
-    #[cfg(feature = "luau")]
+    
     pub(crate) compiler: Option<Compiler>,
 }
 
@@ -433,7 +433,7 @@ impl Compiler {
             static LIBRARY_MEMBER_CONSTANT_MAP: RefCell<LibraryMemberConstantMap> = Default::default();
         }
 
-        #[cfg(feature = "luau")]
+        
         unsafe extern "C-unwind" fn library_member_constant_callback(
             library: *const c_char,
             member: *const c_char,
@@ -601,7 +601,7 @@ impl Chunk<'_> {
     /// This simply compiles the chunk without actually executing it.
     #[cfg_attr(not(feature = "luau"), allow(unused_mut))]
     pub fn into_function(mut self) -> Result<Function> {
-        #[cfg(feature = "luau")]
+        
         if self.compiler.is_some() {
             // We don't need to compile source if no compiler set
             self.compile();
@@ -619,7 +619,7 @@ impl Chunk<'_> {
     fn compile(&mut self) {
         if let Ok(ref source) = self.source {
             if self.detect_mode() == ChunkMode::Text {
-                #[cfg(feature = "luau")]
+                
                 if let Ok(data) = self.compiler.get_or_insert_with(Default::default).compile(source) {
                     self.source = Ok(Cow::Owned(data));
                     self.mode = Some(ChunkMode::Binary);
@@ -682,7 +682,7 @@ impl Chunk<'_> {
         let source = source.map_err(Error::runtime)?;
         let source = Self::expression_source(source);
         // We don't need to compile source if no compiler options set
-        #[cfg(feature = "luau")]
+        
         let source = self
             .compiler
             .as_ref()
@@ -708,7 +708,7 @@ impl Chunk<'_> {
             if source.starts_with(ffi::LUA_SIGNATURE) {
                 return ChunkMode::Binary;
             }
-            #[cfg(feature = "luau")]
+            
             if *source.first().unwrap_or(&u8::MAX) < b'\n' {
                 return ChunkMode::Binary;
             }
