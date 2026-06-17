@@ -99,7 +99,7 @@ impl Lua {
         #[cfg(feature = "luau")]
         {
             if !HAVE_SET_INTEGER_FFLAG.swap(true, std::sync::atomic::Ordering::Acquire) {
-                for fflag in ["LuauIntegerType", "LuauIntegerFastcalls", "LuauIntegerLibrary"] {
+                for fflag in ["LuauIntegerType2", "LuauIntegerFastcalls", "LuauIntegerLibrary"] {
                     mlua_expect!(Self::set_fflag(fflag, true), "integer fflag not set")
                 }
             }

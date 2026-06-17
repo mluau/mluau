@@ -57,7 +57,6 @@ use crate::{
 };
 
 /// An inner Lua struct which holds a raw Lua state.
-#[doc(hidden)]
 pub struct RawLua {
     // The state is dynamic and depends on context
     pub(super) state: Cell<*mut ffi::lua_State>,
@@ -123,14 +122,14 @@ impl RawLua {
     }
 
     #[inline(always)]
-    pub(crate) fn main_state(&self) -> *mut ffi::lua_State {
+    pub fn main_state(&self) -> *mut ffi::lua_State {
         self.main_state
             .map(|state| state.as_ptr())
             .unwrap_or_else(|| self.state())
     }
 
     #[inline(always)]
-    pub(crate) fn ref_thread(&self, aux_thread: usize) -> *mut ffi::lua_State {
+    pub fn ref_thread(&self, aux_thread: usize) -> *mut ffi::lua_State {
         unsafe {
             (&(*self.extra()).ref_thread)
                 .get(aux_thread)
@@ -716,7 +715,7 @@ impl RawLua {
     ///
     /// Uses up to 2 stack spaces to push a single value, does not call `checkstack`.
     #[inline(always)]
-    pub(crate) unsafe fn push_at(&self, state: *mut ffi::lua_State, value: impl IntoLua) -> Result<()> {
+    pub unsafe fn push_at(&self, state: *mut ffi::lua_State, value: impl IntoLua) -> Result<()> {
         value.push_into_specified_stack(self, state)
     }
 

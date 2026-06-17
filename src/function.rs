@@ -43,6 +43,12 @@ pub struct FunctionInfo {
     pub line_defined: Option<usize>,
     /// The line number where the definition of the function ends (not set by Luau).
     pub last_line_defined: Option<usize>,
+    /// Number of function parameters
+    #[cfg(any(not(any(feature = "lua51", feature = "luajit")), doc))]
+    pub num_params: usize,
+    /// True if function accepts variable args
+    #[cfg(any(not(any(feature = "lua51", feature = "luajit")), doc))]
+    pub is_vararg: bool,
 }
 
 /// Luau function coverage snapshot.
@@ -306,10 +312,10 @@ impl Function {
             let mut ar: ffi::lua_Debug = mem::zeroed();
             lua.push_ref_at(&self.0, state);
             #[cfg(not(feature = "luau"))]
-            let res = ffi::lua_getinfo(state, cstr!(">Sn"), &mut ar);
+            let res = ffi::lua_getinfo(state, cstr!(">Snu"), &mut ar);
             #[cfg(feature = "luau")]
             let res = ffi::lua_getinfo(state, -1, cstr!("sn"), &mut ar);
-            mlua_assert!(res != 0, "lua_getinfo failed with `>Sn`");
+            mlua_assert!(res != 0, "lua_getinfo failed with `>Snu`");
 
             FunctionInfo {
                 name: ptr_to_lossy_str(ar.name).map(|s| s.into_owned()),
@@ -331,6 +337,10 @@ impl Function {
                 last_line_defined: linenumber_to_usize(ar.lastlinedefined),
                 #[cfg(feature = "luau")]
                 last_line_defined: None,
+                #[cfg(not(any(feature = "lua51", feature = "luajit")))]
+                num_params: ar.nparams as usize,
+                #[cfg(not(any(feature = "lua51", feature = "luajit")))]
+                is_vararg: ar.isvararg != 0,
             }
         }
     }
