@@ -26,6 +26,9 @@ default = ["luau", "dynamic-userdata"]
 luau = ["ffi/luau"]
 luau-jit = ["luau", "ffi/luau-codegen"]
 luau-vector4 = ["luau", "ffi/luau-vector4"]
+# Luau's user-defined classes support is experimental upstream (gated behind
+# fastflags prefixed `Debug*`) and its shape may still change, so this is opt-in.
+luau-classes = ["luau", "ffi/luau-classes"]
 module = ["mlua_derive", "ffi/module"]
 send = ["error-send"]
 error-send = []

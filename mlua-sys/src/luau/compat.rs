@@ -368,6 +368,18 @@ pub unsafe fn luaL_newmetatable(L: *mut lua_State, tname: *const c_char) -> c_in
     }
 }
 
+unsafe fn finish_load_status(L: *mut lua_State, status: c_int) -> c_int {
+    if status != 0 {
+        if lua_isstring(L, -1) != 0 && CStr::from_ptr(lua_tostring(L, -1)) == c"not enough memory" {
+            // A case for Luau >= 0.679
+            return LUA_ERRMEM;
+        }
+        return LUA_ERRSYNTAX;
+    }
+
+    LUA_OK
+}
+
 pub unsafe fn luaL_loadbufferenv(
     L: *mut lua_State,
     data: *const c_char,
@@ -412,15 +424,26 @@ pub unsafe fn luaL_loadbufferenv(
         luau_load(L, name, data, size, env)
     };
 
-    if status != 0 {
-        if lua_isstring(L, -1) != 0 && CStr::from_ptr(lua_tostring(L, -1)) == c"not enough memory" {
-            // A case for Luau >= 0.679
-            return LUA_ERRMEM;
-        }
-        return LUA_ERRSYNTAX;
-    }
+    finish_load_status(L, status)
+}
 
-    LUA_OK
+/// Loads a buffer that the caller has already established is valid Luau bytecode
+/// (e.g. output freshly produced by `luau_compile`), skipping straight to `luau_load`.
+///
+/// `luaL_loadbufferenv`'s text-vs-binary detection sniffs the leading byte, which is
+/// the bytecode version number for real bytecode. That number grows as the compiler
+/// gains features and can land in the range of common leading whitespace bytes in
+/// source text (e.g. version 10 == b'\n'), so it isn't safe to route already-known
+/// bytecode back through that guess -- it can misclassify it as text and reject it.
+pub unsafe fn luau_load_trusted_binary(
+    L: *mut lua_State,
+    data: *const c_char,
+    size: usize,
+    name: *const c_char,
+    env: c_int,
+) -> c_int {
+    let status = luau_load(L, name, data, size, env);
+    finish_load_status(L, status)
 }
 
 #[inline(always)]

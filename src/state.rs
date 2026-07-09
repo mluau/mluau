@@ -19,6 +19,8 @@ use std::os::raw::{c_char, c_int};
 use std::panic::Location;
 use std::result::Result as StdResult;
 use std::string::String as StdString;
+#[cfg(any(feature = "luau-classes", doc))]
+use std::sync::atomic::Ordering;
 use std::{fmt, mem, ptr};
 
 use crate::thread::ContinuationStatus;
@@ -916,11 +918,28 @@ impl Lua {
     /// Sets Luau feature flag (global setting).
     ///
     /// See https://github.com/luau-lang/luau/blob/master/CONTRIBUTING.md#feature-flags for details.
-    
+
     #[allow(clippy::result_unit_err)]
     pub fn set_fflag(name: &str, enabled: bool) -> StdResult<(), ()> {
-        if let Ok(name) = std::ffi::CString::new(name) {
-            if unsafe { ffi::luau_setfflag(name.as_ptr(), enabled as c_int) != 0 } {
+        // Both flags are needed at runtime to actually get working classes (one gates the
+        // parser/compiler, the other gates the VM and the `class` stdlib), so treat setting
+        // either of them without the `luau-classes` feature as a usage bug: the caller will
+        // otherwise get a half-enabled, unsupported feature (e.g. classes that compile but
+        // have no `class` global to introspect them with).
+        #[cfg(not(feature = "luau-classes"))]
+        mlua_debug_assert!(
+            !matches!(name, "DebugLuauUserDefinedClasses" | "DebugLuauUserDefinedClassesRuntime"),
+            "cannot set Luau classes fastflag \"{}\" because the `luau-classes` feature is not \
+             enabled on the `mluau` crate; enable it to use Luau's (experimental) user-defined classes",
+            name
+        );
+
+        if let Ok(cname) = std::ffi::CString::new(name) {
+            if unsafe { ffi::luau_setfflag(cname.as_ptr(), enabled as c_int) != 0 } {
+                #[cfg(any(feature = "luau-classes", doc))]
+                if name == "DebugLuauUserDefinedClassesRuntime" {
+                    crate::luau::CLASSES_RUNTIME_ENABLED.store(enabled, Ordering::Relaxed);
+                }
                 return Ok(());
             }
         }
@@ -952,8 +971,9 @@ impl Lua {
             env: chunk.environment(self),
             mode: chunk.mode(),
             source: chunk.source(),
-            
+
             compiler: unsafe { (*self.lock().extra.get()).compiler.clone() },
+            trusted_binary: false,
         }
     }
 

@@ -374,6 +374,7 @@ impl RawLua {
         env: Option<&Table>,
         mode: Option<ChunkMode>,
         source: &[u8],
+        trusted_binary: bool,
     ) -> Result<Function> {
         let state = self.state();
         unsafe {
@@ -387,11 +388,11 @@ impl RawLua {
                 None => cstr!("bt"),
             };
             let status = if self.unlikely_memory_error() {
-                self.load_chunk_inner(state, name, env, mode, source)
+                self.load_chunk_inner(state, name, env, mode, source, trusted_binary)
             } else {
                 // Luau and Lua 5.2 can trigger an exception during chunk loading
                 protect_lua!(state, 0, 1, |state| {
-                    self.load_chunk_inner(state, name, env, mode, source)
+                    self.load_chunk_inner(state, name, env, mode, source, trusted_binary)
                 })?
             };
             match status {
@@ -408,21 +409,27 @@ impl RawLua {
         env: Option<&Table>,
         mode: *const c_char,
         source: &[u8],
+        trusted_binary: bool,
     ) -> c_int {
-        let status = ffi::luaL_loadbufferenv(
-            state,
-            source.as_ptr() as *const c_char,
-            source.len(),
-            name,
-            mode,
-            match env {
-                Some(env) => {
-                    self.push_ref_at(&env.0, self.state());
-                    -1
-                }
-                _ => 0,
-            },
-        );
+        let env = match env {
+            Some(env) => {
+                self.push_ref_at(&env.0, self.state());
+                -1
+            }
+            _ => 0,
+        };
+        let status = if trusted_binary {
+            #[cfg(feature = "luau")]
+            {
+                ffi::luau_load_trusted_binary(state, source.as_ptr() as *const c_char, source.len(), name, env)
+            }
+            #[cfg(not(feature = "luau"))]
+            {
+                ffi::luaL_loadbufferenv(state, source.as_ptr() as *const c_char, source.len(), name, mode, env)
+            }
+        } else {
+            ffi::luaL_loadbufferenv(state, source.as_ptr() as *const c_char, source.len(), name, mode, env)
+        };
         #[cfg(feature = "luau-jit")]
         if status == ffi::LUA_OK {
             if (*self.extra.get()).enable_jit && ffi::luau_codegen_supported() != 0 {

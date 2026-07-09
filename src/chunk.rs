@@ -140,8 +140,16 @@ pub struct Chunk<'a> {
     pub(crate) env: Result<Option<Table>>,
     pub(crate) mode: Option<ChunkMode>,
     pub(crate) source: IoResult<Cow<'a, [u8]>>,
-    
+
     pub(crate) compiler: Option<Compiler>,
+    /// Set by `compile` once it has replaced `source` with bytecode it just produced
+    /// itself. Lets `load_chunk` skip the binary/text sniff in `luaL_loadbufferenv`,
+    /// which only guesses from the leading byte (the bytecode version number) and
+    /// can misclassify legitimate bytecode as text once that version reaches the
+    /// range of common leading whitespace bytes (e.g. version 10 == b'\n').
+    /// Distinct from `mode`: `mode` is what the caller *claims* the data is (and must
+    /// still be validated, e.g. by `test_load_mode`), this is what *we* know it is.
+    pub(crate) trusted_binary: bool,
 }
 
 /// Represents chunk mode (text or binary).
@@ -601,16 +609,20 @@ impl Chunk<'_> {
     /// This simply compiles the chunk without actually executing it.
     #[cfg_attr(not(feature = "luau"), allow(unused_mut))]
     pub fn into_function(mut self) -> Result<Function> {
-        
+
         if self.compiler.is_some() {
             // We don't need to compile source if no compiler set
             self.compile();
         }
 
         let name = Self::convert_name(self.name)?;
-        self.lua
-            .lock()
-            .load_chunk(Some(&name), self.env?.as_ref(), self.mode, self.source?.as_ref())
+        self.lua.lock().load_chunk(
+            Some(&name),
+            self.env?.as_ref(),
+            self.mode,
+            self.source?.as_ref(),
+            self.trusted_binary,
+        )
     }
 
     /// Compiles the chunk and changes mode to binary.
@@ -619,16 +631,22 @@ impl Chunk<'_> {
     fn compile(&mut self) {
         if let Ok(ref source) = self.source {
             if self.detect_mode() == ChunkMode::Text {
-                
+
                 if let Ok(data) = self.compiler.get_or_insert_with(Default::default).compile(source) {
                     self.source = Ok(Cow::Owned(data));
                     self.mode = Some(ChunkMode::Binary);
+                    self.trusted_binary = true;
                 }
                 #[cfg(not(feature = "luau"))]
-                if let Ok(func) = self.lua.lock().load_chunk(None, None, None, source.as_ref()) {
+                if let Ok(func) = self
+                    .lua
+                    .lock()
+                    .load_chunk(None, None, None, source.as_ref(), false)
+                {
                     let data = func.dump(false);
                     self.source = Ok(Cow::Owned(data));
                     self.mode = Some(ChunkMode::Binary);
+                    self.trusted_binary = true;
                 }
             }
         }
@@ -649,6 +667,7 @@ impl Chunk<'_> {
                     if let Some(data) = cache.0.get(source.as_ref()) {
                         self.source = Ok(Cow::Owned(data.clone()));
                         self.mode = Some(ChunkMode::Binary);
+                        self.trusted_binary = true;
                         return self;
                     }
                 }
@@ -683,12 +702,9 @@ impl Chunk<'_> {
         let source = Self::expression_source(source);
         // We don't need to compile source if no compiler options set
         
-        let source = self
-            .compiler
-            .as_ref()
-            .map(|c| c.compile(&source))
-            .transpose()?
-            .unwrap_or(source);
+        let compiled = self.compiler.as_ref().map(|c| c.compile(&source)).transpose()?;
+        let trusted_binary = compiled.is_some();
+        let source = compiled.unwrap_or(source);
 
         let name = Self::convert_name(self.name.clone())?;
         let env = match &self.env {
@@ -696,7 +712,9 @@ impl Chunk<'_> {
             Ok(None) => None,
             Err(err) => return Err(err.clone()),
         };
-        self.lua.lock().load_chunk(Some(&name), env, None, &source)
+        self.lua
+            .lock()
+            .load_chunk(Some(&name), env, None, &source, trusted_binary)
     }
 
     fn detect_mode(&self) -> ChunkMode {
@@ -708,7 +726,7 @@ impl Chunk<'_> {
             if source.starts_with(ffi::LUA_SIGNATURE) {
                 return ChunkMode::Binary;
             }
-            
+
             if *source.first().unwrap_or(&u8::MAX) < b'\n' {
                 return ChunkMode::Binary;
             }

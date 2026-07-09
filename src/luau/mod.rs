@@ -17,6 +17,15 @@ pub use require::{NavigateError, Require, TextRequirer};
 
 static HAVE_SET_INTEGER_FFLAG: AtomicBool = AtomicBool::new(false);
 
+/// Tracks whether `DebugLuauUserDefinedClassesRuntime` was enabled via [`Lua::set_fflag`].
+///
+/// Luau doesn't expose a way to read back a feature flag's current value, so mluau
+/// keeps track of this one itself: `configure_luau` reads it to decide whether to
+/// register the `class` global table, mirroring what Luau's own `luaL_openlibs` does
+/// internally when this flag is on.
+#[cfg(any(feature = "luau-classes", doc))]
+pub(crate) static CLASSES_RUNTIME_ENABLED: AtomicBool = AtomicBool::new(false);
+
 // Since Luau has some missing standard functions, we re-implement them here
 
 impl Lua {
@@ -103,6 +112,18 @@ impl Lua {
                     mlua_expect!(Self::set_fflag(fflag, true), "integer fflag not set")
                 }
             }
+        }
+
+        // Register the `class` global table when the user has enabled Luau's
+        // (experimental) user-defined-classes runtime via `set_fflag`, mirroring what
+        // Luau's own `luaL_openlibs` does internally when that flag is on.
+        #[cfg(any(feature = "luau-classes", doc))]
+        if CLASSES_RUNTIME_ENABLED.load(std::sync::atomic::Ordering::Acquire) {
+            let lua = self.lock();
+            let state = lua.state();
+            protect_lua!(state, 0, 0, |state| {
+                ffi::luaL_requiref(state, ffi::LUA_CLASSLIBNAME, ffi::luaopen_class, 1)
+            })?;
         }
 
         Ok(())

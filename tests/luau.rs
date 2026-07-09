@@ -376,6 +376,50 @@ fn test_fflags() {
     assert!(Lua::set_fflag("UnknownFlag", true).is_err());
 }
 
+// Regression test: enabling Luau's (experimental) user-defined-classes fastflags used
+// to panic during `Lua::new()`. The compiler bumps its bytecode version once
+// `DebugLuauUserDefinedClasses` is on, and mluau's own bootstrap chunk (loaded during
+// `configure_luau`) got misclassified as text by a byte-sniffing heuristic that assumed
+// bytecode version numbers would never collide with common leading whitespace bytes.
+#[cfg(feature = "luau-classes")]
+#[test]
+fn test_classes_fflag_does_not_panic() -> Result<()> {
+    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
+    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
+
+    // This used to panic with:
+    // "Error configuring Luau (this is a bug, please file an issue):
+    //  SyntaxError { message: \"attempt to load a text chunk (mode is 'b')\" ... }"
+    let lua = Lua::new();
+
+    let result: i64 = lua.load("return 1 + 1").eval()?;
+    assert_eq!(result, 2);
+
+    Ok(())
+}
+
+// With the `luau-classes` feature enabled and the runtime fastflag on, mluau should
+// register Luau's `class` global table (mirroring what Luau's own `luaL_openlibs` does
+// internally), so `class.isinstance`/`class.classof` are available to scripts.
+#[cfg(feature = "luau-classes")]
+#[test]
+fn test_classes_lib_registered_when_fflag_enabled() -> Result<()> {
+    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
+    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
+
+    let lua = Lua::new();
+
+    let has_class: bool = lua.load("return class ~= nil").eval()?;
+    assert!(has_class, "expected `class` global to be registered");
+
+    let has_functions: bool = lua
+        .load("return type(class.isinstance) == 'function' and type(class.classof) == 'function'")
+        .eval()?;
+    assert!(has_functions, "expected class.isinstance/classof to be functions");
+
+    Ok(())
+}
+
 #[test]
 fn test_thread_events() -> Result<()> {
     let lua = Lua::new();
