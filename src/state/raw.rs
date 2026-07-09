@@ -639,6 +639,11 @@ impl RawLua {
             Value::UserData(ud) => self.push_ref_at(&ud.0, state),
             
             Value::Buffer(buf) => self.push_ref_at(&buf.0, state),
+
+            #[cfg(any(feature = "luau-classes", doc))]
+            Value::Class(c) => self.push_ref_at(&c.0, state),
+            #[cfg(any(feature = "luau-classes", doc))]
+            Value::Object(o) => self.push_ref_at(&o.0, state),
             Value::Error(err) => {
                 let protect = !self.unlikely_memory_error();
 
@@ -781,6 +786,28 @@ impl RawLua {
                     ffi::lua_replace(ref_thread, idxs);
                 }
                 Ok(Value::Buffer(crate::Buffer(self.new_value_ref(aux_thread, idxs))))
+            }
+
+            #[cfg(any(feature = "luau-classes", doc))]
+            ffi::LUA_TCLASS => {
+                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
+                let ref_thread = self.ref_thread(aux_thread);
+                ffi::lua_xpush(state, ref_thread, idx);
+                if replace {
+                    ffi::lua_replace(ref_thread, idxs);
+                }
+                Ok(Value::Class(crate::Class(self.new_value_ref(aux_thread, idxs))))
+            }
+
+            #[cfg(any(feature = "luau-classes", doc))]
+            ffi::LUA_TOBJECT => {
+                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
+                let ref_thread = self.ref_thread(aux_thread);
+                ffi::lua_xpush(state, ref_thread, idx);
+                if replace {
+                    ffi::lua_replace(ref_thread, idxs);
+                }
+                Ok(Value::Object(crate::Object(self.new_value_ref(aux_thread, idxs))))
             }
 
             _ => {

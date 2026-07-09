@@ -64,6 +64,10 @@ pub const LUA_TFUNCTION: c_int = 8;
 pub const LUA_TUSERDATA: c_int = 9;
 pub const LUA_TTHREAD: c_int = 10;
 pub const LUA_TBUFFER: c_int = 11;
+#[cfg(feature = "luau-classes")]
+pub const LUA_TCLASS: c_int = 12;
+#[cfg(feature = "luau-classes")]
+pub const LUA_TOBJECT: c_int = 13;
 
 /// Guaranteed number of Lua stack slots available to a C function.
 pub const LUA_MINSTACK: c_int = 20;

@@ -420,6 +420,159 @@ fn test_classes_lib_registered_when_fflag_enabled() -> Result<()> {
     Ok(())
 }
 
+// Classes are constructed by *calling* the class value: Luau gives each class a metatable
+// with `__call` set to a constructor that builds a new object (see `luaR_createobject` in
+// Luau's VM). This test creates a class and an instance entirely in Luau, round-trips both
+// through Rust functions (typed as `mluau::Class`/`mluau::Object`), and checks that identity,
+// `class.isinstance`/`classof`, and field access all still work afterwards -- i.e. that our
+// `LUA_TCLASS`/`LUA_TOBJECT` push/pop plumbing doesn't corrupt or misidentify the values.
+#[cfg(feature = "luau-classes")]
+#[test]
+fn test_classes_instantiate_and_roundtrip_through_rust() -> Result<()> {
+    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
+    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
+
+    let lua = Lua::new();
+
+    let receive_class = lua.create_function(|_, class: mluau::Class| Ok(class))?;
+    lua.globals().set("receive_class", receive_class)?;
+
+    let receive_object = lua.create_function(|_, object: mluau::Object| Ok(object))?;
+    lua.globals().set("receive_object", receive_object)?;
+
+    let result: bool = lua
+        .load(
+            r#"
+            class Point
+                public x: number
+                public y: number
+            end
+
+            local point = Point({ x = 1, y = 2 })
+
+            -- Sanity: the runtime actually produced real class/object values, not e.g. tables.
+            assert(type(Point) == "class", "expected Point to be a class, got " .. type(Point))
+            assert(type(point) == "object", "expected point to be an object, got " .. type(point))
+
+            local roundtripped_class = receive_class(Point)
+            local roundtripped_object = receive_object(point)
+
+            assert(roundtripped_class == Point, "class identity was not preserved across the roundtrip")
+            assert(roundtripped_object == point, "object identity was not preserved across the roundtrip")
+
+            assert(class.isinstance(roundtripped_object, roundtripped_class), "isinstance failed after roundtrip")
+            assert(class.classof(roundtripped_object) == roundtripped_class, "classof mismatch after roundtrip")
+
+            return roundtripped_object.x == 1 and roundtripped_object.y == 2
+            "#,
+        )
+        .eval()?;
+
+    assert!(result, "object fields did not survive the roundtrip");
+
+    Ok(())
+}
+
+// Same roundtrip as above, but going through the untyped `Value` enum instead of the typed
+// `Class`/`Object` wrappers, exercising `Value::is_class`/`as_class`/`is_object`/`as_object`
+// and `Value::type_name` along the way.
+#[cfg(feature = "luau-classes")]
+#[test]
+fn test_classes_value_enum_roundtrip() -> Result<()> {
+    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
+    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
+
+    let lua = Lua::new();
+
+    let seen_class: Arc<std::sync::Mutex<Option<Value>>> = Arc::new(std::sync::Mutex::new(None));
+    let seen_object: Arc<std::sync::Mutex<Option<Value>>> = Arc::new(std::sync::Mutex::new(None));
+
+    let seen_class_clone = seen_class.clone();
+    let receive_class = lua.create_function(move |_, value: Value| {
+        assert!(value.is_class(), "expected a class value, got {}", value.type_name());
+        assert!(value.as_class().is_some());
+        *seen_class_clone.lock().unwrap() = Some(value.clone());
+        Ok(value)
+    })?;
+    lua.globals().set("receive_class", receive_class)?;
+
+    let seen_object_clone = seen_object.clone();
+    let receive_object = lua.create_function(move |_, value: Value| {
+        assert!(value.is_object(), "expected an object value, got {}", value.type_name());
+        assert!(value.as_object().is_some());
+        *seen_object_clone.lock().unwrap() = Some(value.clone());
+        Ok(value)
+    })?;
+    lua.globals().set("receive_object", receive_object)?;
+
+    lua.load(
+        r#"
+        class Animal
+            public name: string
+        end
+
+        local cat = Animal({ name = "cat" })
+        assert(receive_class(Animal) == Animal)
+        assert(receive_object(cat) == cat)
+        "#,
+    )
+    .exec()?;
+
+    let class_value = seen_class.lock().unwrap().take().expect("class value was not captured");
+    let object_value = seen_object.lock().unwrap().take().expect("object value was not captured");
+
+    assert_eq!(class_value.type_name(), "class");
+    assert_eq!(object_value.type_name(), "object");
+    assert!(!class_value.is_object());
+    assert!(!object_value.is_class());
+
+    Ok(())
+}
+
+// Mutate an object's field from a Rust function (via `Object::set`) and check that the change
+// is visible back in Luau, then read it back through `Object::get`. Also checks that indexing
+// a member that doesn't exist on the class raises a Lua error rather than returning nil (unlike
+// tables), and that mluau surfaces that as `Err` instead of panicking.
+#[cfg(feature = "luau-classes")]
+#[test]
+fn test_classes_get_set_object_field_from_rust() -> Result<()> {
+    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
+    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
+
+    let lua = Lua::new();
+
+    let bump_score = lua.create_function(|_, object: mluau::Object| {
+        let current: i64 = object.get("score")?;
+        object.set("score", current + 10)?;
+
+        // `nonexistent` isn't a declared member of the class, so Luau throws a hard error on
+        // read instead of returning nil -- make sure that comes back as `Err`, not a panic.
+        let missing_result: Result<Value> = object.get("nonexistent");
+        assert!(missing_result.is_err(), "expected reading a missing member to error");
+
+        Ok(())
+    })?;
+    lua.globals().set("bump_score", bump_score)?;
+
+    let result: i64 = lua
+        .load(
+            r#"
+            class Player
+                public score: number
+            end
+
+            local player = Player({ score = 5 })
+            bump_score(player)
+            return player.score
+            "#,
+        )
+        .eval()?;
+
+    assert_eq!(result, 15);
+
+    Ok(())
+}
+
 #[test]
 fn test_thread_events() -> Result<()> {
     let lua = Lua::new();

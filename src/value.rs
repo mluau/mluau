@@ -72,6 +72,14 @@ pub enum Value {
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     Buffer(crate::Buffer),
+    /// A Luau class (the "blueprint" produced by a `class ... end` declaration).
+    #[cfg(any(feature = "luau-classes", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau-classes")))]
+    Class(crate::Class),
+    /// An instance of a Luau [`Class`](crate::Class).
+    #[cfg(any(feature = "luau-classes", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau-classes")))]
+    Object(crate::Object),
     /// `Error` is a special builtin userdata type. When received from Lua it is implicitly cloned.
     Error(Box<Error>),
     /// Any other value not known to mlua (eg. LuaJIT CData).
@@ -105,6 +113,11 @@ impl Value {
             Value::UserData(_) => "userdata",
             
             Value::Buffer(_) => "buffer",
+
+            #[cfg(any(feature = "luau-classes", doc))]
+            Value::Class(_) => "class",
+            #[cfg(any(feature = "luau-classes", doc))]
+            Value::Object(_) => "object",
             Value::Error(_) => "error",
             Value::Other(_) => "other",
         }
@@ -152,6 +165,9 @@ impl Value {
             | Value::Other(vref) => vref.to_pointer(),
             
             Value::Buffer(crate::Buffer(vref)) => vref.to_pointer(),
+
+            #[cfg(any(feature = "luau-classes", doc))]
+            Value::Class(crate::Class(vref)) | Value::Object(crate::Object(vref)) => vref.to_pointer(),
             _ => ptr::null(),
         }
     }
@@ -193,6 +209,11 @@ impl Value {
             | Value::Other(vref) => unsafe { invoke_to_string(vref) },
             
             Value::Buffer(crate::Buffer(vref)) => unsafe { invoke_to_string(vref) },
+
+            #[cfg(any(feature = "luau-classes", doc))]
+            Value::Class(crate::Class(vref)) | Value::Object(crate::Object(vref)) => unsafe {
+                invoke_to_string(vref)
+            },
             Value::Error(err) => Ok(err.to_string()),
         }
     }
@@ -482,6 +503,56 @@ impl Value {
         self.as_buffer().is_some()
     }
 
+    /// Cast the value to a [`Class`].
+    ///
+    /// If the value is a [`Class`], returns it or `None` otherwise.
+    ///
+    /// [`Class`]: crate::Class
+    #[cfg(any(feature = "luau-classes", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau-classes")))]
+    #[inline]
+    pub fn as_class(&self) -> Option<&crate::Class> {
+        match self {
+            Value::Class(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// Returns `true` if the value is a [`Class`].
+    ///
+    /// [`Class`]: crate::Class
+    #[cfg(any(feature = "luau-classes", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau-classes")))]
+    #[inline]
+    pub fn is_class(&self) -> bool {
+        self.as_class().is_some()
+    }
+
+    /// Cast the value to an [`Object`].
+    ///
+    /// If the value is an [`Object`], returns it or `None` otherwise.
+    ///
+    /// [`Object`]: crate::Object
+    #[cfg(any(feature = "luau-classes", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau-classes")))]
+    #[inline]
+    pub fn as_object(&self) -> Option<&crate::Object> {
+        match self {
+            Value::Object(o) => Some(o),
+            _ => None,
+        }
+    }
+
+    /// Returns `true` if the value is an [`Object`].
+    ///
+    /// [`Object`]: crate::Object
+    #[cfg(any(feature = "luau-classes", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau-classes")))]
+    #[inline]
+    pub fn is_object(&self) -> bool {
+        self.as_object().is_some()
+    }
+
     /// Returns `true` if the value is an [`Error`].
     #[inline]
     pub fn is_error(&self) -> bool {
@@ -588,6 +659,18 @@ impl Value {
             }
             
             buf @ Value::Buffer(_) => write!(fmt, "buffer: {:?}", buf.to_pointer()),
+            // Classes have no metatable at all (unlike objects), so `__tostring` never applies
+            // and `luaL_tolstring`'s default is just "class: 0x...' -- skip the round-trip call
+            // and format the pointer directly.
+            #[cfg(any(feature = "luau-classes", doc))]
+            c @ Value::Class(_) => write!(fmt, "class: {:?}", c.to_pointer()),
+            // Unlike classes, objects get their class's `instancemetatable`, so they can define
+            // `__tostring` -- fall back to the default (pointer-only) format if they don't.
+            #[cfg(any(feature = "luau-classes", doc))]
+            o @ Value::Object(_) => {
+                let s = o.to_string().unwrap_or_else(|_| format!("object: {:?}", o.to_pointer()));
+                write!(fmt, "{s}")
+            }
             Value::Error(e) if recursive => write!(fmt, "{e:?}"),
             Value::Error(_) => write!(fmt, "error"),
             Value::Other(v) => write!(fmt, "other: {:?}", v.to_pointer()),
@@ -618,6 +701,11 @@ impl fmt::Debug for Value {
             Value::UserData(ud) => write!(fmt, "{ud:?}"),
             
             Value::Buffer(buf) => write!(fmt, "{buf:?}"),
+
+            #[cfg(any(feature = "luau-classes", doc))]
+            Value::Class(c) => write!(fmt, "{c:?}"),
+            #[cfg(any(feature = "luau-classes", doc))]
+            Value::Object(o) => write!(fmt, "{o:?}"),
             Value::Error(e) => write!(fmt, "Error({e:?})"),
             Value::Other(v) => write!(fmt, "Other({v:?})"),
         }
@@ -644,6 +732,11 @@ impl PartialEq for Value {
             (Value::UserData(a), Value::UserData(b)) => a == b,
             
             (Value::Buffer(a), Value::Buffer(b)) => a == b,
+
+            #[cfg(any(feature = "luau-classes", doc))]
+            (Value::Class(a), Value::Class(b)) => a == b,
+            #[cfg(any(feature = "luau-classes", doc))]
+            (Value::Object(a), Value::Object(b)) => a == b,
             _ => false,
         }
     }
@@ -775,6 +868,15 @@ impl Serialize for SerializableValue<'_> {
             | Value::LightUserData(_)
             | Value::Error(_)
             | Value::Other(_) => {
+                if self.options.deny_unsupported_types {
+                    let msg = format!("cannot serialize <{}>", self.value.type_name());
+                    Err(ser::Error::custom(msg))
+                } else {
+                    serializer.serialize_unit()
+                }
+            }
+            #[cfg(any(feature = "luau-classes", doc))]
+            Value::Class(_) | Value::Object(_) => {
                 if self.options.deny_unsupported_types {
                     let msg = format!("cannot serialize <{}>", self.value.type_name());
                     Err(ser::Error::custom(msg))

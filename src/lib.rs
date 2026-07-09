@@ -65,6 +65,8 @@
 mod macros;
 
 mod buffer;
+#[cfg(any(feature = "luau-classes", doc))]
+mod class;
 mod chunk;
 mod conversion;
 mod debug;
@@ -127,6 +129,10 @@ pub use crate::{
     types::XRc,
     vector::Vector,
 };
+
+#[cfg(any(feature = "luau-classes", doc))]
+#[cfg_attr(docsrs, doc(cfg(feature = "luau-classes")))]
+pub use crate::class::{Class, Object};
 
 #[cfg(feature = "serde")]
 #[doc(inline)]
