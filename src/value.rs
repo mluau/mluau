@@ -46,8 +46,8 @@ pub enum Value {
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     /// A luau (64-bit) `integer` (not to be confused with number)
-    /// 
-    /// Note that in `luau`, an 64-bit `integer` is a distinct (and completely unrelated type) 
+    ///
+    /// Note that in `luau`, an 64-bit `integer` is a distinct (and completely unrelated type)
     /// to a number (``Value::Number`` and ``Value::Integer``)
     Int64(i64),
     /// A Luau vector.
@@ -102,16 +102,16 @@ impl Value {
             Value::LightUserData(_) => "lightuserdata",
             Value::Integer(_) => "number",
             Value::Number(_) => "number",
-            
+
             Value::Int64(_) => "integer",
-            
+
             Value::Vector(_) => "vector",
             Value::String(_) => "string",
             Value::Table(_) => "table",
             Value::Function(_) => "function",
             Value::Thread(_) => "thread",
             Value::UserData(_) => "userdata",
-            
+
             Value::Buffer(_) => "buffer",
 
             #[cfg(any(feature = "luau-classes", doc))]
@@ -163,7 +163,7 @@ impl Value {
             | Value::Thread(Thread(vref, ..))
             | Value::UserData(AnyUserData(vref))
             | Value::Other(vref) => vref.to_pointer(),
-            
+
             Value::Buffer(crate::Buffer(vref)) => vref.to_pointer(),
 
             #[cfg(any(feature = "luau-classes", doc))]
@@ -196,10 +196,10 @@ impl Value {
             Value::LightUserData(ud) if ud.0.is_null() => Ok("null".to_string()),
             Value::LightUserData(ud) => Ok(format!("lightuserdata: {:p}", ud.0)),
             Value::Integer(i) => Ok(i.to_string()),
-            
-            Value::Int64(i) =>Ok(i.to_string()),
+
+            Value::Int64(i) => Ok(i.to_string()),
             Value::Number(n) => Ok(n.to_string()),
-            
+
             Value::Vector(v) => Ok(v.to_string()),
             Value::String(s) => Ok(s.to_str()?.to_string()),
             Value::Table(Table(vref))
@@ -207,7 +207,7 @@ impl Value {
             | Value::Thread(Thread(vref, ..))
             | Value::UserData(AnyUserData(vref))
             | Value::Other(vref) => unsafe { invoke_to_string(vref) },
-            
+
             Value::Buffer(crate::Buffer(vref)) => unsafe { invoke_to_string(vref) },
 
             #[cfg(any(feature = "luau-classes", doc))]
@@ -612,7 +612,6 @@ impl Value {
             (Value::Integer(_) | Value::Number(_), _) => Ordering::Less,
             (_, Value::Integer(_) | Value::Number(_)) => Ordering::Greater,
             // Vector (Luau)
-            
             (Value::Vector(a), Value::Vector(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
             // String
             (Value::String(a), Value::String(b)) => a.as_bytes().cmp(&b.as_bytes()),
@@ -637,9 +636,9 @@ impl Value {
             Value::LightUserData(ud) => write!(fmt, "lightuserdata: {:?}", ud.0),
             Value::Integer(i) => write!(fmt, "{i}"),
             Value::Number(n) => write!(fmt, "{n}"),
-            
+
             Value::Int64(i) => write!(fmt, "{i}"),
-            
+
             Value::Vector(v) => write!(fmt, "{v}"),
             Value::String(s) => write!(fmt, "{s:?}"),
             Value::Table(t) if recursive && !visited.contains(&t.to_pointer()) => {
@@ -657,7 +656,7 @@ impl Value {
                     .unwrap_or_else(|| format!("userdata: {:?}", u.to_pointer()));
                 write!(fmt, "{s}")
             }
-            
+
             buf @ Value::Buffer(_) => write!(fmt, "buffer: {:?}", buf.to_pointer()),
             // Classes have no metatable at all (unlike objects), so `__tostring` never applies
             // and `luaL_tolstring`'s default is just "class: 0x...' -- skip the round-trip call
@@ -668,7 +667,9 @@ impl Value {
             // `__tostring` -- fall back to the default (pointer-only) format if they don't.
             #[cfg(any(feature = "luau-classes", doc))]
             o @ Value::Object(_) => {
-                let s = o.to_string().unwrap_or_else(|_| format!("object: {:?}", o.to_pointer()));
+                let s = o
+                    .to_string()
+                    .unwrap_or_else(|_| format!("object: {:?}", o.to_pointer()));
                 write!(fmt, "{s}")
             }
             Value::Error(e) if recursive => write!(fmt, "{e:?}"),
@@ -690,16 +691,16 @@ impl fmt::Debug for Value {
             Value::LightUserData(ud) => write!(fmt, "{ud:?}"),
             Value::Integer(i) => write!(fmt, "Integer({i})"),
             Value::Number(n) => write!(fmt, "Number({n})"),
-            
+
             Value::Int64(i) => write!(fmt, "Int64({i})"),
-            
+
             Value::Vector(v) => write!(fmt, "{v:?}"),
             Value::String(s) => write!(fmt, "String({s:?})"),
             Value::Table(t) => write!(fmt, "{t:?}"),
             Value::Function(f) => write!(fmt, "{f:?}"),
             Value::Thread(t) => write!(fmt, "{t:?}"),
             Value::UserData(ud) => write!(fmt, "{ud:?}"),
-            
+
             Value::Buffer(buf) => write!(fmt, "{buf:?}"),
 
             #[cfg(any(feature = "luau-classes", doc))]
@@ -723,14 +724,14 @@ impl PartialEq for Value {
             (Value::Integer(a), Value::Number(b)) => *a as Number == *b,
             (Value::Number(a), Value::Integer(b)) => *a == *b as Number,
             (Value::Number(a), Value::Number(b)) => *a == *b,
-            
+
             (Value::Vector(v1), Value::Vector(v2)) => v1 == v2,
             (Value::String(a), Value::String(b)) => a == b,
             (Value::Table(a), Value::Table(b)) => a == b,
             (Value::Function(a), Value::Function(b)) => a == b,
             (Value::Thread(a), Value::Thread(b)) => a == b,
             (Value::UserData(a), Value::UserData(b)) => a == b,
-            
+
             (Value::Buffer(a), Value::Buffer(b)) => a == b,
 
             #[cfg(any(feature = "luau-classes", doc))]
@@ -849,7 +850,7 @@ impl Serialize for SerializableValue<'_> {
             #[allow(clippy::useless_conversion)]
             Value::Int64(i) => serializer.serialize_i64((*i).into()),
             Value::Number(n) => serializer.serialize_f64(*n),
-            
+
             Value::Vector(v) => v.serialize(serializer),
             Value::String(s) => s.serialize(serializer),
             Value::Table(t) => {
@@ -860,7 +861,7 @@ impl Serialize for SerializableValue<'_> {
             Value::UserData(ud) if ud.is_serializable() || self.options.deny_unsupported_types => {
                 ud.serialize(serializer)
             }
-            
+
             Value::Buffer(buf) => buf.serialize(serializer),
             Value::Function(_)
             | Value::Thread(_)

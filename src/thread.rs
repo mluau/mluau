@@ -116,7 +116,7 @@ impl Thread {
     /// does not match the stored data type.
     ///
     /// This is a Luau specific extension.
-    
+
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn thread_data<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<XRc<T>> {
         let _lua = self.0.lua.lock();
@@ -137,7 +137,7 @@ impl Thread {
     /// Takes out the thread data, consuming it.
     ///
     /// This is a Luau specific extension.
-    
+
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn take_thread_data<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<XRc<T>> {
         let _lua = self.0.lua.lock();
@@ -162,7 +162,7 @@ impl Thread {
     /// Errors if thread data was already set for the current lua thread.
     ///
     /// This is a Luau specific extension.
-    
+
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_thread_data<T: 'static + MaybeSend + MaybeSync>(&self, data: T) -> Result<()> {
         let lua = self.0.lua.lock();
@@ -272,7 +272,7 @@ impl Thread {
     /// Resumes execution of this thread, immediately raising an error.
     ///
     /// This is a Luau specific extension.
-    
+
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn resume_error<R>(&self, error: impl crate::IntoLua) -> Result<R>
     where
@@ -317,7 +317,7 @@ impl Thread {
         let mut nresults = 0;
         #[cfg(not(feature = "luau"))]
         let ret = ffi::lua_resume(thread_state, state, nargs, &mut nresults as *mut c_int);
-        
+
         let ret = ffi::lua_resumex(thread_state, state, nargs, &mut nresults as *mut c_int);
 
         match ret {
@@ -427,7 +427,6 @@ impl Thread {
             // Push function to the top of the thread stack
             ffi::lua_xpush(lua.ref_thread(func.0.aux_thread), thread_state, func.0.index);
 
-            
             {
                 // Inherit `LUA_GLOBALSINDEX` from the main thread
                 ffi::lua_xpush(lua.main_state(), thread_state, ffi::LUA_GLOBALSINDEX);
@@ -466,7 +465,7 @@ impl Thread {
                 if status != ffi::LUA_OK {
                     return Err(pop_error(thread_state, status));
                 }
-                
+
                 ffi::lua_resetthread(thread_state);
 
                 Ok(())
@@ -504,7 +503,7 @@ impl Thread {
             if status != ffi::LUA_OK {
                 return Err(pop_error(thread_state, status));
             }
-            
+
             ffi::lua_resetthread(thread_state);
             Ok(())
         }
@@ -524,7 +523,7 @@ impl Thread {
     ///
     /// ```
     /// # use mluau::{Lua, Result};
-    /// # 
+    /// #
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
     /// let thread = lua.create_thread(lua.create_function(|lua2, ()| {

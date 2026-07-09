@@ -83,7 +83,7 @@ impl StdLib {
     /// The safe subset of the standard libraries
     #[cfg(not(feature = "luau"))]
     pub const ALL_SAFE: StdLib = StdLib((1 << 30) - 1);
-    
+
     pub const ALL_SAFE: StdLib = StdLib(u32::MAX);
 
     pub fn contains(self, lib: Self) -> bool {

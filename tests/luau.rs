@@ -103,14 +103,10 @@ fn test_vectors() -> Result<()> {
 fn test_int64() -> Result<()> {
     let lua = Lua::new();
 
-    let v: i64 = lua
-        .load("return 123i")
-        .eval()?;
+    let v: i64 = lua.load("return 123i").eval()?;
     assert_eq!(v, 123);
 
-    let v: i64 = lua
-        .load("return integer.add(..., 1i)")
-        .call(Value::Int64(10))?;
+    let v: i64 = lua.load("return integer.add(..., 1i)").call(Value::Int64(10))?;
     assert_eq!(v, 11);
 
     Ok(())
@@ -489,7 +485,11 @@ fn test_classes_value_enum_roundtrip() -> Result<()> {
 
     let seen_class_clone = seen_class.clone();
     let receive_class = lua.create_function(move |_, value: Value| {
-        assert!(value.is_class(), "expected a class value, got {}", value.type_name());
+        assert!(
+            value.is_class(),
+            "expected a class value, got {}",
+            value.type_name()
+        );
         assert!(value.as_class().is_some());
         *seen_class_clone.lock().unwrap() = Some(value.clone());
         Ok(value)
@@ -498,7 +498,11 @@ fn test_classes_value_enum_roundtrip() -> Result<()> {
 
     let seen_object_clone = seen_object.clone();
     let receive_object = lua.create_function(move |_, value: Value| {
-        assert!(value.is_object(), "expected an object value, got {}", value.type_name());
+        assert!(
+            value.is_object(),
+            "expected an object value, got {}",
+            value.type_name()
+        );
         assert!(value.as_object().is_some());
         *seen_object_clone.lock().unwrap() = Some(value.clone());
         Ok(value)
@@ -518,8 +522,16 @@ fn test_classes_value_enum_roundtrip() -> Result<()> {
     )
     .exec()?;
 
-    let class_value = seen_class.lock().unwrap().take().expect("class value was not captured");
-    let object_value = seen_object.lock().unwrap().take().expect("object value was not captured");
+    let class_value = seen_class
+        .lock()
+        .unwrap()
+        .take()
+        .expect("class value was not captured");
+    let object_value = seen_object
+        .lock()
+        .unwrap()
+        .take()
+        .expect("object value was not captured");
 
     assert_eq!(class_value.type_name(), "class");
     assert_eq!(object_value.type_name(), "object");
@@ -548,7 +560,10 @@ fn test_classes_get_set_object_field_from_rust() -> Result<()> {
         // `nonexistent` isn't a declared member of the class, so Luau throws a hard error on
         // read instead of returning nil -- make sure that comes back as `Err`, not a panic.
         let missing_result: Result<Value> = object.get("nonexistent");
-        assert!(missing_result.is_err(), "expected reading a missing member to error");
+        assert!(
+            missing_result.is_err(),
+            "expected reading a missing member to error"
+        );
 
         Ok(())
     })?;

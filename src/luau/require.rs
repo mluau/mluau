@@ -23,11 +23,9 @@ pub enum NavigateError {
     Other(Error),
 }
 
-
 trait IntoNavigateResult {
     fn into_nav_result(self) -> Result<ffi::luarequire_NavigateResult>;
 }
-
 
 impl IntoNavigateResult for StdResult<(), NavigateError> {
     fn into_nav_result(self) -> Result<ffi::luarequire_NavigateResult> {
@@ -46,9 +44,7 @@ impl From<Error> for NavigateError {
     }
 }
 
-
 type WriteResult = ffi::luarequire_WriteResult;
-
 
 type ConfigStatus = ffi::luarequire_ConfigStatus;
 
@@ -148,7 +144,6 @@ macro_rules! try_borrow_mut {
         }
     };
 }
-
 
 pub(super) unsafe extern "C-unwind" fn init_config(config: *mut ffi::luarequire_Configuration) {
     if config.is_null() {
@@ -346,7 +341,6 @@ unsafe fn write_to_buffer(
     }
     WriteResult::Success
 }
-
 
 pub(super) fn create_require_function<R: Require + MaybeSend + 'static>(
     lua: &Lua,

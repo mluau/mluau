@@ -27,7 +27,8 @@ use crate::thread::ContinuationStatus;
 
 use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaMulti};
 use crate::types::{
-    AppDataRef, AppDataRefMut, ArcReentrantMutexGuard, Integer, LuaType, MaybeSend, MaybeSync, Number, ReentrantMutex, ReentrantMutexGuard, RegistryKey, VmState, XRc, XWeak
+    AppDataRef, AppDataRefMut, ArcReentrantMutexGuard, Integer, LuaType, MaybeSend, MaybeSync, Number,
+    ReentrantMutex, ReentrantMutexGuard, RegistryKey, VmState, XRc, XWeak,
 };
 use crate::userdata::{AnyUserData, UserData, UserDataProxy, UserDataRegistry, UserDataStorage};
 use crate::util::{assert_stack, check_stack, protect_lua_closure, push_string, rawset_field, StackGuard};
@@ -231,7 +232,6 @@ impl Lua {
             collect_garbage: true,
         };
 
-        
         mlua_expect!(lua.configure_luau(), "Error configuring Luau");
 
         lua
@@ -321,7 +321,7 @@ impl Lua {
         if !modname.starts_with('@') {
             return Err(Error::runtime("module name must begin with '@'"));
         }
-        
+
         let modname = modname.to_ascii_lowercase();
         unsafe {
             self.exec_raw::<()>(value, |state| {
@@ -399,7 +399,7 @@ impl Lua {
     ///
     /// ```
     /// # use mluau::{Lua, Result};
-    /// # 
+    /// #
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
     ///
@@ -459,7 +459,7 @@ impl Lua {
     /// ```
     /// # use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
     /// # use mluau::{Lua, Result, ThreadStatus, VmState};
-    /// # 
+    /// #
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
     /// let count = Arc::new(AtomicU64::new(0));
@@ -611,7 +611,6 @@ impl Lua {
         }
     }
 
-    
     pub(crate) unsafe extern "C-unwind" fn userthread_proc(
         parent: *mut ffi::lua_State,
         child: *mut ffi::lua_State,
@@ -847,7 +846,7 @@ impl Lua {
     pub fn gc_set_pause(&self, pause: c_int) -> c_int {
         let lua = self.lock();
         let state = lua.main_state();
-        unsafe {            
+        unsafe {
             return ffi::lua_gc(state, ffi::LUA_GCSETGOAL, pause);
         }
     }
@@ -882,7 +881,6 @@ impl Lua {
                 ffi::lua_gc(state, ffi::LUA_GCSETSTEPMUL, step_multiplier);
             }
 
-            
             if step_size > 0 {
                 ffi::lua_gc(state, ffi::LUA_GCSETSTEPSIZE, step_size);
             }
@@ -928,7 +926,10 @@ impl Lua {
         // have no `class` global to introspect them with).
         #[cfg(not(feature = "luau-classes"))]
         mlua_debug_assert!(
-            !matches!(name, "DebugLuauUserDefinedClasses" | "DebugLuauUserDefinedClassesRuntime"),
+            !matches!(
+                name,
+                "DebugLuauUserDefinedClasses" | "DebugLuauUserDefinedClassesRuntime"
+            ),
             "cannot set Luau classes fastflag \"{}\" because the `luau-classes` feature is not \
              enabled on the `mluau` crate; enable it to use Luau's (experimental) user-defined classes",
             name
@@ -1161,7 +1162,7 @@ impl Lua {
     }
 
     /// Same as ``create_function`` but with an added ``debugname``
-    
+
     pub fn create_function_with_debug<F, A, R>(
         &self,
         func: F,
@@ -1183,7 +1184,7 @@ impl Lua {
     }
 
     /// Same as ``create_function_mut`` but with an added ``debugname``
-    
+
     pub fn create_function_mut_with_debug<F, A, R>(
         &self,
         func: F,
@@ -1460,7 +1461,6 @@ impl Lua {
         let lua = self.lock();
         let state = lua.state();
         unsafe {
-            
             if (*lua.extra.get()).sandboxed {
                 return Err(Error::runtime("cannot change globals in a sandboxed Lua state"));
             }
@@ -1926,7 +1926,7 @@ impl Lua {
     #[inline(always)]
     pub(crate) fn lock(&self) -> ReentrantMutexGuard<'_, RawLua> {
         let rawlua = self.raw.lock();
-        
+
         if unsafe { (*rawlua.extra.get()).running_gc } {
             panic!("Luau VM is suspended while GC is running");
         }
@@ -2010,7 +2010,7 @@ impl Lua {
     /// Returns the state of the garbage collector as a string
     ///
     /// Useful when paired with GC interrupts
-    
+
     pub fn gc_state_name(&self, state: c_int) -> Option<StdString> {
         let raw = self.lock_gc_safe();
         raw.gc_state_name(state)
@@ -2019,7 +2019,7 @@ impl Lua {
     /// Returns the current allocation rate of garbage collector
     ///
     /// Returns -1 on failure
-    
+
     pub fn gc_allocation_rate(&self) -> i64 {
         let raw = self.lock_gc_safe();
         raw.gc_allocation_rate()
@@ -2056,7 +2056,7 @@ impl Lua {
     /// This can be useful for more safety critical users of mluau as the Luau VM may throw
     /// exceptions in some cases that may not be protected by mluau's normal protect_lua
     /// heuristics
-    
+
     pub fn try_call<F, R>(&self, func: F) -> Result<R>
     where
         F: FnOnce(&Lua) -> R + MaybeSend + 'static,
@@ -2127,7 +2127,7 @@ impl WeakLua {
     #[inline(always)]
     pub(crate) fn lock(&self) -> LuaGuard {
         let guard = LuaGuard::new(self.0.upgrade().expect("Lua instance is destroyed"));
-        
+
         if unsafe { (*guard.extra.get()).running_gc } {
             panic!("Luau VM is suspended while GC is running");
         }

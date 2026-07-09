@@ -112,7 +112,6 @@ fn test_chunk_macro() -> Result<()> {
     Ok(())
 }
 
-
 #[test]
 fn test_compiler() -> Result<()> {
     let compiler = mluau::Compiler::new()
@@ -138,7 +137,6 @@ fn test_compiler() -> Result<()> {
 
     Ok(())
 }
-
 
 #[test]
 fn test_compiler_library_constants() {

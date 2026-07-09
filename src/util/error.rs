@@ -277,7 +277,7 @@ where
 pub(crate) unsafe extern "C-unwind" fn error_traceback(state: *mut ffi::lua_State) -> c_int {
     // Luau calls error handler for memory allocation errors, skip it
     // See https://github.com/luau-lang/luau/issues/880
-    
+
     if MemoryState::limit_reached(state) {
         return 0;
     }
@@ -459,9 +459,7 @@ pub(crate) unsafe fn init_error_registry(state: *mut ffi::lua_State) -> Result<(
         "__pairs",
         #[cfg(any(feature = "lua53", feature = "lua52", feature = "luajit52"))]
         "__ipairs",
-        
         "__iter",
-        
         "__namecall",
         #[cfg(feature = "lua54")]
         "__close",

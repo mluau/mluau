@@ -811,7 +811,6 @@ fn test_arbitrary_precision() {
     );
 }
 
-
 #[test]
 fn test_buffer_serialize() -> LuaResult<()> {
     let lua = Lua::new();
@@ -827,7 +826,6 @@ fn test_buffer_serialize() -> LuaResult<()> {
 
     Ok(())
 }
-
 
 #[test]
 fn test_buffer_from_value() -> LuaResult<()> {

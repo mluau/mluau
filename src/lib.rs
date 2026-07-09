@@ -65,9 +65,9 @@
 mod macros;
 
 mod buffer;
+mod chunk;
 #[cfg(any(feature = "luau-classes", doc))]
 mod class;
-mod chunk;
 mod conversion;
 mod debug;
 mod error;

@@ -14,7 +14,6 @@ use crate::types::MaybeSend;
 pub use heap_dump::HeapDump;
 pub use require::{NavigateError, Require, TextRequirer};
 
-
 static HAVE_SET_INTEGER_FFLAG: AtomicBool = AtomicBool::new(false);
 
 /// Tracks whether `DebugLuauUserDefinedClassesRuntime` was enabled via [`Lua::set_fflag`].
@@ -105,7 +104,7 @@ impl Lua {
 
         // Unconditionally enable integer fflags to ensure safety on Luau
         // TODO: Remove later
-        
+
         {
             if !HAVE_SET_INTEGER_FFLAG.swap(true, std::sync::atomic::Ordering::Acquire) {
                 for fflag in ["LuauIntegerType2", "LuauIntegerFastcalls", "LuauIntegerLibrary"] {

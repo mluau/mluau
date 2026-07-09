@@ -534,7 +534,6 @@ fn test_bstring_from_lua() -> Result<()> {
     Ok(())
 }
 
-
 #[test]
 fn test_bstring_from_lua_buffer() -> Result<()> {
     let lua = Lua::new();

@@ -237,7 +237,7 @@ pub(crate) unsafe fn get_main_state(state: *mut ffi::lua_State) -> Option<*mut f
             None
         }
     }
-    
+
     Some(ffi::lua_mainthread(state))
 }
 
@@ -260,7 +260,7 @@ pub(crate) unsafe fn to_string(state: *mut ffi::lua_State, index: c_int) -> Stri
                 i.to_string()
             }
         }
-        
+
         ffi::LUA_TVECTOR => {
             let v = ffi::lua_tovector(state, index);
             mlua_debug_assert!(!v.is_null(), "vector is null");
@@ -281,7 +281,7 @@ pub(crate) unsafe fn to_string(state: *mut ffi::lua_State, index: c_int) -> Stri
         ffi::LUA_TFUNCTION => format!("<function {:?}>", ffi::lua_topointer(state, index)),
         ffi::LUA_TUSERDATA => format!("<userdata {:?}>", ffi::lua_topointer(state, index)),
         ffi::LUA_TTHREAD => format!("<thread {:?}>", ffi::lua_topointer(state, index)),
-        
+
         ffi::LUA_TBUFFER => format!("<buffer {:?}>", ffi::lua_topointer(state, index)),
         type_id => {
             let type_name = CStr::from_ptr(ffi::lua_typename(state, type_id)).to_string_lossy();
@@ -292,7 +292,6 @@ pub(crate) unsafe fn to_string(state: *mut ffi::lua_State, index: c_int) -> Stri
 
 #[inline(always)]
 pub(crate) unsafe fn get_metatable_ptr(state: *mut ffi::lua_State, index: c_int) -> *const c_void {
-    
     return ffi::lua_getmetatablepointer(state, index);
 
     #[cfg(not(feature = "luau"))]

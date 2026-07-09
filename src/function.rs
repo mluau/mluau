@@ -313,7 +313,7 @@ impl Function {
             lua.push_ref_at(&self.0, state);
             #[cfg(not(feature = "luau"))]
             let res = ffi::lua_getinfo(state, cstr!(">Snu"), &mut ar);
-            
+
             let res = ffi::lua_getinfo(state, -1, cstr!("sn"), &mut ar);
             mlua_assert!(res != 0, "lua_getinfo failed with `>Snu`");
 
@@ -324,18 +324,18 @@ impl Function {
                     Some("") => None,
                     val => val,
                 },
-                
+
                 name_what: None,
                 what: ptr_to_str(ar.what).unwrap_or("main"),
                 source: ptr_to_lossy_str(ar.source).map(|s| s.into_owned()),
                 #[cfg(not(feature = "luau"))]
                 short_src: ptr_to_lossy_str(ar.short_src.as_ptr()).map(|s| s.into_owned()),
-                
+
                 short_src: ptr_to_lossy_str(ar.short_src).map(|s| s.into_owned()),
                 line_defined: linenumber_to_usize(ar.linedefined),
                 #[cfg(not(feature = "luau"))]
                 last_line_defined: linenumber_to_usize(ar.lastlinedefined),
-                
+
                 last_line_defined: None,
                 #[cfg(not(any(feature = "lua51", feature = "luajit")))]
                 num_params: ar.nparams as usize,

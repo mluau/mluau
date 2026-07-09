@@ -85,7 +85,6 @@ impl PartialEq<[f32; Self::SIZE]> for Vector {
     }
 }
 
-
 impl crate::types::LuaType for Vector {
     const TYPE_ID: std::os::raw::c_int = ffi::LUA_TVECTOR;
 }

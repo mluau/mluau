@@ -409,7 +409,6 @@ pub unsafe fn lua_isinteger64(L: *mut lua_State, n: c_int) -> c_int {
     (lua_type(L, n) == LUA_TINTEGER) as c_int
 }
 
-
 #[inline(always)]
 pub unsafe fn lua_isthread(L: *mut lua_State, n: c_int) -> c_int {
     (lua_type(L, n) == LUA_TTHREAD) as c_int

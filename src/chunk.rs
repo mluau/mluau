@@ -441,7 +441,6 @@ impl Compiler {
             static LIBRARY_MEMBER_CONSTANT_MAP: RefCell<LibraryMemberConstantMap> = Default::default();
         }
 
-        
         unsafe extern "C-unwind" fn library_member_constant_callback(
             library: *const c_char,
             member: *const c_char,
@@ -609,7 +608,6 @@ impl Chunk<'_> {
     /// This simply compiles the chunk without actually executing it.
     #[cfg_attr(not(feature = "luau"), allow(unused_mut))]
     pub fn into_function(mut self) -> Result<Function> {
-
         if self.compiler.is_some() {
             // We don't need to compile source if no compiler set
             self.compile();
@@ -631,7 +629,6 @@ impl Chunk<'_> {
     fn compile(&mut self) {
         if let Ok(ref source) = self.source {
             if self.detect_mode() == ChunkMode::Text {
-
                 if let Ok(data) = self.compiler.get_or_insert_with(Default::default).compile(source) {
                     self.source = Ok(Cow::Owned(data));
                     self.mode = Some(ChunkMode::Binary);
@@ -701,7 +698,7 @@ impl Chunk<'_> {
         let source = source.map_err(Error::runtime)?;
         let source = Self::expression_source(source);
         // We don't need to compile source if no compiler options set
-        
+
         let compiled = self.compiler.as_ref().map(|c| c.compile(&source)).transpose()?;
         let trusted_binary = compiled.is_some();
         let source = compiled.unwrap_or(source);

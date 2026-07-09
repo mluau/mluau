@@ -57,7 +57,6 @@ impl<'a> Debug<'a> {
     ///
     /// Corresponds to the `f` "what" mask.
     pub fn function(&self) -> Function {
-        
         {
             let extra = self.lua.extra();
             if unsafe { (*extra).running_gc } {
@@ -74,7 +73,7 @@ impl<'a> Debug<'a> {
                 ffi::lua_getinfo(self.state, cstr!("f"), self.ar) != 0,
                 "lua_getinfo failed with `f`"
             );
-            
+
             mlua_assert!(
                 ffi::lua_getinfo(self.state, self.level, cstr!("f"), self.ar) != 0,
                 "lua_getinfo failed with `f`"
@@ -98,7 +97,7 @@ impl<'a> Debug<'a> {
                 ffi::lua_getinfo(self.state, cstr!("n"), self.ar) != 0,
                 "lua_getinfo failed with `n`"
             );
-            
+
             mlua_assert!(
                 ffi::lua_getinfo(self.state, self.level, cstr!("n"), self.ar) != 0,
                 "lua_getinfo failed with `n`"
@@ -111,7 +110,7 @@ impl<'a> Debug<'a> {
                     Some("") => None,
                     val => val,
                 },
-                
+
                 name_what: None,
             }
         }
@@ -125,7 +124,7 @@ impl<'a> Debug<'a> {
                 ffi::lua_getinfo(self.state, cstr!("S"), self.ar) != 0,
                 "lua_getinfo failed with `S`"
             );
-            
+
             mlua_assert!(
                 ffi::lua_getinfo(self.state, self.level, cstr!("s"), self.ar) != 0,
                 "lua_getinfo failed with `s`"
@@ -135,12 +134,12 @@ impl<'a> Debug<'a> {
                 source: ptr_to_lossy_str((*self.ar).source),
                 #[cfg(not(feature = "luau"))]
                 short_src: ptr_to_lossy_str((*self.ar).short_src.as_ptr()),
-                
+
                 short_src: ptr_to_lossy_str((*self.ar).short_src),
                 line_defined: linenumber_to_usize((*self.ar).linedefined),
                 #[cfg(not(feature = "luau"))]
                 last_line_defined: linenumber_to_usize((*self.ar).lastlinedefined),
-                
+
                 last_line_defined: None,
                 what: ptr_to_str((*self.ar).what).unwrap_or("main"),
             }
@@ -161,7 +160,7 @@ impl<'a> Debug<'a> {
                 ffi::lua_getinfo(self.state, cstr!("l"), self.ar) != 0,
                 "lua_getinfo failed with `l`"
             );
-            
+
             mlua_assert!(
                 ffi::lua_getinfo(self.state, self.level, cstr!("l"), self.ar) != 0,
                 "lua_getinfo failed with `l`"
@@ -196,7 +195,7 @@ impl<'a> Debug<'a> {
                 ffi::lua_getinfo(self.state, cstr!("u"), self.ar) != 0,
                 "lua_getinfo failed with `u`"
             );
-            
+
             mlua_assert!(
                 ffi::lua_getinfo(self.state, self.level, cstr!("au"), self.ar) != 0,
                 "lua_getinfo failed with `au`"
@@ -210,7 +209,7 @@ impl<'a> Debug<'a> {
                 #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
                 is_vararg: (*self.ar).isvararg != 0,
             };
-            
+
             let stack = DebugStack {
                 num_ups: (*self.ar).nupvals,
                 num_params: (*self.ar).nparams,

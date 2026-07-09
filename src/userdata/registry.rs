@@ -20,7 +20,6 @@ use crate::userdata::{
 use crate::util::short_type_name;
 use crate::value::Value;
 
-
 use crate::types::{DynamicCallback, NamecallCallback, XRc};
 
 use std::collections::HashMap;
@@ -48,13 +47,13 @@ pub(crate) struct RawUserDataRegistry {
     // Functions
     #[cfg(not(feature = "luau"))] // luau has namecalls as a optimization for this
     pub(crate) functions: Vec<(String, Callback)>,
-    
+
     pub(crate) functions: Vec<(String, NamecallCallback, Option<&'static CStr>)>,
 
     // Methods
     #[cfg(not(feature = "luau"))] // luau has namecalls as a optimization for this
     pub(crate) methods: Vec<(String, Callback)>,
-    
+
     pub(crate) methods: Vec<(String, NamecallCallback, Option<&'static CStr>)>,
 
     // Metamethods
@@ -65,11 +64,10 @@ pub(crate) struct RawUserDataRegistry {
     pub(crate) type_name: StdString,
 
     // Namecalls + dynamic methods
-    
     pub(crate) namecalls: HashMap<String, NamecallCallback>,
-    
+
     pub(crate) dynamic_method: Option<DynamicCallback>,
-    
+
     pub(crate) disable_namecall_optimization: bool,
 }
 
@@ -116,11 +114,11 @@ impl<T> UserDataRegistry<T> {
             destructor: super::util::destroy_userdata_storage::<T>,
             type_id: r#type.type_id(),
             type_name: short_type_name::<T>(),
-            
+
             namecalls: HashMap::new(),
-            
+
             dynamic_method: None,
-            
+
             disable_namecall_optimization: false,
         };
 
@@ -169,7 +167,6 @@ impl<T> UserDataRegistry<T> {
         })
     }
 
-    
     fn box_method_namecall<M, A, R>(&self, name: &str, method: M) -> NamecallCallback
     where
         M: Fn(&Lua, &T, A) -> Result<R> + MaybeSend + 'static,
@@ -248,7 +245,6 @@ impl<T> UserDataRegistry<T> {
         })
     }
 
-    
     fn box_method_mut_namecall<M, A, R>(&self, name: &str, method: M) -> NamecallCallback
     where
         M: FnMut(&Lua, &mut T, A) -> Result<R> + MaybeSend + 'static,
@@ -288,7 +284,6 @@ impl<T> UserDataRegistry<T> {
         })
     }
 
-    
     fn box_dynamic_method<M, A, R>(&self, method: M) -> DynamicCallback
     where
         M: Fn(&Lua, &T, &str, A) -> Result<R> + MaybeSend + 'static,
@@ -327,7 +322,6 @@ impl<T> UserDataRegistry<T> {
         })
     }
 
-    
     fn box_dynamic_method_mut<M, A, R>(&self, method: M) -> DynamicCallback
     where
         M: FnMut(&Lua, &mut T, &str, A) -> Result<R> + MaybeSend + 'static,
@@ -382,7 +376,6 @@ impl<T> UserDataRegistry<T> {
         })
     }
 
-    
     fn box_function_namecall<F, A, R>(&self, name: &str, function: F) -> NamecallCallback
     where
         F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
@@ -415,7 +408,6 @@ impl<T> UserDataRegistry<T> {
         })
     }
 
-    
     fn box_function_namecall_mut<F, A, R>(&self, name: &str, function: F) -> NamecallCallback
     where
         F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
@@ -466,7 +458,7 @@ impl<T> UserDataRegistry<T> {
     ///
     /// For best user-experience, you should also define a Index metamethod for the userdata type,
     /// which will allow the user to call the method with `data.method(data, ...)` syntax.
-    
+
     pub fn set_dynamic_method<F, A, R>(&mut self, method: F)
     where
         F: Fn(&Lua, &T, &str, A) -> Result<R> + MaybeSend + 'static,
@@ -487,7 +479,7 @@ impl<T> UserDataRegistry<T> {
     ///
     /// For best user-experience, you should also define a Index metamethod for the userdata type,
     /// which will allow the user to call the method with `data.method(data, ...)` syntax.
-    
+
     pub fn set_dynamic_method_mut<F, A, R>(&mut self, method: F)
     where
         F: FnMut(&Lua, &mut T, &str, A) -> Result<R> + MaybeSend + 'static,
@@ -509,7 +501,7 @@ impl<T> UserDataRegistry<T> {
     ///
     /// This optimization does not play well with custom `__index` metamethods (use dynamic methods
     /// for that) and field getters as functions.
-    
+
     pub fn disable_namecall_optimization(&mut self) {
         self.raw.disable_namecall_optimization = true;
     }
@@ -544,7 +536,6 @@ impl<T> UserDataRegistry<T> {
             }
         }
 
-        
         for (name, _, _) in &self.raw.methods {
             fields.push(name.as_str());
         }
@@ -565,7 +556,6 @@ impl<T> UserDataRegistry<T> {
             fields.push(name.as_str());
         }
 
-        
         for (name, _, _) in &self.raw.functions {
             fields.push(name.as_str());
         }
@@ -659,7 +649,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
     {
         let name = name.into();
 
-        
         {
             let callback = self.box_method_namecall(&name, method);
             self.raw.methods.push((name.clone(), callback.clone(), None));
@@ -673,7 +662,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         }
     }
 
-    
     fn add_method_with_debug<M, A, R>(
         &mut self,
         name: impl Into<StdString>,
@@ -702,7 +690,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
     {
         let name = name.into();
 
-        
         {
             let callback = self.box_method_mut_namecall(&name, method);
             self.raw.methods.push((name.clone(), callback.clone(), None));
@@ -716,7 +703,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         }
     }
 
-    
     fn add_method_mut_with_debug<M, A, R>(
         &mut self,
         name: impl Into<StdString>,
@@ -743,7 +729,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti,
     {
-        
         {
             let name = name.into();
             let callback = self.box_function_namecall(&name, function);
@@ -758,7 +743,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         }
     }
 
-    
     fn add_function_with_debug<F, A, R>(
         &mut self,
         name: impl Into<StdString>,
@@ -784,7 +768,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti,
     {
-        
         {
             let name = name.into();
             let callback = self.box_function_namecall_mut(&name, function);
@@ -799,7 +782,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         }
     }
 
-    
     fn add_function_mut_with_debug<F, A, R>(
         &mut self,
         name: impl Into<StdString>,
@@ -810,7 +792,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         A: FromLuaMulti,
         R: IntoLuaMulti,
     {
-        
         {
             let name = name.into();
             let callback = self.box_function_namecall_mut(&name, function);
@@ -887,7 +868,7 @@ macro_rules! lua_userdata_impl {
                 (registry.raw.functions).extend(orig_registry.raw.functions);
                 (registry.raw.methods).extend(orig_registry.raw.methods);
                 (registry.raw.meta_methods).extend(orig_registry.raw.meta_methods);
-                
+
                 {
                     (registry.raw.namecalls).extend(orig_registry.raw.namecalls);
                     if let Some(dynamic_method) = orig_registry.raw.dynamic_method {

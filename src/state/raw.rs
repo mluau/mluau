@@ -27,7 +27,6 @@ use crate::types::{
     LuaType, MaybeSend, ReentrantMutex, RegistryKey, ValueRef, XRc,
 };
 
-
 use crate::types::{NamecallCallback, NamecallCallbackUpvalue, NamecallMap, NamecallMapUpvalue};
 
 #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
@@ -82,7 +81,6 @@ impl Drop for RawLua {
 
             let mem_state = MemoryState::get(self.main_state());
 
-            
             {
                 // Reset any callbacks
                 (*ffi::lua_callbacks(self.main_state())).interrupt = None;
@@ -232,9 +230,9 @@ impl RawLua {
                 init_internal_metatable::<CallbackUpvalue>(state, None)?;
                 #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
                 init_internal_metatable::<ContinuationUpvalue>(state, None)?;
-                
+
                 init_internal_metatable::<NamecallCallbackUpvalue>(state, None)?;
-                
+
                 init_internal_metatable::<NamecallMapUpvalue>(state, None)?;
                 #[cfg(not(feature = "luau"))]
                 init_internal_metatable::<HookCallback>(state, None)?;
@@ -331,7 +329,7 @@ impl RawLua {
                 mlua_expect!(self.lua().disable_c_modules(), "Error disabling C modules");
             }
         }
-        
+
         let _ = is_safe;
         unsafe { (*self.extra.get()).libs |= libs };
 
@@ -421,14 +419,34 @@ impl RawLua {
         let status = if trusted_binary {
             #[cfg(feature = "luau")]
             {
-                ffi::luau_load_trusted_binary(state, source.as_ptr() as *const c_char, source.len(), name, env)
+                ffi::luau_load_trusted_binary(
+                    state,
+                    source.as_ptr() as *const c_char,
+                    source.len(),
+                    name,
+                    env,
+                )
             }
             #[cfg(not(feature = "luau"))]
             {
-                ffi::luaL_loadbufferenv(state, source.as_ptr() as *const c_char, source.len(), name, mode, env)
+                ffi::luaL_loadbufferenv(
+                    state,
+                    source.as_ptr() as *const c_char,
+                    source.len(),
+                    name,
+                    mode,
+                    env,
+                )
             }
         } else {
-            ffi::luaL_loadbufferenv(state, source.as_ptr() as *const c_char, source.len(), name, mode, env)
+            ffi::luaL_loadbufferenv(
+                state,
+                source.as_ptr() as *const c_char,
+                source.len(),
+                name,
+                mode,
+                env,
+            )
         };
         #[cfg(feature = "luau-jit")]
         if status == ffi::LUA_OK {
@@ -453,7 +471,6 @@ impl RawLua {
         Ok(String(self.pop_ref()))
     }
 
-    
     pub(crate) unsafe fn create_buffer_with_capacity(&self, size: usize) -> Result<(*mut u8, crate::Buffer)> {
         let state = self.state();
         if self.unlikely_memory_error() {
@@ -548,7 +565,7 @@ impl RawLua {
             check_stack(state, 3)?;
 
             let protect = !self.unlikely_memory_error();
-            
+
             let protect = protect || (*self.extra.get()).thread_creation_callback.is_some();
 
             let thread_state = if !protect {
@@ -577,7 +594,7 @@ impl RawLua {
             ffi::LUA_TNUMBER => {
                 ffi::lua_pushnumber(state, 0.);
             }
-            
+
             ffi::LUA_TVECTOR => {
                 #[cfg(not(feature = "luau-vector4"))]
                 ffi::lua_pushvector(state, 0., 0., 0.);
@@ -596,7 +613,7 @@ impl RawLua {
             ffi::LUA_TTHREAD => {
                 ffi::lua_pushthread(state);
             }
-            
+
             ffi::LUA_TBUFFER => {
                 ffi::lua_newbuffer(state, 0);
             }
@@ -622,10 +639,10 @@ impl RawLua {
             Value::Boolean(b) => ffi::lua_pushboolean(state, *b as c_int),
             Value::LightUserData(ud) => ffi::lua_pushlightuserdata(state, ud.0),
             Value::Integer(i) => ffi::lua_pushinteger(state, *i),
-            
+
             Value::Int64(i) => ffi::lua_pushinteger64(state, *i),
             Value::Number(n) => ffi::lua_pushnumber(state, *n),
-            
+
             Value::Vector(v) => {
                 #[cfg(not(feature = "luau-vector4"))]
                 ffi::lua_pushvector(state, v.x(), v.y(), v.z());
@@ -637,7 +654,7 @@ impl RawLua {
             Value::Function(f) => self.push_ref_at(&f.0, state),
             Value::Thread(t) => self.push_ref_at(&t.0, state),
             Value::UserData(ud) => self.push_ref_at(&ud.0, state),
-            
+
             Value::Buffer(buf) => self.push_ref_at(&buf.0, state),
 
             #[cfg(any(feature = "luau-classes", doc))]
@@ -691,10 +708,8 @@ impl RawLua {
                 }
             }
 
-            
             ffi::LUA_TINTEGER => Ok(Value::Int64(ffi::lua_tointeger64(state, idx))),
 
-            
             ffi::LUA_TVECTOR => {
                 let v = ffi::lua_tovector(state, idx);
                 mlua_debug_assert!(!v.is_null(), "vector is null");
@@ -777,7 +792,6 @@ impl RawLua {
                 )))
             }
 
-            
             ffi::LUA_TBUFFER => {
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
                 let ref_thread = self.ref_thread(aux_thread);
@@ -1090,7 +1104,6 @@ impl RawLua {
             field_setters_index = Some(ffi::lua_absindex(state, -1));
         }
 
-        
         {
             if (!registry.namecalls.is_empty() || registry.dynamic_method.is_some())
                 && !registry.disable_namecall_optimization
@@ -1121,7 +1134,6 @@ impl RawLua {
                 }
             }
 
-            
             for (k, m, dbgname) in registry.methods {
                 self.push_at(
                     state,
@@ -1132,7 +1144,7 @@ impl RawLua {
                 )?; // with namecall support
                 rawset_field(state, -2, &k)?;
             }
-            
+
             for (k, m, dbgname) in registry.functions {
                 self.push_at(
                     state,
@@ -1198,7 +1210,8 @@ impl RawLua {
                 // In Luau `luaL_typename` return heap-allocated string that is valid only for
                 // the `state` lifetime.
                 // `lua_typename` is used instead to get a truly static string.
-                let idx_type_name = CStr::from_ptr(ffi::lua_typename(state, ffi::lua_type(state, idx)));                let idx_type_name = idx_type_name.to_str().unwrap();
+                let idx_type_name = CStr::from_ptr(ffi::lua_typename(state, ffi::lua_type(state, idx)));
+                let idx_type_name = idx_type_name.to_str().unwrap();
                 let message = format!("expected userdata of type '{}'", short_type_name::<T>());
                 Err(Error::from_lua_conversion(idx_type_name, "userdata", message))
             }
@@ -1296,7 +1309,7 @@ impl RawLua {
         &self,
         func: Callback,
         debugname: *const c_char,
-    ) -> Result<Function> {        
+    ) -> Result<Function> {
         {
             unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
                 let upvalue = get_userdata::<CallbackUpvalue>(state, ffi::lua_upvalueindex(1));
@@ -1340,7 +1353,6 @@ impl RawLua {
         }
     }
 
-    
     // Creates a Function out of a NamecallCallback containing a 'static Fn.
     pub(crate) fn create_callback_namecall(
         &self,
@@ -1387,7 +1399,6 @@ impl RawLua {
         }
     }
 
-    
     // Handles namecalls in userdata
     pub(crate) fn create_namecall_map(&self, map: NamecallMap) -> Result<Function> {
         unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
@@ -1533,7 +1544,7 @@ impl RawLua {
     }
 
     /// Returns the state of garbage collector as a string
-    
+
     pub(crate) fn gc_state_name(&self, state: c_int) -> Option<StdString> {
         let state_ptr = unsafe { ffi::lua_gcstatename(state) };
         if state_ptr.is_null() {
@@ -1547,7 +1558,7 @@ impl RawLua {
     /// Returns the current allocation rate of garbage collector
     ///
     /// Returns -1 on failure
-    
+
     pub(crate) fn gc_allocation_rate(&self) -> i64 {
         unsafe { ffi::lua_gcallocationrate(self.state()) }
     }
@@ -1605,17 +1616,15 @@ unsafe fn load_std_libs(state: *mut ffi::lua_State, libs: StdLib) -> Result<()> 
     if libs.contains(StdLib::BIT) {
         requiref(state, ffi::LUA_BITLIBNAME, ffi::luaopen_bit32, 1)?;
     }
-    
+
     if libs.contains(StdLib::BUFFER) {
         requiref(state, ffi::LUA_BUFFERLIBNAME, ffi::luaopen_buffer, 1)?;
     }
 
-    
     if libs.contains(StdLib::VECTOR) {
         requiref(state, ffi::LUA_VECLIBNAME, ffi::luaopen_vector, 1)?;
     }
 
-    
     if libs.contains(StdLib::INTEGER) {
         requiref(state, ffi::LUA_INTLIBNAME, ffi::luaopen_integer, 1)?;
     }

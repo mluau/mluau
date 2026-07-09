@@ -57,9 +57,12 @@ fn test_gc_interrupt() -> Result<()> {
     lua.set_gc_interrupt(move |lua, _gc_state| {
         let mut level = 0;
         loop {
-            if lua.inspect_stack(level, |dbg| {
-                println!("GC Interrupt: {:?}", dbg.names().name);
-            }).is_none() {
+            if lua
+                .inspect_stack(level, |dbg| {
+                    println!("GC Interrupt: {:?}", dbg.names().name);
+                })
+                .is_none()
+            {
                 break;
             }
             level += 1;
