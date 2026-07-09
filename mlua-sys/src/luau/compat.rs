@@ -12,6 +12,51 @@ use super::luacode::*;
 
 pub const LUA_RESUMEERROR: c_int = -1;
 
+// How far into the buffer to look for binary-only bytes when the leading byte alone is
+// ambiguous. Empirically the version byte is immediately followed by `typesversion` (a
+// single-digit int, when version >= 4) and then small varint-encoded string/proto table
+// counts, so real bytecode's first disambiguating byte lands within the first couple of
+// bytes; 32 gives a generous margin over that without scanning the whole chunk.
+const BINARY_SNIFF_WINDOW: usize = 32;
+
+/// Whether `data` (of length `size`) looks like a Luau bytecode blob rather than source text.
+///
+/// Luau bytecode has no magic signature (unlike classic Lua's `LUA_SIGNATURE`) -- the leading
+/// byte *is* the bytecode version (`0`, for an error-message chunk, or a small positive
+/// integer that climbs over time as Luau ships new bytecode versions -- there's no public API
+/// to ask Luau for the current valid range, so we don't hardcode one). No bytecode version
+/// Luau will plausibly ever reach collides with a normal printable-ASCII leading character, so
+/// any byte at or above `' '` is unambiguously source text.
+///
+/// Below that, the byte could be a genuine version number, but versions can and do land on
+/// bytes that are also legitimate leading whitespace in real source text (`\t`, `\n`, `\v`,
+/// `\f`, `\r` = 9-13; e.g. a script starting with a blank line), so the leading byte alone
+/// can't always disambiguate. When it's one of those, look a bit further: valid Luau source
+/// text can never contain a raw `NUL` byte or other binary-only control bytes, while real
+/// bytecode is packed with them (string/instruction encoding, varints, etc.). Finding one
+/// within the next `BINARY_SNIFF_WINDOW` bytes means the buffer is bytecode, not text that
+/// merely starts with whitespace.
+pub unsafe fn is_luau_bytecode(data: *const c_char, size: usize) -> bool {
+    if size == 0 {
+        return false;
+    }
+    let leading = *data as u8;
+    if leading >= b' ' {
+        return false;
+    }
+    if !(9..=13).contains(&leading) {
+        return true;
+    }
+
+    let bytes = std::slice::from_raw_parts(data as *const u8, size);
+    bytes[1..].iter().take(BINARY_SNIFF_WINDOW).any(|&b| {
+        // Anything a real Luau script can never contain as a raw byte: NUL, other control
+        // characters besides whitespace, and DEL. (`\t`, `\n`, `\v`, `\f`, `\r` are excluded
+        // since those are valid inside source text.)
+        b == 0 || (b < 0x09) || (0x0e..=0x1f).contains(&b) || b == 0x7f
+    })
+}
+
 unsafe fn compat53_reverse(L: *mut lua_State, mut a: c_int, mut b: c_int) {
     while a < b {
         lua_pushvalue(L, a);
@@ -396,7 +441,7 @@ pub unsafe fn luaL_loadbufferenv(
         free(*(data as *mut *mut c_char) as *mut c_void);
     }
 
-    let chunk_is_text = size == 0 || (*data as u8) >= b'\t';
+    let chunk_is_text = !is_luau_bytecode(data, size);
     if !mode.is_null() {
         let modeb = CStr::from_ptr(mode).to_bytes();
         if !chunk_is_text && !modeb.contains(&b'b') {
@@ -430,11 +475,10 @@ pub unsafe fn luaL_loadbufferenv(
 /// Loads a buffer that the caller has already established is valid Luau bytecode
 /// (e.g. output freshly produced by `luau_compile`), skipping straight to `luau_load`.
 ///
-/// `luaL_loadbufferenv`'s text-vs-binary detection sniffs the leading byte, which is
-/// the bytecode version number for real bytecode. That number grows as the compiler
-/// gains features and can land in the range of common leading whitespace bytes in
-/// source text (e.g. version 10 == b'\n'), so it isn't safe to route already-known
-/// bytecode back through that guess -- it can misclassify it as text and reject it.
+/// This is purely a fast path over `luaL_loadbufferenv`: it saves the redundant
+/// `is_luau_bytecode` sniff when the caller already knows the answer. It is not required
+/// for correctness -- `luaL_loadbufferenv` itself must correctly classify arbitrary,
+/// externally-supplied bytecode (e.g. loaded from disk) that never goes through this path.
 pub unsafe fn luau_load_trusted_binary(
     L: *mut lua_State,
     data: *const c_char,

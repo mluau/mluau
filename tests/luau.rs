@@ -787,6 +787,41 @@ fn test_heap_dump() -> Result<()> {
 #[path = "luau/require.rs"]
 mod require;
 
+// Regression test for the bytecode/text sniffing bug: Luau bytecode's leading byte is the
+// bytecode version, which as of LBC_VERSION_MAX = 11 overlaps with common leading whitespace
+// bytes in real source text (`\t` = 9, `\n` = 10, `\v` = 11). A naive leading-byte-only sniff
+// can't tell "real bytecode, version 10" apart from "source that starts with a blank line" --
+// `is_luau_bytecode` must look further into the buffer for binary-only bytes to disambiguate.
+#[test]
+fn test_bytecode_sniff_disambiguates_ambiguous_leading_byte() {
+    // Source text that starts with a byte in the ambiguous 9-13 range (like the internal
+    // `__mlua_require` bootstrap chunk, which starts with `\n`) must still be treated as text.
+    let text_with_leading_newline = b"\nreturn 1 + 1";
+    assert!(!unsafe {
+        mluau::ffi::is_luau_bytecode(
+            text_with_leading_newline.as_ptr() as *const std::os::raw::c_char,
+            text_with_leading_newline.len(),
+        )
+    });
+
+    // A buffer that starts with an ambiguous version byte (10) but is packed with bytes no
+    // valid Luau source could contain (here, a raw NUL) must be treated as bytecode.
+    let mut fake_bytecode_version_10 = vec![10u8, 0, 1, 2, 3, 0, 4, 5];
+    fake_bytecode_version_10.push(0);
+    assert!(unsafe {
+        mluau::ffi::is_luau_bytecode(
+            fake_bytecode_version_10.as_ptr() as *const std::os::raw::c_char,
+            fake_bytecode_version_10.len(),
+        )
+    });
+
+    // Real compiled bytecode (current target version, unambiguous) is always detected.
+    let real_bytecode = Compiler::new().compile("return 1 + 1").unwrap();
+    assert!(unsafe {
+        mluau::ffi::is_luau_bytecode(real_bytecode.as_ptr() as *const std::os::raw::c_char, real_bytecode.len())
+    });
+}
+
 #[test]
 fn test_try_call() -> Result<()> {
     let lua = Lua::new();

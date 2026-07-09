@@ -724,6 +724,16 @@ impl Chunk<'_> {
                 return ChunkMode::Binary;
             }
 
+            // Mirrors `ffi::is_luau_bytecode`, which `luaL_loadbufferenv` uses to make the
+            // same call: the leading byte is a bytecode version, not an arbitrary cutoff, so
+            // this must track the actual valid version range rather than a fixed byte value
+            // (a fixed cutoff goes stale as soon as Luau ships a new bytecode version).
+            #[cfg(feature = "luau")]
+            if unsafe { ffi::is_luau_bytecode(source.as_ptr() as *const std::os::raw::c_char, source.len()) } {
+                return ChunkMode::Binary;
+            }
+
+            #[cfg(not(feature = "luau"))]
             if *source.first().unwrap_or(&u8::MAX) < b'\n' {
                 return ChunkMode::Binary;
             }
