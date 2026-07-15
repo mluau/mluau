@@ -36,6 +36,18 @@ impl Buffer {
         f(data)
     }
 
+    /// Calls a function f with the byte slice of the buffer.
+    ///
+    /// Safety: The byte slice must not outlive the buffer.
+    pub async fn with_bytes_async<F, R>(&self, f: F) -> R
+    where
+        F: AsyncFnOnce(&[u8]) -> R,
+    {
+        let lua = self.0.lua.lock();
+        let data = self.as_slice(&lua);
+        f(data).await
+    }
+
     /// Returns the length of the buffer.
     pub fn len(&self) -> usize {
         let lua = self.0.lua.lock();
@@ -113,11 +125,6 @@ impl Buffer {
         let buf = ffi::lua_tobuffer(lua.ref_thread(self.0.aux_thread), self.0.index, &mut size);
         mlua_assert!(!buf.is_null(), "invalid Luau buffer");
         (buf as *mut u8, size)
-    }
-
-    #[cfg(not(feature = "luau"))]
-    unsafe fn as_raw_parts(&self, lua: &RawLua) -> (*mut u8, usize) {
-        unreachable!()
     }
 
     /// Converts this buffer to a generic C pointer.

@@ -67,9 +67,8 @@ impl MemoryState {
         prev_limit as usize
     }
 
-    // This function is used primarily for calling `lua_pushcfunction` in lua5.1/jit/luau
+    // This function is used primarily for calling `lua_pushcfunction` in luau
     // to bypass the memory limit (if set).
-    #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
     #[inline]
     pub(crate) unsafe fn relax_limit_with(state: *mut ffi::lua_State, f: impl FnOnce()) {
         let mem_state = Self::get(state);
@@ -82,15 +81,7 @@ impl MemoryState {
         }
     }
 
-    // Does nothing apart from calling `f()`, we don't need to bypass any limits
-    #[cfg(any(feature = "lua52", feature = "lua53", feature = "lua54"))]
-    #[inline]
-    pub(crate) unsafe fn relax_limit_with(_state: *mut ffi::lua_State, f: impl FnOnce()) {
-        f();
-    }
-
     // Returns `true` if the memory limit was reached on the last memory operation
-    
     #[inline]
     pub(crate) unsafe fn limit_reached(state: *mut ffi::lua_State) -> bool {
         (*Self::get(state)).limit_reached

@@ -624,12 +624,6 @@ impl Chunk<'_> {
                     self.source = Ok(Cow::Owned(data));
                     self.mode = Some(ChunkMode::Binary);
                 }
-                #[cfg(not(feature = "luau"))]
-                if let Ok(func) = self.lua.lock().load_chunk(None, None, None, source.as_ref()) {
-                    let data = func.dump(false);
-                    self.source = Ok(Cow::Owned(data));
-                    self.mode = Some(ChunkMode::Binary);
-                }
             }
         }
     }
@@ -704,11 +698,6 @@ impl Chunk<'_> {
             return mode;
         }
         if let Ok(source) = &self.source {
-            #[cfg(not(feature = "luau"))]
-            if source.starts_with(ffi::LUA_SIGNATURE) {
-                return ChunkMode::Binary;
-            }
-            
             if *source.first().unwrap_or(&u8::MAX) < b'\n' {
                 return ChunkMode::Binary;
             }

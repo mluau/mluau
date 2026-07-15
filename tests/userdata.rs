@@ -719,13 +719,6 @@ fn test_metatable() -> Result<()> {
     let ud: AnyUserData = globals.get("ud")?;
     let metatable = ud.metatable()?;
 
-    #[cfg(not(feature = "luau"))]
-    match metatable.get::<Value>("__gc") {
-        Ok(_) => panic!("expected MetaMethodRestricted, got no error"),
-        Err(Error::MetaMethodRestricted(_)) => {}
-        Err(e) => panic!("expected MetaMethodRestricted, got {:?}", e),
-    }
-
     match metatable.set(MetaMethod::Index, Nil) {
         Ok(_) => panic!("expected MetaMethodRestricted, got no error"),
         Err(Error::MetaMethodRestricted(_)) => {}
@@ -737,9 +730,6 @@ fn test_metatable() -> Result<()> {
         .map(|kv: Result<(_, Value)>| Ok(kv?.0))
         .collect::<Result<Vec<_>>>()?;
     methods.sort();
-
-    #[cfg(not(feature = "luau"))]
-    assert_eq!(methods, vec!["__index", MetaMethod::Type.name()]);
     
     assert_eq!(methods, vec!["__index", "__namecall", MetaMethod::Type.name()]);
 

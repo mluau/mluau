@@ -114,9 +114,6 @@ pub use crate::userdata::{
 
 pub use crate::value::{Nil, Value};
 
-#[cfg(not(feature = "luau"))]
-pub use crate::debug::HookTriggers;
-
 #[cfg(any(feature = "luau", doc))]
 #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
 pub use crate::{

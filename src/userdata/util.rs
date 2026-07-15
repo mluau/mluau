@@ -396,16 +396,6 @@ unsafe fn init_userdata_metatable_newindex(state: *mut ffi::lua_State) -> Result
     })
 }
 
-// This method is called by Lua GC when it's time to collect the userdata.
-//
-// This method is usually used to collect internal userdata.
-#[cfg(not(feature = "luau"))]
-pub(crate) unsafe extern "C-unwind" fn collect_userdata<T>(state: *mut ffi::lua_State) -> c_int {
-    let ud = get_userdata::<T>(state, -1);
-    ptr::drop_in_place(ud);
-    0
-}
-
 // This method is called by Luau GC when it's time to collect the userdata.
 
 pub(crate) unsafe extern "C" fn collect_userdata<T>(

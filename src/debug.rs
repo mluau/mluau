@@ -32,27 +32,6 @@ impl<'a> Debug<'a> {
         }
     }
 
-    /// Returns the specific event that triggered the hook.
-    ///
-    /// For [Lua 5.1] [`DebugEvent::TailCall`] is used for return events to indicate a return
-    /// from a function that did a tail call.
-    ///
-    /// [Lua 5.1]: https://www.lua.org/manual/5.1/manual.html#pdf-LUA_HOOKTAILRET
-    #[cfg(not(feature = "luau"))]
-    #[cfg_attr(docsrs, doc(cfg(not(feature = "luau"))))]
-    pub fn event(&self) -> DebugEvent {
-        unsafe {
-            match (*self.ar).event {
-                ffi::LUA_HOOKCALL => DebugEvent::Call,
-                ffi::LUA_HOOKRET => DebugEvent::Ret,
-                ffi::LUA_HOOKTAILCALL => DebugEvent::TailCall,
-                ffi::LUA_HOOKLINE => DebugEvent::Line,
-                ffi::LUA_HOOKCOUNT => DebugEvent::Count,
-                event => DebugEvent::Unknown(event),
-            }
-        }
-    }
-
     /// Returns the function that is running at the given level.
     ///
     /// Corresponds to the `f` "what" mask.
@@ -68,12 +47,6 @@ impl<'a> Debug<'a> {
         unsafe {
             let _sg = StackGuard::new(self.state);
             assert_stack(self.state, 1);
-
-            #[cfg(not(feature = "luau"))]
-            mlua_assert!(
-                ffi::lua_getinfo(self.state, cstr!("f"), self.ar) != 0,
-                "lua_getinfo failed with `f`"
-            );
             
             mlua_assert!(
                 ffi::lua_getinfo(self.state, self.level, cstr!("f"), self.ar) != 0,
@@ -92,26 +65,14 @@ impl<'a> Debug<'a> {
 
     /// Corresponds to the `n` "what" mask.
     pub fn names(&self) -> DebugNames<'_> {
-        unsafe {
-            #[cfg(not(feature = "luau"))]
-            mlua_assert!(
-                ffi::lua_getinfo(self.state, cstr!("n"), self.ar) != 0,
-                "lua_getinfo failed with `n`"
-            );
-            
+        unsafe {            
             mlua_assert!(
                 ffi::lua_getinfo(self.state, self.level, cstr!("n"), self.ar) != 0,
                 "lua_getinfo failed with `n`"
             );
 
             DebugNames {
-                name: ptr_to_lossy_str((*self.ar).name),
-                #[cfg(not(feature = "luau"))]
-                name_what: match ptr_to_str((*self.ar).namewhat) {
-                    Some("") => None,
-                    val => val,
-                },
-                
+                name: ptr_to_lossy_str((*self.ar).name),                
                 name_what: None,
             }
         }
@@ -120,27 +81,15 @@ impl<'a> Debug<'a> {
     /// Corresponds to the `S` "what" mask.
     pub fn source(&self) -> DebugSource<'_> {
         unsafe {
-            #[cfg(not(feature = "luau"))]
-            mlua_assert!(
-                ffi::lua_getinfo(self.state, cstr!("S"), self.ar) != 0,
-                "lua_getinfo failed with `S`"
-            );
-            
             mlua_assert!(
                 ffi::lua_getinfo(self.state, self.level, cstr!("s"), self.ar) != 0,
                 "lua_getinfo failed with `s`"
             );
 
             DebugSource {
-                source: ptr_to_lossy_str((*self.ar).source),
-                #[cfg(not(feature = "luau"))]
-                short_src: ptr_to_lossy_str((*self.ar).short_src.as_ptr()),
-                
+                source: ptr_to_lossy_str((*self.ar).source),                
                 short_src: ptr_to_lossy_str((*self.ar).short_src),
                 line_defined: linenumber_to_usize((*self.ar).linedefined),
-                #[cfg(not(feature = "luau"))]
-                last_line_defined: linenumber_to_usize((*self.ar).lastlinedefined),
-                
                 last_line_defined: None,
                 what: ptr_to_str((*self.ar).what).unwrap_or("main"),
             }
@@ -156,12 +105,6 @@ impl<'a> Debug<'a> {
     /// Corresponds to the `l` "what" mask. Returns the current line.
     pub fn current_line(&self) -> Option<usize> {
         unsafe {
-            #[cfg(not(feature = "luau"))]
-            mlua_assert!(
-                ffi::lua_getinfo(self.state, cstr!("l"), self.ar) != 0,
-                "lua_getinfo failed with `l`"
-            );
-            
             mlua_assert!(
                 ffi::lua_getinfo(self.state, self.level, cstr!("l"), self.ar) != 0,
                 "lua_getinfo failed with `l`"
@@ -171,45 +114,13 @@ impl<'a> Debug<'a> {
         }
     }
 
-    /// Corresponds to the `t` "what" mask. Returns true if the hook is in a function tail call,
-    /// false otherwise.
-    #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-    #[cfg_attr(
-        docsrs,
-        doc(cfg(any(feature = "lua54", feature = "lua53", feature = "lua52")))
-    )]
-    pub fn is_tail_call(&self) -> bool {
-        unsafe {
-            mlua_assert!(
-                ffi::lua_getinfo(self.state, cstr!("t"), self.ar) != 0,
-                "lua_getinfo failed with `t`"
-            );
-            (*self.ar).istailcall != 0
-        }
-    }
-
-    /// Corresponds to the `u` "what" mask.
+    /// Corresponds to the `au` "what" mask.
     pub fn stack(&self) -> DebugStack {
         unsafe {
-            #[cfg(not(feature = "luau"))]
-            mlua_assert!(
-                ffi::lua_getinfo(self.state, cstr!("u"), self.ar) != 0,
-                "lua_getinfo failed with `u`"
-            );
-            
             mlua_assert!(
                 ffi::lua_getinfo(self.state, self.level, cstr!("au"), self.ar) != 0,
                 "lua_getinfo failed with `au`"
             );
-
-            #[cfg(not(feature = "luau"))]
-            let stack = DebugStack {
-                num_ups: (*self.ar).nups as _,
-                #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-                num_params: (*self.ar).nparams as _,
-                #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-                is_vararg: (*self.ar).isvararg != 0,
-            };
             
             let stack = DebugStack {
                 num_ups: (*self.ar).nupvals,
@@ -275,127 +186,4 @@ pub struct DebugStack {
         doc(cfg(any(feature = "lua54", feature = "lua53", feature = "lua52", feature = "luau")))
     )]
     pub is_vararg: bool,
-}
-
-/// Determines when a hook function will be called by Lua.
-#[cfg(not(feature = "luau"))]
-#[cfg_attr(docsrs, doc(cfg(not(feature = "luau"))))]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct HookTriggers {
-    /// Before a function call.
-    pub on_calls: bool,
-    /// When Lua returns from a function.
-    pub on_returns: bool,
-    /// Before executing a new line, or returning from a function call.
-    pub every_line: bool,
-    /// After a certain number of VM instructions have been executed. When set to `Some(count)`,
-    /// `count` is the number of VM instructions to execute before calling the hook.
-    ///
-    /// # Performance
-    ///
-    /// Setting this option to a low value can incur a very high overhead.
-    pub every_nth_instruction: Option<u32>,
-}
-
-#[cfg(not(feature = "luau"))]
-impl HookTriggers {
-    /// An instance of `HookTriggers` with `on_calls` trigger set.
-    pub const ON_CALLS: Self = HookTriggers::new().on_calls();
-
-    /// An instance of `HookTriggers` with `on_returns` trigger set.
-    pub const ON_RETURNS: Self = HookTriggers::new().on_returns();
-
-    /// An instance of `HookTriggers` with `every_line` trigger set.
-    pub const EVERY_LINE: Self = HookTriggers::new().every_line();
-
-    /// Returns a new instance of `HookTriggers` with all triggers disabled.
-    pub const fn new() -> Self {
-        HookTriggers {
-            on_calls: false,
-            on_returns: false,
-            every_line: false,
-            every_nth_instruction: None,
-        }
-    }
-
-    /// Returns an instance of `HookTriggers` with [`on_calls`] trigger set.
-    ///
-    /// [`on_calls`]: #structfield.on_calls
-    pub const fn on_calls(mut self) -> Self {
-        self.on_calls = true;
-        self
-    }
-
-    /// Returns an instance of `HookTriggers` with [`on_returns`] trigger set.
-    ///
-    /// [`on_returns`]: #structfield.on_returns
-    pub const fn on_returns(mut self) -> Self {
-        self.on_returns = true;
-        self
-    }
-
-    /// Returns an instance of `HookTriggers` with [`every_line`] trigger set.
-    ///
-    /// [`every_line`]: #structfield.every_line
-    pub const fn every_line(mut self) -> Self {
-        self.every_line = true;
-        self
-    }
-
-    /// Returns an instance of `HookTriggers` with [`every_nth_instruction`] trigger set.
-    ///
-    /// [`every_nth_instruction`]: #structfield.every_nth_instruction
-    pub const fn every_nth_instruction(mut self, n: u32) -> Self {
-        self.every_nth_instruction = Some(n);
-        self
-    }
-
-    // Compute the mask to pass to `lua_sethook`.
-    pub(crate) const fn mask(&self) -> c_int {
-        let mut mask: c_int = 0;
-        if self.on_calls {
-            mask |= ffi::LUA_MASKCALL
-        }
-        if self.on_returns {
-            mask |= ffi::LUA_MASKRET
-        }
-        if self.every_line {
-            mask |= ffi::LUA_MASKLINE
-        }
-        if self.every_nth_instruction.is_some() {
-            mask |= ffi::LUA_MASKCOUNT
-        }
-        mask
-    }
-
-    // Returns the `count` parameter to pass to `lua_sethook`, if applicable. Otherwise, zero is
-    // returned.
-    pub(crate) const fn count(&self) -> c_int {
-        match self.every_nth_instruction {
-            Some(n) => n as c_int,
-            None => 0,
-        }
-    }
-}
-
-#[cfg(not(feature = "luau"))]
-impl std::ops::BitOr for HookTriggers {
-    type Output = Self;
-
-    fn bitor(mut self, rhs: Self) -> Self::Output {
-        self.on_calls |= rhs.on_calls;
-        self.on_returns |= rhs.on_returns;
-        self.every_line |= rhs.every_line;
-        if self.every_nth_instruction.is_none() && rhs.every_nth_instruction.is_some() {
-            self.every_nth_instruction = rhs.every_nth_instruction;
-        }
-        self
-    }
-}
-
-#[cfg(not(feature = "luau"))]
-impl std::ops::BitOrAssign for HookTriggers {
-    fn bitor_assign(&mut self, rhs: Self) {
-        *self = *self | rhs;
-    }
 }
