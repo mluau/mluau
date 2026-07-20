@@ -22,7 +22,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 members = ["mlua_derive", "mlua-sys"]
 
 [features]
-default = ["luau", "dynamic-userdata"]
+default = ["luau", "dynamic-userdata", "bytes"]
 luau = ["ffi/luau"]
 luau-jit = ["luau", "ffi/luau-codegen"]
 luau-vector4 = ["luau", "ffi/luau-vector4"]
@@ -35,6 +35,7 @@ anyhow = ["dep:anyhow", "error-send"]
 userdata-wrappers = ["parking_lot/send_guard"]
 dynamic-userdata = ["luau"]
 error-value = []
+bytes = ["dep:bytes"]
 
 # deprecated features
 serialize = ["serde"]
@@ -55,6 +56,7 @@ rustversion = "1.0"
 libc = "0.2"
 
 ffi = { package = "mlua-sys", version = "0.9.0", path = "mlua-sys" }
+bytes = { version = "1.0", optional = true }
 
 [dev-dependencies]
 trybuild = "1.0"

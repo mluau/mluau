@@ -88,7 +88,7 @@ pub type lua_Continuation = unsafe extern "C-unwind" fn(L: *mut lua_State, statu
 pub type lua_Destructor = unsafe extern "C" fn(L: *mut lua_State, *mut c_void);
 
 /// Type for externally managed buffer destructor functions (no unwinding).
-pub type lua_BufferFree = unsafe extern "C" fn(L: *mut lua_State, *mut c_void);
+pub type lua_BufferFree = unsafe extern "C" fn(L: *mut lua_State, data: *mut c_void, sz: usize, userdata: *mut c_void);
 
 
 /// Type for memory-allocation functions (no unwinding).
@@ -201,7 +201,7 @@ unsafe extern "C-unwind" {
     pub fn lua_newuserdatadtor(L: *mut lua_State, sz: usize, dtor: lua_Destructor) -> *mut c_void;
 
     pub fn lua_newbuffer(L: *mut lua_State, sz: usize) -> *mut c_void;
-    pub fn lua_newexternalbuffer(L: *mut lua_State, sz: usize, data: *mut c_void, free_cb: lua_BufferFree, mode: c_int) -> *mut c_void;
+    pub fn lua_newexternalbuffer(L: *mut lua_State, sz: usize, data: *mut c_void, userdata: *mut c_void, free_cb: Option<lua_BufferFree>, mode: c_int) -> *mut c_void;
     pub fn lua_isbuffermutable(L: *mut lua_State, idx: c_int);
 
     //

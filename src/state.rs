@@ -1,3 +1,5 @@
+#[cfg(any(feature = "luau", doc))]
+use crate::buffer::{ExternalBuffer, ExternalBufferMut};
 use crate::chunk::{AsChunk, Chunk};
 use crate::debug::Debug;
 use crate::error::{Error, Result};
@@ -979,6 +981,32 @@ impl Lua {
             ptr.copy_from_nonoverlapping(data.as_ptr(), data.len());
             Ok(buffer)
         }
+    }
+
+    /// Creates and returns an externally managed immutable Luau [buffer] object.
+    ///
+    /// [buffer]: https://luau.org/library#buffer-library
+    #[cfg(any(feature = "luau", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+    pub fn create_external_buffer<B: ExternalBuffer>(
+        &self,
+        buffer: B,
+    ) -> Result<Buffer> {
+        let (data, size, userdata, free_cb) = buffer.into_raw();
+        unsafe { Ok(self.lock().create_external_buffer(size, data, userdata, free_cb, 1)?.1) }
+    }
+
+    /// Creates and returns an externally managed mutable Luau [buffer] object.
+    ///
+    /// [buffer]: https://luau.org/library#buffer-library
+    #[cfg(any(feature = "luau", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+    pub fn create_external_buffer_mut<B: ExternalBufferMut>(
+        &self,
+        buffer: B,
+    ) -> Result<Buffer> {
+        let (data, size, userdata, free_cb) = buffer.into_raw();
+        unsafe { Ok(self.lock().create_external_buffer(size, data, userdata, free_cb, 2)?.1) }
     }
 
     /// Creates and returns a Luau [buffer] object with the specified size.

@@ -125,3 +125,157 @@ fn test_buffer_cursor() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_external_buffer() -> Result<()> {
+    let lua = Lua::new();
+    let data = b"hello, world".to_vec();
+    let buf = lua.create_external_buffer(data)?;
+
+    assert_eq!(buf.len(), 12);
+    assert_eq!(buf.to_vec(), b"hello, world");
+
+    // Ensure immutable buffers are in fact immutable
+    let err = lua.load("local b = ...; buffer.writeu8(b, 0, 42)")
+        .call::<()>(buf.clone())
+        .unwrap_err();
+    assert!(err.to_string().contains("immutable"));
+
+    // Check reading in a loop from Luau
+    let sum: u32 = lua.load(r#"
+        local b = ...
+        local sum = 0
+        for i=0, buffer.len(b)-1 do
+            sum = sum + buffer.readu8(b, i)
+        end
+        return sum
+    "#).call(buf.clone())?;
+
+    let expected_sum = b"hello, world".iter().map(|&b| b as u32).sum::<u32>();
+    assert_eq!(sum, expected_sum);
+
+    // Ensure memory lifecycle works on GC
+    drop(buf);
+    lua.gc_collect()?;
+
+    Ok(())
+}
+
+#[test]
+fn test_external_buffer_mut() -> Result<()> {
+    let lua = Lua::new();
+    let data = b"hello, world".to_vec();
+    let buf = lua.create_external_buffer_mut(data)?;
+
+    assert_eq!(buf.len(), 12);
+    assert_eq!(buf.to_vec(), b"hello, world");
+
+    // Check mutability
+    lua.load("local b = ...; buffer.writeu8(b, 0, 72)")
+        .call::<()>(buf.clone())?;
+
+    assert_eq!(buf.read_bytes::<1>(0), [72]);
+    assert_eq!(&buf.to_vec()[..5], b"Hello");
+
+    // Check reading in a loop from Luau
+    let sum: u32 = lua.load(r#"
+        local b = ...
+        local sum = 0
+        for i=0, buffer.len(b)-1 do
+            sum = sum + buffer.readu8(b, i)
+        end
+        return sum
+    "#).call(buf.clone())?;
+
+    let expected_sum = b"Hello, world".iter().map(|&b| b as u32).sum::<u32>();
+    assert_eq!(sum, expected_sum);
+
+    // Ensure memory lifecycle works on GC
+    drop(buf);
+    lua.gc_collect()?;
+
+    Ok(())
+}
+
+#[cfg(feature = "bytes")]
+#[test]
+fn test_external_buffer_bytes() -> Result<()> {
+    let lua = Lua::new();
+    let data = bytes::Bytes::from_static(b"hello, world");
+    let buf = lua.create_external_buffer(data)?;
+
+    assert_eq!(buf.len(), 12);
+    assert_eq!(buf.to_vec(), b"hello, world");
+
+    // Check reading in a loop from Luau
+    let sum: u32 = lua.load(r#"
+        local b = ...
+        local sum = 0
+        for i=0, buffer.len(b)-1 do
+            sum = sum + buffer.readu8(b, i)
+        end
+        return sum
+    "#).call(buf.clone())?;
+
+    let expected_sum = b"hello, world".iter().map(|&b| b as u32).sum::<u32>();
+    assert_eq!(sum, expected_sum);
+
+    // GC
+    drop(buf);
+    lua.gc_collect()?;
+
+    Ok(())
+}
+
+#[cfg(feature = "bytes")]
+#[test]
+fn test_external_buffer_bytes_sliced_and_cloned() -> Result<()> {
+    let lua = Lua::new();
+    let original_data = bytes::Bytes::from_static(b"prefix: hello, world :suffix");
+    
+    // Slice it to get a shifted pointer
+    let sliced_data = original_data.slice(8..20);
+    
+    // Clone it
+    let cloned_data = sliced_data.clone();
+
+    // Use sliced_data in one buffer
+    let buf1 = lua.create_external_buffer(sliced_data)?;
+    assert_eq!(buf1.len(), 12);
+    assert_eq!(buf1.to_vec(), b"hello, world");
+
+    // Use cloned_data in another buffer
+    let buf2 = lua.create_external_buffer(cloned_data)?;
+    assert_eq!(buf2.len(), 12);
+    assert_eq!(buf2.to_vec(), b"hello, world");
+
+    // Check reading in Luau
+    let sum1: u32 = lua.load(r#"
+        local b = ...
+        local sum = 0
+        for i=0, buffer.len(b)-1 do
+            sum = sum + buffer.readu8(b, i)
+        end
+        return sum
+    "#).call(buf1.clone())?;
+
+    let sum2: u32 = lua.load(r#"
+        local b = ...
+        local sum = 0
+        for i=0, buffer.len(b)-1 do
+            sum = sum + buffer.readu8(b, i)
+        end
+        return sum
+    "#).call(buf2.clone())?;
+
+    let expected_sum = b"hello, world".iter().map(|&b| b as u32).sum::<u32>();
+    assert_eq!(sum1, expected_sum);
+    assert_eq!(sum2, expected_sum);
+
+    // GC both
+    drop(buf1);
+    drop(buf2);
+    lua.gc_collect()?;
+
+    Ok(())
+}

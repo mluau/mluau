@@ -210,3 +210,57 @@ impl Serialize for Buffer {
 impl crate::types::LuaType for Buffer {
     const TYPE_ID: std::os::raw::c_int = ffi::LUA_TBUFFER;
 }
+
+/// A backing store for an externally managed, immutable Luau buffer.
+pub trait ExternalBuffer: 'static {
+    /// Consumes the buffer and returns the raw parts: (data pointer, size, userdata, optional free callback).
+    fn into_raw(self) -> (*mut u8, usize, *mut std::ffi::c_void, Option<ffi::lua_BufferFree>);
+}
+
+/// A backing store for an externally managed, mutable Luau buffer.
+pub trait ExternalBufferMut: ExternalBuffer {}
+
+impl<T: 'static> ExternalBuffer for Vec<T> {
+    fn into_raw(self) -> (*mut u8, usize, *mut std::ffi::c_void, Option<ffi::lua_BufferFree>) {
+        let boxed_slice = self.into_boxed_slice();
+        let size = boxed_slice.len() * std::mem::size_of::<T>();
+        let ptr = Box::into_raw(boxed_slice) as *mut u8;
+        (ptr, size, std::ptr::null_mut(), Some(vec_free_cb::<T>))
+    }
+}
+
+impl<T: 'static> ExternalBufferMut for Vec<T> {}
+
+unsafe extern "C" fn vec_free_cb<T: 'static>(
+    _l: *mut ffi::lua_State,
+    data: *mut std::ffi::c_void,
+    size: usize,
+    _userdata: *mut std::ffi::c_void,
+) {
+    let len = size / std::mem::size_of::<T>();
+    let ptr = data as *mut T;
+    let slice = std::slice::from_raw_parts_mut(ptr, len);
+    let _ = Box::from_raw(slice);
+}
+
+#[cfg(feature = "bytes")]
+impl ExternalBuffer for bytes::Bytes {
+    fn into_raw(self) -> (*mut u8, usize, *mut std::ffi::c_void, Option<ffi::lua_BufferFree>) {
+        let size = self.len();
+        let data = self.as_ptr() as *mut u8;
+        let userdata = Box::into_raw(Box::new(self)) as *mut std::ffi::c_void;
+        (data, size, userdata, Some(bytes_free_cb))
+    }
+}
+
+#[cfg(feature = "bytes")]
+unsafe extern "C" fn bytes_free_cb(
+    _l: *mut ffi::lua_State,
+    _data: *mut std::ffi::c_void,
+    _size: usize,
+    userdata: *mut std::ffi::c_void,
+) {
+    if !userdata.is_null() {
+        let _ = Box::from_raw(userdata as *mut bytes::Bytes);
+    }
+}
