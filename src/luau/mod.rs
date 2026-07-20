@@ -94,13 +94,12 @@ impl Lua {
         let require = self.create_require_function(require::TextRequirer::new())?;
         self.globals().raw_set("require", require)?;
 
-        // Unconditionally enable integer fflags to ensure safety on Luau
+        // Unconditionally enable integer+extern buffers fflags to ensure safety on Luau
         // TODO: Remove later
-        
         {
             if !HAVE_SET_INTEGER_FFLAG.swap(true, std::sync::atomic::Ordering::Acquire) {
-                for fflag in ["LuauIntegerType2", "LuauIntegerFastcalls", "LuauIntegerLibrary"] {
-                    mlua_expect!(Self::set_fflag(fflag, true), "integer fflag not set")
+                for fflag in ["LuauIntegerType2", "LuauIntegerFastcalls", "LuauIntegerLibrary", "LuauExternallyManagedBuffers"] {
+                    mlua_expect!(Self::set_fflag(fflag, true), "integer/extern buffers fflag not set")
                 }
             }
         }

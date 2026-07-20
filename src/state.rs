@@ -952,8 +952,8 @@ impl Lua {
             env: chunk.environment(self),
             mode: chunk.mode(),
             source: chunk.source(),
-            
             compiler: unsafe { (*self.lock().extra.get()).compiler.clone() },
+            trusted_binary: false,
         }
     }
 
