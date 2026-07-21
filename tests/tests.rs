@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::{error, f32, f64, fmt};
 
 use mluau::{
-    ffi, ChunkMode, Error, ExternalError, Function, Lua, LuaOptions, Nil, Result, StdLib, String, Table,
-    UserData, Value, Variadic,
+    ffi, ChunkMode, ChunkSource, Error, ExternalError, Function, Lua, LuaOptions, Nil, Result, StdLib,
+    String, Table, UserData, Value, Variadic,
 };
 
 #[test]
@@ -190,9 +190,11 @@ fn test_load_mode() -> Result<()> {
     let bytecode = lua.load("return 1 + 1").into_function()?.dump(true);
 
     let bytecode = mluau::Compiler::new().compile("return 1 + 1")?;
-    assert_eq!(lua.load(&bytecode).eval::<i32>()?, 2);
-    assert_eq!(lua.load(&bytecode).set_mode(ChunkMode::Binary).eval::<i32>()?, 2);
-    match lua.load(&bytecode).set_mode(ChunkMode::Text).exec() {
+    // SAFETY: bytecode was just produced by `Compiler::compile` above
+    let as_bytecode = || unsafe { ChunkSource::bytecode(bytecode.as_slice()) };
+    assert_eq!(lua.load(as_bytecode()).eval::<i32>()?, 2);
+    assert_eq!(lua.load(as_bytecode()).set_mode(ChunkMode::Binary).eval::<i32>()?, 2);
+    match lua.load(as_bytecode()).set_mode(ChunkMode::Text).exec() {
         Ok(_) => panic!("expected SyntaxError, got no error"),
         Err(Error::SyntaxError { message: msg, .. }) => {
             assert!(msg.contains("attempt to load a binary chunk"))

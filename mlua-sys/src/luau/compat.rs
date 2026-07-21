@@ -20,23 +20,20 @@ pub const LUA_RESUMEERROR: c_int = -1;
 const BINARY_SNIFF_WINDOW: usize = 32;
 
 /// Whether `data` (of length `size`) looks like a Luau bytecode blob rather than source text.
+/// This just checks for the leading bytes being a valid bytecode version before NUL/etc.,
+/// and doesn't actually check if the bytecode itself is valid.
 ///
-/// Luau bytecode has no magic signature (unlike classic Lua's `LUA_SIGNATURE`) -- the leading
-/// byte *is* the bytecode version (`0`, for an error-message chunk, or a small positive
-/// integer that climbs over time as Luau ships new bytecode versions -- there's no public API
-/// to ask Luau for the current valid range, so we don't hardcode one). No bytecode version
-/// Luau will plausibly ever reach collides with a normal printable-ASCII leading character, so
-/// any byte at or above `' '` is unambiguously source text.
+/// Luau bytecode has no magic signature -- the leading byte *is* the bytecode version, and
+/// there's no public API to ask Luau for the current valid range. Any byte at or above `' '`
+/// is unambiguously source text. Below that, the byte could be a genuine version number, but
+/// versions can land on bytes that are also legitimate leading whitespace (`\t`, `\n`, `\v`,
+/// `\f`, `\r`); when that happens, we scan a bit further for a raw `NUL` or other binary-only
+/// control byte, which real source text can never contain but real bytecode is packed with.
 ///
-/// Below that, the byte could be a genuine version number, but versions can and do land on
-/// bytes that are also legitimate leading whitespace in real source text (`\t`, `\n`, `\v`,
-/// `\f`, `\r` = 9-13; e.g. a script starting with a blank line), so the leading byte alone
-/// can't always disambiguate. When it's one of those, look a bit further: valid Luau source
-/// text can never contain a raw `NUL` byte or other binary-only control bytes, while real
-/// bytecode is packed with them (string/instruction encoding, varints, etc.). Finding one
-/// within the next `BINARY_SNIFF_WINDOW` bytes means the buffer is bytecode, not text that
-/// merely starts with whitespace.
-pub unsafe fn is_luau_bytecode(data: *const c_char, size: usize) -> bool {
+/// # Safety
+///
+/// `data` must be non-null and valid for reads of `size` bytes for the duration of the call.
+pub unsafe fn looks_like_luau_bytecode(data: *const c_char, size: usize) -> bool {
     if size == 0 {
         return false;
     }
@@ -441,7 +438,7 @@ pub unsafe fn luaL_loadbufferenv(
         free(*(data as *mut *mut c_char) as *mut c_void);
     }
 
-    let chunk_is_text = !is_luau_bytecode(data, size);
+    let chunk_is_text = !looks_like_luau_bytecode(data, size);
     if !mode.is_null() {
         let modeb = CStr::from_ptr(mode).to_bytes();
         if !chunk_is_text && !modeb.contains(&b'b') {

@@ -1,6 +1,6 @@
 use std::{fs, io};
 
-use mluau::{Chunk, ChunkMode, Lua, Result};
+use mluau::{Chunk, ChunkMode, ChunkSource, Lua, Result};
 
 #[test]
 fn test_chunk_methods() -> Result<()> {
@@ -38,19 +38,15 @@ fn test_chunk_path() -> Result<()> {
         return 321
     "#,
     )?;
-    let i: i32 = lua.load(temp_dir.path().join("module.lua")).eval()?;
+    let module_path = temp_dir.path().join("module.lua");
+    let source = fs::read_to_string(&module_path)?;
+    let i: i32 = lua.load(ChunkSource::src(source).path(module_path.display())).eval()?;
     assert_eq!(i, 321);
 
-    match lua.load(&*temp_dir.path().join("module2.lua")).exec() {
-        Err(err) if err.downcast_ref::<io::Error>().unwrap().kind() == io::ErrorKind::NotFound => {}
+    match fs::read_to_string(temp_dir.path().join("module2.lua")) {
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {}
         res => panic!("expected io::Error, got {:?}", res),
     };
-
-    // &Path
-    assert_eq!(
-        (lua.load(&*temp_dir.path().join("module.lua").as_path())).eval::<i32>()?,
-        321
-    );
 
     Ok(())
 }
@@ -63,12 +59,13 @@ fn test_chunk_impls() -> Result<()> {
     assert_eq!(lua.load(String::from("1")).eval::<i32>()?, 1);
     assert_eq!(lua.load(&String::from("2")).eval::<i32>()?, 2);
 
-    // &[u8]
-    assert_eq!(lua.load(&b"3"[..]).eval::<i32>()?, 3);
+    // ChunkSource::Src
+    assert_eq!(lua.load(ChunkSource::src("3")).eval::<i32>()?, 3);
 
-    // Vec<u8>
-    assert_eq!(lua.load(b"4".to_vec()).eval::<i32>()?, 4);
-    assert_eq!(lua.load(&b"5".to_vec()).eval::<i32>()?, 5);
+    // ChunkSource::bytecode
+    let bytecode = mluau::Compiler::new().compile("return 4")?;
+    // SAFETY: bytecode was just produced by `Compiler::compile` above
+    assert_eq!(lua.load(unsafe { ChunkSource::bytecode(bytecode) }).eval::<i32>()?, 4);
 
     Ok(())
 }

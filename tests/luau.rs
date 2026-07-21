@@ -798,7 +798,7 @@ fn test_bytecode_sniff_disambiguates_ambiguous_leading_byte() {
     // `__mlua_require` bootstrap chunk, which starts with `\n`) must still be treated as text.
     let text_with_leading_newline = b"\nreturn 1 + 1";
     assert!(!unsafe {
-        mluau::ffi::is_luau_bytecode(
+        mluau::ffi::looks_like_luau_bytecode(
             text_with_leading_newline.as_ptr() as *const std::os::raw::c_char,
             text_with_leading_newline.len(),
         )
@@ -809,7 +809,7 @@ fn test_bytecode_sniff_disambiguates_ambiguous_leading_byte() {
     let mut fake_bytecode_version_10 = vec![10u8, 0, 1, 2, 3, 0, 4, 5];
     fake_bytecode_version_10.push(0);
     assert!(unsafe {
-        mluau::ffi::is_luau_bytecode(
+        mluau::ffi::looks_like_luau_bytecode(
             fake_bytecode_version_10.as_ptr() as *const std::os::raw::c_char,
             fake_bytecode_version_10.len(),
         )
@@ -818,7 +818,7 @@ fn test_bytecode_sniff_disambiguates_ambiguous_leading_byte() {
     // Real compiled bytecode (current target version, unambiguous) is always detected.
     let real_bytecode = Compiler::new().compile("return 1 + 1").unwrap();
     assert!(unsafe {
-        mluau::ffi::is_luau_bytecode(real_bytecode.as_ptr() as *const std::os::raw::c_char, real_bytecode.len())
+        mluau::ffi::looks_like_luau_bytecode(real_bytecode.as_ptr() as *const std::os::raw::c_char, real_bytecode.len())
     });
 }
 

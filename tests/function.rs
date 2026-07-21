@@ -1,4 +1,6 @@
 use mluau::{Error, Function, Lua, Result, String, Table, Variadic};
+#[cfg(not(feature = "luau"))]
+use mluau::ChunkSource;
 
 #[test]
 fn test_function_call() -> Result<()> {
@@ -205,7 +207,11 @@ fn test_function_dump() -> Result<()> {
     let concat_lua = lua
         .load(r#"function(arg1, arg2) return arg1 .. arg2 end"#)
         .eval::<Function>()?;
-    let concat = lua.load(&concat_lua.dump(false)).into_function()?;
+    let dumped = concat_lua.dump(false);
+    // SAFETY: `dumped` was just produced by `Function::dump` above
+    let concat = lua
+        .load(unsafe { ChunkSource::bytecode(dumped.as_slice()) })
+        .into_function()?;
 
     assert_eq!(concat.call::<String>(("foo", "bar"))?, "foobar");
 

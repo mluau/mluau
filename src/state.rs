@@ -947,12 +947,17 @@ impl Lua {
         Err(())
     }
 
-    /// Returns Lua source code as a `Chunk` builder type.
+    /// Returns Luau source code as a `Chunk` builder type.
+    /// 
+    /// `chunk` should be created via [`ChunkSource`] to prevent ambiguity of whether
+    /// the passed chunk is Luau sourcecode or Luau bytecode.
+    /// Passing a String or similar utf-8 content (obviously source code) as `chunk` is also allowed.
     ///
     /// In order to actually compile or run the resulting code, you must call [`Chunk::exec`] or
     /// similar on the returned builder. Code is not even parsed until one of these methods is
     /// called.
     ///
+    /// [`ChunkSource`]: crate::ChunkSource
     /// [`Chunk::exec`]: crate::Chunk::exec
     #[track_caller]
     pub fn load<'a>(&self, chunk: impl AsChunk + 'a) -> Chunk<'a> {
