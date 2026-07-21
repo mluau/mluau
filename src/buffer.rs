@@ -59,6 +59,29 @@ impl Buffer {
         self.len() == 0
     }
 
+    /// Downcasts the external buffer to the specified backing store type.
+    pub fn downcast_ref<T: ExternalBuffer>(&self) -> Option<&T> {
+        let lua = self.0.lua.lock();
+        let state = lua.ref_thread(self.0.aux_thread);
+        let userdata = unsafe { ffi::lua_getbufferuserdata(state, self.0.index) };
+        if userdata.is_null() {
+            return None;
+        }
+
+        let extra = unsafe { crate::state::extra::ExtraData::get(state) };
+        if extra.is_null() || !unsafe { (*extra).external_buffers.contains(&userdata) } {
+            return None;
+        }
+
+        let type_id = unsafe { (*(userdata as *const ExternalBufferHeader)).type_id };
+        if type_id == std::any::TypeId::of::<T>() {
+            let wrapper = unsafe { &*(userdata as *const ExternalBufferWrapper<T>) };
+            Some(&wrapper.buffer)
+        } else {
+            None
+        }
+    }
+
     /// Reads given number of bytes from the buffer at the given offset.
     ///
     /// Offset is 0-based.
@@ -211,56 +234,97 @@ impl crate::types::LuaType for Buffer {
     const TYPE_ID: std::os::raw::c_int = ffi::LUA_TBUFFER;
 }
 
-/// A backing store for an externally managed, immutable Luau buffer.
-pub trait ExternalBuffer: 'static {
-    /// Consumes the buffer and returns the raw parts: (data pointer, size, userdata, optional free callback).
-    fn into_raw(self) -> (*mut u8, usize, *mut std::ffi::c_void, Option<ffi::lua_BufferFree>);
+/// A backing store for an externally managed Luau buffer.
+///
+/// # Safety
+/// The implementor must ensure the memory returned by `as_ptr` and `len` remains valid
+/// and safe to be read by the Luau VM for the lifetime of this object. Note that implementing
+/// this trait by itself does not require the memory to be safe for mutation by the Luau VM;
+/// mutability safety is only a concern if the type also implements `ExternalBufferMut`.
+pub unsafe trait ExternalBuffer: 'static {
+    /// Returns a pointer to the buffer data.
+    fn as_ptr(&self) -> *const u8;
+    /// Returns the length of the buffer.
+    fn len(&self) -> usize;
 }
 
 /// A backing store for an externally managed, mutable Luau buffer.
-pub trait ExternalBufferMut: ExternalBuffer {}
+///
+/// # Safety
+/// The implementor must ensure that the memory is safe to be mutated directly
+/// by the Luau VM without causing undefined behavior in Rust.
+pub unsafe trait ExternalBufferMut: ExternalBuffer {
+    /// Returns a mutable pointer to the buffer data.
+    fn as_mut_ptr(&mut self) -> *mut u8;
+}
 
-impl<T: 'static> ExternalBuffer for Vec<T> {
-    fn into_raw(self) -> (*mut u8, usize, *mut std::ffi::c_void, Option<ffi::lua_BufferFree>) {
-        let boxed_slice = self.into_boxed_slice();
-        let size = boxed_slice.len() * std::mem::size_of::<T>();
-        let ptr = Box::into_raw(boxed_slice) as *mut u8;
-        (ptr, size, std::ptr::null_mut(), Some(vec_free_cb::<T>))
+#[doc(hidden)]
+#[repr(C)]
+pub struct ExternalBufferHeader {
+    pub type_id: std::any::TypeId,
+    pub drop_fn: unsafe fn(*mut std::ffi::c_void),
+}
+
+#[doc(hidden)]
+#[repr(C)]
+pub struct ExternalBufferWrapper<T> {
+    pub header: ExternalBufferHeader,
+    pub buffer: T,
+}
+
+// SAFETY: `Vec<T>` manages a heap allocation that will not move or be deallocated 
+// as long as the `Vec` itself is alive. The pointer and length returned are valid
+// to safely read from.
+unsafe impl<T: 'static> ExternalBuffer for Vec<T> {
+    fn as_ptr(&self) -> *const u8 {
+        self.as_slice().as_ptr() as *const u8
+    }
+
+    fn len(&self) -> usize {
+        self.as_slice().len() * std::mem::size_of::<T>()
     }
 }
 
-impl<T: 'static> ExternalBufferMut for Vec<T> {}
-
-unsafe extern "C" fn vec_free_cb<T: 'static>(
-    _l: *mut ffi::lua_State,
-    data: *mut std::ffi::c_void,
-    size: usize,
-    _userdata: *mut std::ffi::c_void,
-) {
-    let len = size / std::mem::size_of::<T>();
-    let ptr = data as *mut T;
-    let slice = std::slice::from_raw_parts_mut(ptr, len);
-    let _ = Box::from_raw(slice);
-}
-
-#[cfg(feature = "bytes")]
-impl ExternalBuffer for bytes::Bytes {
-    fn into_raw(self) -> (*mut u8, usize, *mut std::ffi::c_void, Option<ffi::lua_BufferFree>) {
-        let size = self.len();
-        let data = self.as_ptr() as *mut u8;
-        let userdata = Box::into_raw(Box::new(self)) as *mut std::ffi::c_void;
-        (data, size, userdata, Some(bytes_free_cb))
+// SAFETY: `Vec<u8>` contains only plain bytes. Mutating it directly from the Luau VM 
+// is safe because any arbitrary bit pattern is a valid `u8`, and modifying the backing 
+// bytes does not violate any of `Vec`'s invariants or cause UB during dropping.
+unsafe impl ExternalBufferMut for Vec<u8> {
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.as_mut_slice().as_mut_ptr()
     }
 }
 
 #[cfg(feature = "bytes")]
-unsafe extern "C" fn bytes_free_cb(
-    _l: *mut ffi::lua_State,
-    _data: *mut std::ffi::c_void,
-    _size: usize,
-    userdata: *mut std::ffi::c_void,
-) {
-    if !userdata.is_null() {
-        let _ = Box::from_raw(userdata as *mut bytes::Bytes);
+// SAFETY: `bytes::Bytes` is an immutable, reference-counted contiguous byte slice.
+// Its memory allocation is stable and guaranteed valid for reading.
+unsafe impl ExternalBuffer for bytes::Bytes {
+    fn as_ptr(&self) -> *const u8 {
+        self.as_ref().as_ptr()
+    }
+
+    fn len(&self) -> usize {
+        self.as_ref().len()
+    }
+}
+
+#[cfg(feature = "bytes")]
+// SAFETY: `bytes::BytesMut` guarantees contiguous memory.
+// Its pointer and length remain valid for reading for the lifetime of the object.
+unsafe impl ExternalBuffer for bytes::BytesMut {
+    fn as_ptr(&self) -> *const u8 {
+        self.as_ref().as_ptr()
+    }
+
+    fn len(&self) -> usize {
+        self.as_ref().len()
+    }
+}
+
+#[cfg(feature = "bytes")]
+// SAFETY: `bytes::BytesMut` contains only plain bytes. Mutating it directly from the Luau VM 
+// is safe because any arbitrary bit pattern is a valid `u8` and it doesn't cause UB.
+unsafe impl ExternalBufferMut for bytes::BytesMut {
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.as_mut().as_mut_ptr()
     }
 }

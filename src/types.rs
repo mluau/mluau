@@ -24,11 +24,16 @@ pub type Integer = ffi::lua_Integer;
 pub type Number = ffi::lua_Number;
 
 
-pub(crate) struct ThreadData {
-    #[cfg(feature = "send")]
-    pub(crate) inner: XRc<dyn std::any::Any + Send + Sync>,
-    #[cfg(not(feature = "send"))]
-    pub(crate) inner: XRc<dyn std::any::Any>,
+#[repr(C)]
+pub(crate) struct ThreadDataHeader {
+    pub(crate) type_id: std::any::TypeId,
+    pub(crate) drop_fn: unsafe fn(*mut c_void),
+}
+
+#[repr(C)]
+pub(crate) struct ThreadDataWrapper<T> {
+    pub(crate) header: ThreadDataHeader,
+    pub(crate) data: T,
 }
 
 /// A "light" userdata value. Equivalent to an unmanaged raw pointer.

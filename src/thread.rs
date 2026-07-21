@@ -8,7 +8,7 @@ use crate::state::RawLua;
 use crate::traits::{FromLuaMulti, IntoLuaMulti};
 use crate::types::{LuaType, ValueRef};
 
-use crate::types::{MaybeSync, XRc};
+use crate::types::MaybeSync;
 use crate::util::{check_stack, error_traceback_thread, pop_error, StackGuard};
 
 use crate::MaybeSend;
@@ -104,16 +104,13 @@ impl Thread {
 
     /// Returns the thread data without removing it from the thread.
     ///
-    /// Note that the returned value is a *XRc<T>* to avoid dangling references if
-    /// the thread data is removed while there are still references to it.
-    ///
     /// Returns `None` if no data was set for the current lua thread or if the provided type
     /// does not match the stored data type.
     ///
     /// This is a Luau specific extension.
     
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn thread_data<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<XRc<T>> {
+    pub fn thread_data<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<&T> {
         let _lua = self.0.lua.lock();
         let thread_state = self.state();
         unsafe {
@@ -121,33 +118,12 @@ impl Thread {
             if current.is_null() {
                 return None;
             }
-            let thread_data = &*(current as *mut crate::types::ThreadData);
-            match XRc::downcast(thread_data.inner.clone()) {
-                Ok(typed_ref) => Some(typed_ref),
-                Err(_) => None,
-            }
-        }
-    }
-
-    /// Takes out the thread data, consuming it.
-    ///
-    /// This is a Luau specific extension.
-    
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn take_thread_data<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<XRc<T>> {
-        let _lua = self.0.lua.lock();
-        let thread_state = self.state();
-        unsafe {
-            let current = ffi::lua_getthreaddata(thread_state);
-            if current.is_null() {
-                return None;
-            }
-            let thread_data = Box::from_raw(current as *mut crate::types::ThreadData);
-            ffi::lua_setthreaddata(thread_state, std::ptr::null_mut());
-            let any_box = thread_data.inner;
-            match any_box.downcast::<T>() {
-                Ok(typed_box) => Some(typed_box),
-                Err(_) => None,
+            let type_id = (*(current as *const crate::types::ThreadDataHeader)).type_id;
+            if type_id == std::any::TypeId::of::<T>() {
+                let wrapper = &*(current as *const crate::types::ThreadDataWrapper<T>);
+                Some(&wrapper.data)
+            } else {
+                None
             }
         }
     }
@@ -167,8 +143,14 @@ impl Thread {
             if !current.is_null() {
                 return Err(Error::runtime("thread data was already set for this thread"));
             }
-            let boxed = Box::new(crate::types::ThreadData {
-                inner: XRc::new(data),
+            let boxed = Box::new(crate::types::ThreadDataWrapper {
+                header: crate::types::ThreadDataHeader {
+                    type_id: std::any::TypeId::of::<T>(),
+                    drop_fn: |ptr| {
+                        let _ = Box::from_raw(ptr as *mut crate::types::ThreadDataWrapper<T>);
+                    },
+                },
+                data,
             });
             ffi::lua_setthreaddata(thread_state, Box::into_raw(boxed) as *mut c_void);
             let extra = lua.extra();
