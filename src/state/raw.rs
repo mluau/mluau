@@ -802,7 +802,7 @@ impl RawLua {
                 Ok(Value::Buffer(crate::Buffer(self.new_value_ref(aux_thread, idxs))))
             }
 
-            #[cfg(any(feature = "luau-classes", doc))]
+            #[cfg(feature = "luau-classes")]
             ffi::LUA_TCLASS => {
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
                 let ref_thread = self.ref_thread(aux_thread);
@@ -813,7 +813,7 @@ impl RawLua {
                 Ok(Value::Class(crate::Class(self.new_value_ref(aux_thread, idxs))))
             }
 
-            #[cfg(any(feature = "luau-classes", doc))]
+            #[cfg(feature = "luau-classes")]
             ffi::LUA_TOBJECT => {
                 let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
                 let ref_thread = self.ref_thread(aux_thread);

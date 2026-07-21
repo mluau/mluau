@@ -116,7 +116,7 @@ impl Lua {
         // Register the `class` global table when the user has enabled Luau's
         // (experimental) user-defined-classes runtime via `set_fflag`, mirroring what
         // Luau's own `luaL_openlibs` does internally when that flag is on.
-        #[cfg(any(feature = "luau-classes", doc))]
+        #[cfg(feature = "luau-classes")]
         if CLASSES_RUNTIME_ENABLED.load(std::sync::atomic::Ordering::Acquire) {
             let lua = self.lock();
             let state = lua.state();

@@ -52,6 +52,7 @@ impl Class {
     }
 }
 
+#[cfg(feature = "luau-classes")]
 impl crate::types::LuaType for Class {
     const TYPE_ID: std::os::raw::c_int = ffi::LUA_TCLASS;
 }
@@ -124,6 +125,7 @@ impl Object {
     }
 }
 
+#[cfg(feature = "luau-classes")]
 impl crate::types::LuaType for Object {
     const TYPE_ID: std::os::raw::c_int = ffi::LUA_TOBJECT;
 }
