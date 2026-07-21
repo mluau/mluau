@@ -18,10 +18,6 @@ pub use crate::{
     VmState as LuaVmState, WeakLua,
 };
 
-#[cfg(not(feature = "luau"))]
-#[doc(no_inline)]
-pub use crate::HookTriggers as LuaHookTriggers;
-
 #[doc(no_inline)]
 pub use crate::{
     CompileConstant as LuaCompileConstant, CoverageInfo as LuaCoverageInfo,

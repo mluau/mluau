@@ -69,6 +69,10 @@ pub const LUA_TCLASS: c_int = 12;
 #[cfg(feature = "luau-classes")]
 pub const LUA_TOBJECT: c_int = 13;
 
+pub const LUA_BLUAU: c_int = 0;
+pub const LUA_BHOST_IMMUTABLE: c_int = 1;
+pub const LUA_BHOST_MUTABLE: c_int = 2;
+
 /// Guaranteed number of Lua stack slots available to a C function.
 pub const LUA_MINSTACK: c_int = 20;
 
@@ -90,6 +94,10 @@ pub type lua_Continuation = unsafe extern "C-unwind" fn(L: *mut lua_State, statu
 
 /// Type for userdata destructor functions (no unwinding).
 pub type lua_Destructor = unsafe extern "C" fn(L: *mut lua_State, *mut c_void);
+
+/// Type for externally managed buffer destructor functions (no unwinding).
+pub type lua_BufferFree = unsafe extern "C" fn(L: *mut lua_State, data: *mut c_void, sz: usize, userdata: *mut c_void);
+
 
 /// Type for memory-allocation functions (no unwinding).
 pub type lua_Alloc =
@@ -201,6 +209,9 @@ unsafe extern "C-unwind" {
     pub fn lua_newuserdatadtor(L: *mut lua_State, sz: usize, dtor: lua_Destructor) -> *mut c_void;
 
     pub fn lua_newbuffer(L: *mut lua_State, sz: usize) -> *mut c_void;
+    pub fn lua_newexternalbuffer(L: *mut lua_State, sz: usize, data: *mut c_void, userdata: *mut c_void, free_cb: Option<lua_BufferFree>, mode: c_int) -> *mut c_void;
+    pub fn lua_getbuffermode(L: *mut lua_State, idx: c_int) -> c_int;
+    pub fn lua_getbufferuserdata(L: *mut lua_State, idx: c_int) -> *mut c_void;
 
     //
     // Get functions (Lua -> stack)

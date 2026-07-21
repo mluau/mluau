@@ -713,17 +713,6 @@ impl Chunk<'_> {
                     self.mode = Some(ChunkMode::Binary);
                     self.trusted_binary = true;
                 }
-                #[cfg(not(feature = "luau"))]
-                if let Ok(func) = self
-                    .lua
-                    .lock()
-                    .load_chunk(None, None, None, source.as_ref(), false)
-                {
-                    let data = func.dump(false);
-                    self.source = Ok(Cow::Owned(data));
-                    self.mode = Some(ChunkMode::Binary);
-                    self.trusted_binary = true;
-                }
             }
         }
     }
@@ -798,22 +787,11 @@ impl Chunk<'_> {
             return mode;
         }
         if let Ok(source) = &self.source {
-            #[cfg(not(feature = "luau"))]
-            if source.starts_with(ffi::LUA_SIGNATURE) {
-                return ChunkMode::Binary;
-            }
-
-            // Mirrors `ffi::is_luau_bytecode`, which `luaL_loadbufferenv` uses to make the
+            // Mirrors `ffi::looks_like_luau_bytecode`, which `luaL_loadbufferenv` uses to make the
             // same call: the leading byte is a bytecode version, not an arbitrary cutoff, so
             // this must track the actual valid version range rather than a fixed byte value
             // (a fixed cutoff goes stale as soon as Luau ships a new bytecode version).
-            #[cfg(feature = "luau")]
             if unsafe { ffi::looks_like_luau_bytecode(source.as_ptr() as *const std::os::raw::c_char, source.len()) } {
-                return ChunkMode::Binary;
-            }
-
-            #[cfg(not(feature = "luau"))]
-            if *source.first().unwrap_or(&u8::MAX) < b'\n' {
                 return ChunkMode::Binary;
             }
         }

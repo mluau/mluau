@@ -59,6 +59,7 @@ unsafe extern "C-unwind" {
     pub fn luaL_checkudata(L: *mut lua_State, ud: c_int, tname: *const c_char) -> *mut c_void;
 
     pub fn luaL_checkbuffer(L: *mut lua_State, narg: c_int, len: *mut usize) -> *mut c_void;
+    pub fn luaL_checkbuffermutable(L: *mut lua_State, narg: c_int, len: *mut usize) -> *mut c_void;
 
     pub fn luaL_where(L: *mut lua_State, lvl: c_int);
 

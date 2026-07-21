@@ -634,6 +634,13 @@ impl IntoLua for Cow<'_, str> {
     fn into_lua(self, lua: &Lua) -> Result<Value> {
         Ok(Value::String(lua.create_string(self.as_bytes())?))
     }
+
+    #[inline]
+    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
+        // use str's implementation of push_into_specified_stack so we don't accidentally 
+        // hit fallback into_lua case where it converts into { number } instead of string
+        (&*self).push_into_specified_stack(lua, state)
+    }
 }
 
 impl IntoLua for Box<str> {
@@ -665,6 +672,13 @@ impl IntoLua for CString {
     fn into_lua(self, lua: &Lua) -> Result<Value> {
         Ok(Value::String(lua.create_string(self.as_bytes())?))
     }
+
+    #[inline]
+    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
+        // converting to BString prevents &[u8] from silently putting a { number } onto stack
+        // instead of a string in the fallback case of unlikely memory error/huge string
+        push_bytes_into_stack(BString::from(self.into_bytes()), lua, state)
+    }
 }
 
 impl FromLua for CString {
@@ -695,6 +709,13 @@ impl IntoLua for &CStr {
     fn into_lua(self, lua: &Lua) -> Result<Value> {
         Ok(Value::String(lua.create_string(self.to_bytes())?))
     }
+
+    #[inline]
+    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
+        // converting to BString prevents &[u8] from silently putting a { number } onto stack
+        // instead of a string in the fallback case of unlikely memory error/huge string
+        push_bytes_into_stack(BStr::new(self.to_bytes()), lua, state)
+    }
 }
 
 impl IntoLua for Cow<'_, CStr> {
@@ -702,12 +723,22 @@ impl IntoLua for Cow<'_, CStr> {
     fn into_lua(self, lua: &Lua) -> Result<Value> {
         Ok(Value::String(lua.create_string(self.to_bytes())?))
     }
+
+    #[inline]
+    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
+        push_bytes_into_stack(BStr::new(self.to_bytes()), lua, state)
+    }
 }
 
 impl IntoLua for BString {
     #[inline]
     fn into_lua(self, lua: &Lua) -> Result<Value> {
         Ok(Value::String(lua.create_string(self)?))
+    }
+
+    #[inline]
+    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
+        push_bytes_into_stack(self, lua, state)
     }
 }
 
@@ -756,6 +787,11 @@ impl IntoLua for &BStr {
     #[inline]
     fn into_lua(self, lua: &Lua) -> Result<Value> {
         Ok(Value::String(lua.create_string(self)?))
+    }
+
+    #[inline]
+    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
+        push_bytes_into_stack(self, lua, state)
     }
 }
 

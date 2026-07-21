@@ -15,6 +15,7 @@ pub use either::Either;
 pub use registry_key::RegistryKey;
 pub(crate) use value_ref::ValueRef;
 
+
 use std::collections::HashMap;
 
 /// Type of Lua integer numbers.
@@ -22,11 +23,17 @@ pub type Integer = ffi::lua_Integer;
 /// Type of Lua floating point numbers.
 pub type Number = ffi::lua_Number;
 
-pub(crate) struct ThreadData {
-    #[cfg(feature = "send")]
-    pub(crate) inner: XRc<dyn std::any::Any + Send + Sync>,
-    #[cfg(not(feature = "send"))]
-    pub(crate) inner: XRc<dyn std::any::Any>,
+
+#[repr(C)]
+pub(crate) struct ThreadDataHeader {
+    pub(crate) type_id: std::any::TypeId,
+    pub(crate) drop_fn: unsafe fn(*mut c_void),
+}
+
+#[repr(C)]
+pub(crate) struct ThreadDataWrapper<T> {
+    pub(crate) header: ThreadDataHeader,
+    pub(crate) data: T,
 }
 
 /// A "light" userdata value. Equivalent to an unmanaged raw pointer.
@@ -73,10 +80,12 @@ pub(crate) type ContinuationUpvalue = Upvalue<Option<(Callback, Continuation)>>;
 
 pub(crate) type NamecallCallbackUpvalue = Upvalue<Option<NamecallCallback>>;
 
+
 pub struct NamecallMap {
     pub(crate) map: HashMap<String, NamecallCallback>,
     pub(crate) dynamic: Option<DynamicCallback>,
 }
+
 
 pub(crate) type NamecallMapUpvalue = Upvalue<Option<NamecallMap>>;
 
@@ -106,6 +115,7 @@ pub(crate) type InterruptCallback = XRc<dyn Fn(&Lua) -> Result<VmState> + Send>;
 
 #[cfg(all(not(feature = "send"), feature = "luau"))]
 pub(crate) type InterruptCallback = XRc<dyn Fn(&Lua) -> Result<VmState>>;
+
 
 pub(crate) type GcInterruptCallback = XRc<dyn Fn(&Lua, c_int) -> ()>;
 

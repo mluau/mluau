@@ -1,3 +1,5 @@
+#[cfg(any(feature = "luau", doc))]
+use crate::buffer::{ExternalBuffer, ExternalBufferMut};
 use crate::chunk::{AsChunk, Chunk};
 use crate::debug::Debug;
 use crate::error::{Error, Result};
@@ -34,7 +36,7 @@ use crate::userdata::{AnyUserData, UserData, UserDataProxy, UserDataRegistry, Us
 use crate::util::{assert_stack, check_stack, protect_lua_closure, push_string, rawset_field, StackGuard};
 use crate::value::{Nil, Value};
 
-use crate::types::ThreadData;
+use crate::types::ThreadDataHeader;
 #[cfg(any(feature = "luau", doc))]
 use crate::{buffer::Buffer, chunk::Compiler};
 
@@ -645,8 +647,8 @@ impl Lua {
                 // Luau GC is running.
                 // This will trigger `abort()` if dropping ThreadData panics.
                 unsafe extern "C" fn drop_threaddata(tdp: *mut c_void) {
-                    let td = Box::from_raw(tdp as *mut ThreadData);
-                    drop(td);
+                    let drop_fn = unsafe { (*(tdp as *const ThreadDataHeader)).drop_fn };
+                    drop_fn(tdp);
                 }
 
                 (*extra).running_gc = true;
@@ -977,7 +979,6 @@ impl Lua {
             env: chunk.environment(self),
             mode: chunk.mode(),
             source: chunk.source(),
-
             compiler: unsafe { (*self.lock().extra.get()).compiler.clone() },
             trusted_binary: false,
         }
@@ -1005,6 +1006,64 @@ impl Lua {
             ptr.copy_from_nonoverlapping(data.as_ptr(), data.len());
             Ok(buffer)
         }
+    }
+
+    /// Helper function to create an externally managed buffer with a specific mode.
+    ///
+    /// # Safety
+    /// The caller must ensure that the `mode` parameter accurately reflects the mutability
+    /// guarantees of the provided `buffer` type. Specifically, if `mode` is `LUA_BHOST_MUTABLE`,
+    /// the `buffer` must actually support safe mutable access to its backing store
+    /// (e.g., implementing `ExternalBufferMut`).
+    #[cfg(any(feature = "luau", doc))]
+    unsafe fn create_external_buffer_with_mode<B: ExternalBuffer>(
+        &self,
+        buffer: B,
+        data: *mut u8,
+        mode: std::os::raw::c_int,
+    ) -> Result<Buffer> {
+        let size = buffer.len();
+        let wrapper = Box::new(crate::buffer::ExternalBufferWrapper {
+            header: crate::buffer::ExternalBufferHeader {
+                type_id: std::any::TypeId::of::<B>(),
+                drop_fn: |ptr| unsafe {
+                    let _ = Box::from_raw(ptr as *mut crate::buffer::ExternalBufferWrapper<B>);
+                },
+            },
+            buffer,
+        });
+        let userdata = Box::into_raw(wrapper) as *mut std::ffi::c_void;
+        unsafe {
+            let state = self.lock();
+            (*state.extra()).external_buffers.insert(userdata);
+            Ok(state.create_external_buffer(size, data, userdata, Some(buffer_free_cb), mode)?.1)
+        }
+    }
+
+    /// Creates and returns an externally managed immutable Luau [buffer] object.
+    ///
+    /// [buffer]: https://luau.org/library#buffer-library
+    #[cfg(any(feature = "luau", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+    pub fn create_external_buffer<B: ExternalBuffer>(
+        &self,
+        buffer: B,
+    ) -> Result<Buffer> {
+        let data = buffer.as_ptr() as *mut u8;
+        unsafe { self.create_external_buffer_with_mode(buffer, data, ffi::LUA_BHOST_IMMUTABLE) }
+    }
+
+    /// Creates and returns an externally managed mutable Luau [buffer] object.
+    ///
+    /// [buffer]: https://luau.org/library#buffer-library
+    #[cfg(any(feature = "luau", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+    pub fn create_external_buffer_mut<B: ExternalBufferMut>(
+        &self,
+        mut buffer: B,
+    ) -> Result<Buffer> {
+        let data = buffer.as_mut_ptr();
+        unsafe { self.create_external_buffer_with_mode(buffer, data, ffi::LUA_BHOST_MUTABLE) }
     }
 
     /// Creates and returns a Luau [buffer] object with the specified size.
@@ -2219,6 +2278,31 @@ impl Deref for LuaGuard {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+unsafe extern "C" fn buffer_free_cb(
+    state: *mut ffi::lua_State,
+    _data: *mut std::ffi::c_void,
+    _size: usize,
+    userdata: *mut std::ffi::c_void,
+) {
+    if !userdata.is_null() {
+        let extra = crate::state::extra::ExtraData::get(state);
+        if !extra.is_null() {
+            (*extra).external_buffers.remove(&userdata);
+        }
+
+        let drop_fn = unsafe { (*(userdata as *const crate::buffer::ExternalBufferHeader)).drop_fn };
+        
+        if !extra.is_null() {
+            let prev_gc = (*extra).running_gc;
+            (*extra).running_gc = true;
+            drop_fn(userdata);
+            (*extra).running_gc = prev_gc;
+        } else {
+            drop_fn(userdata);
+        }
     }
 }
 

@@ -21,19 +21,6 @@ pub(crate) unsafe fn push_internal_userdata<T: TypeKey>(
 ) -> Result<*mut T> {
     check_stack(state, 3)?;
 
-    #[cfg(not(feature = "luau"))]
-    let ud_ptr = if protect {
-        protect_lua!(state, 0, 1, move |state| {
-            let ud_ptr = ffi::lua_newuserdata(state, const { mem::size_of::<T>() }) as *mut T;
-            ptr::write(ud_ptr, t);
-            ud_ptr
-        })?
-    } else {
-        let ud_ptr = ffi::lua_newuserdata(state, const { mem::size_of::<T>() }) as *mut T;
-        ptr::write(ud_ptr, t);
-        ud_ptr
-    };
-
     let ud_ptr = if protect {
         protect_lua!(state, 0, 1, move |state| {
             ffi::lua_newuserdata_t::<T>(state, t)
@@ -62,12 +49,6 @@ pub(crate) unsafe fn init_internal_metatable<T: TypeKey>(
     check_stack(state, 6)?;
 
     push_table(state, 0, 3, true)?;
-
-    #[cfg(not(feature = "luau"))]
-    {
-        ffi::lua_pushcfunction(state, collect_userdata::<T>);
-        rawset_field(state, -2, "__gc")?;
-    }
 
     ffi::lua_pushboolean(state, 0);
     rawset_field(state, -2, "__metatable")?;
@@ -110,13 +91,6 @@ pub(crate) unsafe fn get_internal_userdata<T: TypeKey>(
 pub(crate) unsafe fn push_userdata<T>(state: *mut ffi::lua_State, t: T, protect: bool) -> Result<*mut T> {
     let size = const { mem::size_of::<T>() };
 
-    #[cfg(not(feature = "luau"))]
-    let ud_ptr = if protect {
-        protect_lua!(state, 0, 1, move |state| ffi::lua_newuserdata(state, size))?
-    } else {
-        ffi::lua_newuserdata(state, size)
-    } as *mut T;
-
     let ud_ptr = if protect {
         protect_lua!(state, 0, 1, |state| {
             ffi::lua_newuserdatadtor(state, size, collect_userdata::<T>)
@@ -143,6 +117,7 @@ pub(crate) unsafe fn push_userdata_dyn(
 ) -> Result<*mut DynamicUserDataPtr> {
     let size = const { mem::size_of::<DynamicUserDataPtr>() };
 
+    
     let ud_ptr = if protect {
         protect_lua!(state, 0, 1, |state| {
             ffi::lua_newuserdatadtor(state, size, collect_userdata_dyn)
@@ -182,7 +157,7 @@ pub(crate) unsafe fn take_userdata<T>(state: *mut ffi::lua_State, idx: c_int) ->
     let ud = get_userdata::<T>(state, idx);
 
     // Update userdata tag to disable destructor and mark as destructed
-
+    
     ffi::lua_setuserdatatag(state, idx, 1);
 
     ptr::read(ud)

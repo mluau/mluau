@@ -1,8 +1,8 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_int;
 use std::ptr;
-
 use std::sync::atomic::AtomicBool;
+
 
 use crate::chunk::ChunkMode;
 use crate::error::{Error, Result};
@@ -14,7 +14,6 @@ use crate::types::MaybeSend;
 pub use heap_dump::HeapDump;
 pub use require::{NavigateError, Require, TextRequirer};
 
-static HAVE_SET_INTEGER_FFLAG: AtomicBool = AtomicBool::new(false);
 
 /// Tracks whether `DebugLuauUserDefinedClassesRuntime` was enabled via [`Lua::set_fflag`].
 ///
@@ -102,15 +101,15 @@ impl Lua {
         let require = self.create_require_function(require::TextRequirer::new())?;
         self.globals().raw_set("require", require)?;
 
-        // Unconditionally enable integer fflags to ensure safety on Luau
+        // Unconditionally enable integer+extern buffers fflags to ensure safety on Luau
         // TODO: Remove later
-
         {
-            if !HAVE_SET_INTEGER_FFLAG.swap(true, std::sync::atomic::Ordering::Acquire) {
-                for fflag in ["LuauIntegerType2", "LuauIntegerFastcalls", "LuauIntegerLibrary"] {
-                    mlua_expect!(Self::set_fflag(fflag, true), "integer fflag not set")
+            static INIT_FFLAGS: std::sync::Once = std::sync::Once::new();
+            INIT_FFLAGS.call_once(|| {
+                for fflag in ["LuauIntegerType2", "LuauIntegerFastcalls", "LuauIntegerLibrary", "LuauExternallyManagedBuffers"] {
+                    mlua_expect!(Self::set_fflag(fflag, true), "integer/extern buffers fflag not set")
                 }
-            }
+            });
         }
 
         // Register the `class` global table when the user has enabled Luau's

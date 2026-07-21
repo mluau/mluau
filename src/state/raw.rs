@@ -416,28 +416,15 @@ impl RawLua {
             }
             _ => 0,
         };
+
         let status = if trusted_binary {
-            #[cfg(feature = "luau")]
-            {
-                ffi::luau_load_trusted_binary(
-                    state,
-                    source.as_ptr() as *const c_char,
-                    source.len(),
-                    name,
-                    env,
-                )
-            }
-            #[cfg(not(feature = "luau"))]
-            {
-                ffi::luaL_loadbufferenv(
-                    state,
-                    source.as_ptr() as *const c_char,
-                    source.len(),
-                    name,
-                    mode,
-                    env,
-                )
-            }
+            ffi::luau_load_trusted_binary(
+                state,
+                source.as_ptr() as *const c_char,
+                source.len(),
+                name,
+                env,
+            )
         } else {
             ffi::luaL_loadbufferenv(
                 state,
@@ -481,6 +468,19 @@ impl RawLua {
         let _sg = StackGuard::new(state);
         check_stack(state, 3)?;
         let ptr = crate::util::push_buffer(state, size, true)?;
+        Ok((ptr, crate::Buffer(self.pop_ref())))
+    }
+
+    pub(crate) unsafe fn create_external_buffer(&self, size: usize, data: *mut u8, userdata: *mut std::ffi::c_void, free_cb: Option<ffi::lua_BufferFree>, mode: std::os::raw::c_int) -> Result<(*mut u8, crate::Buffer)> {
+        let state = self.state();
+        if self.unlikely_memory_error() {
+            let ptr = crate::util::push_external_buffer(state, size, data, userdata, free_cb, mode, false)?;
+            return Ok((ptr, crate::Buffer(self.pop_ref())));
+        }
+
+        let _sg = StackGuard::new(state);
+        check_stack(state, 3)?;
+        let ptr = crate::util::push_external_buffer(state, size, data, userdata, free_cb, mode, true)?;
         Ok((ptr, crate::Buffer(self.pop_ref())))
     }
 

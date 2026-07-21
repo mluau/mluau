@@ -83,6 +83,9 @@ pub(crate) struct ExtraData {
 
     #[cfg(feature = "dynamic-userdata")]
     pub(crate) dyn_userdata_set: FxHashSet<*mut c_void>,
+    
+    #[cfg(any(feature = "luau", doc))]
+    pub(crate) external_buffers: rustc_hash::FxHashSet<*mut c_void>,
 
     // When Lua instance dropped, setting `None` would prevent collecting `RegistryKey`s
     pub(super) registry_unref_list: Arc<Mutex<Option<Vec<c_int>>>>,
@@ -196,7 +199,9 @@ impl ExtraData {
             registered_userdata_mt: FxHashMap::default(),
             last_checked_userdata_mt: (ptr::null(), None),
             #[cfg(feature = "dynamic-userdata")]
-            dyn_userdata_set: FxHashSet::default(),
+            dyn_userdata_set: rustc_hash::FxHashSet::default(),
+            #[cfg(any(feature = "luau", doc))]
+            external_buffers: rustc_hash::FxHashSet::default(),
             registry_unref_list: Arc::new(Mutex::new(Some(Vec::new()))),
             app_data: AppData::default(),
             app_data_priv: AppData::default(),

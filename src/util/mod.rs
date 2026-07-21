@@ -110,6 +110,24 @@ pub(crate) unsafe fn push_buffer(state: *mut ffi::lua_State, size: usize, protec
     Ok(data as *mut u8)
 }
 
+#[inline(always)]
+pub(crate) unsafe fn push_external_buffer(
+    state: *mut ffi::lua_State,
+    size: usize,
+    data: *mut u8,
+    userdata: *mut std::ffi::c_void,
+    free_cb: Option<ffi::lua_BufferFree>,
+    mode: std::os::raw::c_int,
+    protect: bool,
+) -> Result<*mut u8> {
+    let buf_data = if protect || size > const { 1024 * 1024 * 1024 } {
+        protect_lua!(state, 0, 1, |state| ffi::lua_newexternalbuffer(state, size, data as *mut std::ffi::c_void, userdata, free_cb, mode))?
+    } else {
+        ffi::lua_newexternalbuffer(state, size, data as *mut std::ffi::c_void, userdata, free_cb, mode)
+    };
+    Ok(buf_data as *mut u8)
+}
+
 // Uses 3 stack spaces, does not call checkstack.
 #[inline]
 pub(crate) unsafe fn push_table(

@@ -11,9 +11,6 @@ use crate::state::extra::{RefThread, REF_STACK_RESERVE};
 use crate::state::{ExtraData, RawLua};
 use crate::util::{self, check_stack, get_internal_metatable, push_string, WrappedFailure};
 
-#[cfg(all(not(feature = "lua51"), not(feature = "luajit"), not(feature = "luau")))]
-use crate::{types::ContinuationUpvalue, util::get_userdata};
-
 struct StateGuard<'a>(&'a RawLua, *mut ffi::lua_State);
 
 impl<'a> StateGuard<'a> {
@@ -255,7 +252,6 @@ where
 
             let raw = extra.as_ref().unwrap_unchecked().raw_lua();
 
-            #[cfg(not(feature = "lua51"))]
             {
                 let values = take(&mut extra.as_mut().unwrap_unchecked().yielded_values);
 
@@ -275,76 +271,6 @@ where
 
                     match values.push_into_specified_stack_multi(raw, state) {
                         Ok(nargs) => {
-                            #[cfg(all(
-                                not(feature = "luau"),
-                                not(feature = "lua51"),
-                                not(feature = "luajit")
-                            ))]
-                            {
-                                // Yield to a continuation. Unlike luau, we need to do this manually and on
-                                // the fly using a yieldk call
-                                if in_callback_with_continuation {
-                                    // On Lua 5.2, status and ctx are not present, so use 0 as status for
-                                    // compatibility
-                                    #[cfg(feature = "lua52")]
-                                    unsafe extern "C-unwind" fn cont_callback(
-                                        state: *mut ffi::lua_State,
-                                    ) -> c_int {
-                                        let upvalue = get_userdata::<ContinuationUpvalue>(
-                                            state,
-                                            ffi::lua_upvalueindex(1),
-                                        );
-                                        callback_error_ext_yieldable(
-                                            state,
-                                            (*upvalue).extra.get(),
-                                            true,
-                                            |extra, nargs| {
-                                                // Lua ensures that `LUA_MINSTACK` stack spaces are available
-                                                // (after pushing arguments)
-                                                // The lock must be already held as the callback is executed
-                                                let rawlua = (*extra).raw_lua();
-                                                match (*upvalue).data {
-                                                    Some(ref func) => (func.1)(rawlua, nargs, 0),
-                                                    None => Err(Error::CallbackDestructed),
-                                                }
-                                            },
-                                            true,
-                                        )
-                                    }
-
-                                    // Lua 5.3/5.4 case
-                                    #[cfg(not(feature = "lua52"))]
-                                    unsafe extern "C-unwind" fn cont_callback(
-                                        state: *mut ffi::lua_State,
-                                        status: c_int,
-                                        _ctx: ffi::lua_KContext,
-                                    ) -> c_int {
-                                        let upvalue = get_userdata::<ContinuationUpvalue>(
-                                            state,
-                                            ffi::lua_upvalueindex(1),
-                                        );
-                                        callback_error_ext_yieldable(
-                                            state,
-                                            (*upvalue).extra.get(),
-                                            true,
-                                            |extra, nargs| {
-                                                // Lua ensures that `LUA_MINSTACK` stack spaces are available
-                                                // (after pushing arguments)
-                                                // The lock must be already held as the callback is executed
-                                                let rawlua = (*extra).raw_lua();
-                                                match (*upvalue).data {
-                                                    Some(ref func) => (func.1)(rawlua, nargs, status),
-                                                    None => Err(Error::CallbackDestructed),
-                                                }
-                                            },
-                                            true,
-                                        )
-                                    }
-
-                                    return ffi::lua_yieldc(state, nargs, cont_callback);
-                                }
-                            }
-
                             return ffi::lua_yield(state, nargs);
                         }
                         Err(err) => {

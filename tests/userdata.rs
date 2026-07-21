@@ -549,6 +549,7 @@ fn test_functions() -> Result<()> {
     assert_eq!(get.call::<i64>(())?, 100);
     assert_eq!(get_constant.call::<i64>(())?, 7);
 
+    
     assert!(globals.get::<Function>("not_me")?.call::<bool>(()).unwrap());
 
     Ok(())
@@ -712,18 +713,11 @@ fn test_metatable() -> Result<()> {
     #[cfg(any(feature = "lua54", feature = "lua53", feature = "luau"))]
     lua.load(r#"assert(tostring(ud):sub(1, 11) == "MyUserData:")"#)
         .exec()?;
-
+    
     lua.load(r#"assert(typeof(ud) == "MyUserData")"#).exec()?;
 
     let ud: AnyUserData = globals.get("ud")?;
     let metatable = ud.metatable()?;
-
-    #[cfg(not(feature = "luau"))]
-    match metatable.get::<Value>("__gc") {
-        Ok(_) => panic!("expected MetaMethodRestricted, got no error"),
-        Err(Error::MetaMethodRestricted(_)) => {}
-        Err(e) => panic!("expected MetaMethodRestricted, got {:?}", e),
-    }
 
     match metatable.set(MetaMethod::Index, Nil) {
         Ok(_) => panic!("expected MetaMethodRestricted, got no error"),
@@ -736,10 +730,7 @@ fn test_metatable() -> Result<()> {
         .map(|kv: Result<(_, Value)>| Ok(kv?.0))
         .collect::<Result<Vec<_>>>()?;
     methods.sort();
-
-    #[cfg(not(feature = "luau"))]
-    assert_eq!(methods, vec!["__index", MetaMethod::Type.name()]);
-
+    
     assert_eq!(methods, vec!["__index", "__namecall", MetaMethod::Type.name()]);
 
     #[derive(Copy, Clone)]

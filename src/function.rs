@@ -311,31 +311,16 @@ impl Function {
 
             let mut ar: ffi::lua_Debug = mem::zeroed();
             lua.push_ref_at(&self.0, state);
-            #[cfg(not(feature = "luau"))]
-            let res = ffi::lua_getinfo(state, cstr!(">Snu"), &mut ar);
-
             let res = ffi::lua_getinfo(state, -1, cstr!("sn"), &mut ar);
             mlua_assert!(res != 0, "lua_getinfo failed with `>Snu`");
 
             FunctionInfo {
                 name: ptr_to_lossy_str(ar.name).map(|s| s.into_owned()),
-                #[cfg(not(feature = "luau"))]
-                name_what: match ptr_to_str(ar.namewhat) {
-                    Some("") => None,
-                    val => val,
-                },
-
                 name_what: None,
                 what: ptr_to_str(ar.what).unwrap_or("main"),
                 source: ptr_to_lossy_str(ar.source).map(|s| s.into_owned()),
-                #[cfg(not(feature = "luau"))]
-                short_src: ptr_to_lossy_str(ar.short_src.as_ptr()).map(|s| s.into_owned()),
-
                 short_src: ptr_to_lossy_str(ar.short_src).map(|s| s.into_owned()),
                 line_defined: linenumber_to_usize(ar.linedefined),
-                #[cfg(not(feature = "luau"))]
-                last_line_defined: linenumber_to_usize(ar.lastlinedefined),
-
                 last_line_defined: None,
                 #[cfg(not(any(feature = "lua51", feature = "luajit")))]
                 num_params: ar.nparams as usize,
@@ -343,45 +328,6 @@ impl Function {
                 is_vararg: ar.isvararg != 0,
             }
         }
-    }
-
-    /// Dumps the function as a binary chunk.
-    ///
-    /// If `strip` is true, the binary representation may not include all debug information
-    /// about the function, to save space.
-    ///
-    /// For Luau a [`Compiler`] can be used to compile Lua chunks to bytecode.
-    ///
-    /// [`Compiler`]: crate::chunk::Compiler
-    #[cfg(not(feature = "luau"))]
-    #[cfg_attr(docsrs, doc(cfg(not(feature = "luau"))))]
-    pub fn dump(&self, strip: bool) -> Vec<u8> {
-        unsafe extern "C-unwind" fn writer(
-            _state: *mut ffi::lua_State,
-            buf: *const c_void,
-            buf_len: usize,
-            data: *mut c_void,
-        ) -> c_int {
-            let data = &mut *(data as *mut Vec<u8>);
-            let buf = slice::from_raw_parts(buf as *const u8, buf_len);
-            data.extend_from_slice(buf);
-            0
-        }
-
-        let lua = self.0.lua.lock();
-        let state = lua.state();
-        let mut data: Vec<u8> = Vec::new();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            assert_stack(state, 1);
-
-            lua.push_ref_at(&self.0, state);
-            let data_ptr = &mut data as *mut Vec<u8> as *mut c_void;
-            ffi::lua_dump(state, writer, data_ptr, strip as i32);
-            ffi::lua_pop(state, 1);
-        }
-
-        data
     }
 
     /// Retrieves recorded coverage information about this Lua function including inner calls.

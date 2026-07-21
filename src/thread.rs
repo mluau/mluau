@@ -8,17 +8,12 @@ use crate::state::RawLua;
 use crate::traits::{FromLuaMulti, IntoLuaMulti};
 use crate::types::{LuaType, ValueRef};
 
-use crate::types::{MaybeSync, XRc};
+use crate::types::MaybeSync;
 use crate::util::{check_stack, error_traceback_thread, pop_error, StackGuard};
 
 use crate::MaybeSend;
 
 use crate::WeakLua;
-#[cfg(not(feature = "luau"))]
-use crate::{
-    debug::{Debug, HookTriggers},
-    types::HookKind,
-};
 
 /// Continuation thread status. Can either be Ok, Yielded (rare, but can happen) or Error
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -109,16 +104,13 @@ impl Thread {
 
     /// Returns the thread data without removing it from the thread.
     ///
-    /// Note that the returned value is a *XRc<T>* to avoid dangling references if
-    /// the thread data is removed while there are still references to it.
-    ///
     /// Returns `None` if no data was set for the current lua thread or if the provided type
     /// does not match the stored data type.
     ///
     /// This is a Luau specific extension.
-
+    
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn thread_data<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<XRc<T>> {
+    pub fn thread_data<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<&T> {
         let _lua = self.0.lua.lock();
         let thread_state = self.state();
         unsafe {
@@ -126,33 +118,12 @@ impl Thread {
             if current.is_null() {
                 return None;
             }
-            let thread_data = &*(current as *mut crate::types::ThreadData);
-            match XRc::downcast(thread_data.inner.clone()) {
-                Ok(typed_ref) => Some(typed_ref),
-                Err(_) => None,
-            }
-        }
-    }
-
-    /// Takes out the thread data, consuming it.
-    ///
-    /// This is a Luau specific extension.
-
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn take_thread_data<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<XRc<T>> {
-        let _lua = self.0.lua.lock();
-        let thread_state = self.state();
-        unsafe {
-            let current = ffi::lua_getthreaddata(thread_state);
-            if current.is_null() {
-                return None;
-            }
-            let thread_data = Box::from_raw(current as *mut crate::types::ThreadData);
-            ffi::lua_setthreaddata(thread_state, std::ptr::null_mut());
-            let any_box = thread_data.inner;
-            match any_box.downcast::<T>() {
-                Ok(typed_box) => Some(typed_box),
-                Err(_) => None,
+            let type_id = (*(current as *const crate::types::ThreadDataHeader)).type_id;
+            if type_id == std::any::TypeId::of::<T>() {
+                let wrapper = &*(current as *const crate::types::ThreadDataWrapper<T>);
+                Some(&wrapper.data)
+            } else {
+                None
             }
         }
     }
@@ -162,7 +133,7 @@ impl Thread {
     /// Errors if thread data was already set for the current lua thread.
     ///
     /// This is a Luau specific extension.
-
+    
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_thread_data<T: 'static + MaybeSend + MaybeSync>(&self, data: T) -> Result<()> {
         let lua = self.0.lua.lock();
@@ -172,8 +143,14 @@ impl Thread {
             if !current.is_null() {
                 return Err(Error::runtime("thread data was already set for this thread"));
             }
-            let boxed = Box::new(crate::types::ThreadData {
-                inner: XRc::new(data),
+            let boxed = Box::new(crate::types::ThreadDataWrapper {
+                header: crate::types::ThreadDataHeader {
+                    type_id: std::any::TypeId::of::<T>(),
+                    drop_fn: |ptr| {
+                        let _ = Box::from_raw(ptr as *mut crate::types::ThreadDataWrapper<T>);
+                    },
+                },
+                data,
             });
             ffi::lua_setthreaddata(thread_state, Box::into_raw(boxed) as *mut c_void);
             let extra = lua.extra();
@@ -272,7 +249,7 @@ impl Thread {
     /// Resumes execution of this thread, immediately raising an error.
     ///
     /// This is a Luau specific extension.
-
+    
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn resume_error<R>(&self, error: impl crate::IntoLua) -> Result<R>
     where
@@ -315,9 +292,6 @@ impl Thread {
         let state = lua.state();
         let thread_state = self.state();
         let mut nresults = 0;
-        #[cfg(not(feature = "luau"))]
-        let ret = ffi::lua_resume(thread_state, state, nargs, &mut nresults as *mut c_int);
-
         let ret = ffi::lua_resumex(thread_state, state, nargs, &mut nresults as *mut c_int);
 
         match ret {
@@ -370,39 +344,6 @@ impl Thread {
         }
     }
 
-    /// Sets a hook function that will periodically be called as Lua code executes.
-    ///
-    /// This function is similar or [`Lua::set_hook`] except that it sets for the thread.
-    /// You can have multiple hooks for different threads.
-    ///
-    /// To remove a hook call [`Thread::remove_hook`].
-    ///
-    /// [`Lua::set_hook`]: crate::Lua::set_hook
-    #[cfg(not(feature = "luau"))]
-    #[cfg_attr(docsrs, doc(cfg(not(feature = "luau"))))]
-    pub fn set_hook<F>(&self, triggers: HookTriggers, callback: F) -> Result<()>
-    where
-        F: Fn(&crate::Lua, &Debug) -> Result<crate::VmState> + crate::MaybeSend + 'static,
-    {
-        let lua = self.0.lua.lock();
-        unsafe {
-            lua.set_thread_hook(
-                self.state(),
-                HookKind::Thread(triggers, crate::types::XRc::new(callback)),
-            )
-        }
-    }
-
-    /// Removes any hook function from this thread.
-    #[cfg(not(feature = "luau"))]
-    #[cfg_attr(docsrs, doc(cfg(not(feature = "luau"))))]
-    pub fn remove_hook(&self) {
-        let _lua = self.0.lua.lock();
-        unsafe {
-            ffi::lua_sethook(self.state(), None, 0, 0);
-        }
-    }
-
     /// Resets a thread
     ///
     /// In [Lua 5.4]: cleans its call stack and closes all pending to-be-closed variables.
@@ -427,6 +368,7 @@ impl Thread {
             // Push function to the top of the thread stack
             ffi::lua_xpush(lua.ref_thread(func.0.aux_thread), thread_state, func.0.index);
 
+            
             {
                 // Inherit `LUA_GLOBALSINDEX` from the main thread
                 ffi::lua_xpush(lua.main_state(), thread_state, ffi::LUA_GLOBALSINDEX);
@@ -446,25 +388,8 @@ impl Thread {
             }
             ThreadStatusInner::Running => Err(Error::runtime("cannot reset a running thread")),
             ThreadStatusInner::Finished => Ok(()),
-            #[cfg(not(any(feature = "lua54", feature = "luau")))]
-            ThreadStatusInner::Yielded(_) | ThreadStatusInner::Error => {
-                Err(Error::runtime("cannot reset non-finished thread"))
-            }
-            #[cfg(any(feature = "lua54", feature = "luau"))]
             ThreadStatusInner::Yielded(_) | ThreadStatusInner::Error => {
                 let thread_state = self.state();
-
-                #[cfg(all(feature = "lua54", not(feature = "vendored")))]
-                let status = ffi::lua_resetthread(thread_state);
-                #[cfg(all(feature = "lua54", feature = "vendored"))]
-                let status = {
-                    let lua = self.0.lua.lock();
-                    ffi::lua_closethread(thread_state, lua.state())
-                };
-                #[cfg(feature = "lua54")]
-                if status != ffi::LUA_OK {
-                    return Err(pop_error(thread_state, status));
-                }
 
                 ffi::lua_resetthread(thread_state);
 
@@ -495,15 +420,6 @@ impl Thread {
 
         let thread_state = self.state();
         unsafe {
-            #[cfg(all(feature = "lua54", not(feature = "vendored")))]
-            let status = ffi::lua_resetthread(thread_state);
-            #[cfg(all(feature = "lua54", feature = "vendored"))]
-            let status = ffi::lua_closethread(thread_state, lua.state());
-            #[cfg(feature = "lua54")]
-            if status != ffi::LUA_OK {
-                return Err(pop_error(thread_state, status));
-            }
-
             ffi::lua_resetthread(thread_state);
             Ok(())
         }
@@ -523,7 +439,7 @@ impl Thread {
     ///
     /// ```
     /// # use mluau::{Lua, Result};
-    /// #
+    /// # 
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
     /// let thread = lua.create_thread(lua.create_function(|lua2, ()| {
@@ -542,8 +458,6 @@ impl Thread {
     /// # #[cfg(not(feature = "luau"))]
     /// # fn main() { }
     /// ```
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn sandbox(&self) -> Result<()> {
         let lua = self.0.lua.lock();
         let state = lua.state();

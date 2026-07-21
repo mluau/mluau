@@ -13,10 +13,12 @@ pub(crate) struct MemoryState {
     // This is used when calling `lua_pushcfunction` for lua5.1/jit/luau.
     ignore_limit: bool,
     // Indicates that the memory limit was reached on the last allocation.
+    
     limit_reached: bool,
 }
 
 impl MemoryState {
+    
     #[inline]
     pub(crate) unsafe fn get(state: *mut ffi::lua_State) -> *mut Self {
         let mut mem_state = ptr::null_mut();
@@ -65,9 +67,8 @@ impl MemoryState {
         prev_limit as usize
     }
 
-    // This function is used primarily for calling `lua_pushcfunction` in lua5.1/jit/luau
+    // This function is used primarily for calling `lua_pushcfunction` in luau
     // to bypass the memory limit (if set).
-    #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
     #[inline]
     pub(crate) unsafe fn relax_limit_with(state: *mut ffi::lua_State, f: impl FnOnce()) {
         let mem_state = Self::get(state);
@@ -80,15 +81,7 @@ impl MemoryState {
         }
     }
 
-    // Does nothing apart from calling `f()`, we don't need to bypass any limits
-    #[cfg(any(feature = "lua52", feature = "lua53", feature = "lua54"))]
-    #[inline]
-    pub(crate) unsafe fn relax_limit_with(_state: *mut ffi::lua_State, f: impl FnOnce()) {
-        f();
-    }
-
     // Returns `true` if the memory limit was reached on the last memory operation
-
     #[inline]
     pub(crate) unsafe fn limit_reached(state: *mut ffi::lua_State) -> bool {
         (*Self::get(state)).limit_reached
@@ -102,7 +95,7 @@ unsafe extern "C" fn allocator(
     nsize: usize,
 ) -> *mut c_void {
     let mem_state = &mut *(extra as *mut MemoryState);
-
+    
     {
         // Reset the flag
         mem_state.limit_reached = false;
@@ -131,6 +124,7 @@ unsafe extern "C" fn allocator(
     let mem_limit = mem_state.memory_limit;
     let new_used_memory = mem_state.used_memory + mem_diff;
     if mem_limit > 0 && new_used_memory > mem_limit && !mem_state.ignore_limit {
+        
         {
             mem_state.limit_reached = true;
         }

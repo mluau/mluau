@@ -36,6 +36,18 @@ impl Buffer {
         f(data)
     }
 
+    /// Calls a function f with the byte slice of the buffer.
+    ///
+    /// Safety: The byte slice must not outlive the buffer.
+    pub async fn with_bytes_async<F, R>(&self, f: F) -> R
+    where
+        F: AsyncFnOnce(&[u8]) -> R,
+    {
+        let lua = self.0.lua.lock();
+        let data = self.as_slice(&lua);
+        f(data).await
+    }
+
     /// Returns the length of the buffer.
     pub fn len(&self) -> usize {
         let lua = self.0.lua.lock();
@@ -45,6 +57,29 @@ impl Buffer {
     /// Returns `true` if the buffer is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Downcasts the external buffer to the specified backing store type.
+    pub fn downcast_ref<T: ExternalBuffer>(&self) -> Option<&T> {
+        let lua = self.0.lua.lock();
+        let state = lua.ref_thread(self.0.aux_thread);
+        let userdata = unsafe { ffi::lua_getbufferuserdata(state, self.0.index) };
+        if userdata.is_null() {
+            return None;
+        }
+
+        let extra = unsafe { crate::state::extra::ExtraData::get(state) };
+        if extra.is_null() || !unsafe { (*extra).external_buffers.contains(&userdata) } {
+            return None;
+        }
+
+        let type_id = unsafe { (*(userdata as *const ExternalBufferHeader)).type_id };
+        if type_id == std::any::TypeId::of::<T>() {
+            let wrapper = unsafe { &*(userdata as *const ExternalBufferWrapper<T>) };
+            Some(&wrapper.buffer)
+        } else {
+            None
+        }
     }
 
     /// Reads given number of bytes from the buffer at the given offset.
@@ -112,11 +147,6 @@ impl Buffer {
         let buf = ffi::lua_tobuffer(lua.ref_thread(self.0.aux_thread), self.0.index, &mut size);
         mlua_assert!(!buf.is_null(), "invalid Luau buffer");
         (buf as *mut u8, size)
-    }
-
-    #[cfg(not(feature = "luau"))]
-    unsafe fn as_raw_parts(&self, lua: &RawLua) -> (*mut u8, usize) {
-        unreachable!()
     }
 
     /// Converts this buffer to a generic C pointer.
@@ -200,4 +230,149 @@ impl Serialize for Buffer {
 
 impl crate::types::LuaType for Buffer {
     const TYPE_ID: std::os::raw::c_int = ffi::LUA_TBUFFER;
+}
+
+/// A backing store for an externally managed Luau buffer.
+///
+/// # Safety
+/// The implementor must ensure the memory returned by `as_ptr` and `len` remains valid
+/// and safe to be read by the Luau VM for the lifetime of this object. Note that implementing
+/// this trait by itself does not require the memory to be safe for mutation by the Luau VM;
+/// mutability safety is only a concern if the type also implements `ExternalBufferMut`.
+pub unsafe trait ExternalBuffer: 'static {
+    /// Returns a pointer to the buffer data.
+    fn as_ptr(&self) -> *const u8;
+    /// Returns the length of the buffer.
+    fn len(&self) -> usize;
+}
+
+/// A backing store for an externally managed, mutable Luau buffer.
+///
+/// # Safety
+/// The implementor must ensure that the memory is safe to be mutated directly
+/// by the Luau VM without causing undefined behavior in Rust.
+pub unsafe trait ExternalBufferMut: ExternalBuffer {
+    /// Returns a mutable pointer to the buffer data.
+    fn as_mut_ptr(&mut self) -> *mut u8;
+}
+
+/// A marker trait for primitive types that are safe to be treated as raw bytes and mutated
+/// by the Luau VM. Types implementing this must not contain references, padding bytes with 
+/// undefined behavior, or complex drop logic. Crucially, any arbitrary bit pattern must 
+/// represent a valid instance of the type without causing undefined behavior.
+pub unsafe trait Primitive {}
+
+unsafe impl Primitive for u8 {}
+unsafe impl Primitive for i8 {}
+unsafe impl Primitive for u16 {}
+unsafe impl Primitive for i16 {}
+unsafe impl Primitive for u32 {}
+unsafe impl Primitive for i32 {}
+unsafe impl Primitive for u64 {}
+unsafe impl Primitive for i64 {}
+unsafe impl Primitive for u128 {}
+unsafe impl Primitive for i128 {}
+unsafe impl Primitive for f32 {}
+unsafe impl Primitive for f64 {}
+
+#[doc(hidden)]
+#[repr(C)]
+pub struct ExternalBufferHeader {
+    pub type_id: std::any::TypeId,
+    pub drop_fn: unsafe fn(*mut std::ffi::c_void),
+}
+
+#[doc(hidden)]
+#[repr(C)]
+pub struct ExternalBufferWrapper<T> {
+    pub header: ExternalBufferHeader,
+    pub buffer: T,
+}
+
+// SAFETY: `Vec<T>` manages a heap allocation that will not move or be deallocated 
+// as long as the `Vec` itself is alive. The pointer and length returned are valid
+// to safely read from.
+unsafe impl<T: 'static> ExternalBuffer for Vec<T> {
+    fn as_ptr(&self) -> *const u8 {
+        self.as_slice().as_ptr() as *const u8
+    }
+
+    fn len(&self) -> usize {
+        self.as_slice().len() * std::mem::size_of::<T>()
+    }
+}
+
+// SAFETY: `Vec<T>` where `T: Primitive` contains only plain bytes. Mutating it directly from 
+// the Luau VM is safe because any arbitrary bit pattern is a valid instance of `T` (or at least
+// mutating it via VM won't cause UB during drops or pointer derefs).
+unsafe impl<T: Primitive + 'static> ExternalBufferMut for Vec<T> {
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.as_mut_slice().as_mut_ptr() as *mut u8
+    }
+}
+
+// SAFETY: `Arc<T>` is a reference-counted pointer to `T`. The underlying memory
+// allocation managed by `T` is stable and valid for reading as long as the `Arc` is alive.
+//
+// Thread Safety: `Arc` provides thread-safe reference counting, making it perfectly safe
+// if the Luau VM's garbage collector drops this object from a different thread.
+unsafe impl<T: ExternalBuffer> ExternalBuffer for std::sync::Arc<T> {
+    fn as_ptr(&self) -> *const u8 {
+        (**self).as_ptr()
+    }
+
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+}
+
+#[cfg(not(feature = "send"))]
+// SAFETY: `Rc<T>` is a reference-counted pointer to `T`. The underlying memory
+// allocation managed by `T` is stable and valid for reading as long as the `Rc` is alive.
+//
+// Thread Safety: `Rc` is explicitly NOT thread-safe. It is only available when the `send`
+// feature is disabled, guaranteeing that the Luau state and its GC will never cross thread boundaries.
+unsafe impl<T: ExternalBuffer> ExternalBuffer for std::rc::Rc<T> {
+    fn as_ptr(&self) -> *const u8 {
+        (**self).as_ptr()
+    }
+
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+}
+
+#[cfg(feature = "bytes")]
+// SAFETY: `bytes::Bytes` is an immutable, reference-counted contiguous byte slice.
+// Its memory allocation is stable and guaranteed valid for reading.
+unsafe impl ExternalBuffer for bytes::Bytes {
+    fn as_ptr(&self) -> *const u8 {
+        self.as_ref().as_ptr()
+    }
+
+    fn len(&self) -> usize {
+        self.as_ref().len()
+    }
+}
+
+#[cfg(feature = "bytes")]
+// SAFETY: `bytes::BytesMut` guarantees contiguous memory.
+// Its pointer and length remain valid for reading for the lifetime of the object.
+unsafe impl ExternalBuffer for bytes::BytesMut {
+    fn as_ptr(&self) -> *const u8 {
+        self.as_ref().as_ptr()
+    }
+
+    fn len(&self) -> usize {
+        self.as_ref().len()
+    }
+}
+
+#[cfg(feature = "bytes")]
+// SAFETY: `bytes::BytesMut` contains only plain bytes. Mutating it directly from the Luau VM 
+// is safe because any arbitrary bit pattern is a valid `u8` and it doesn't cause UB.
+unsafe impl ExternalBufferMut for bytes::BytesMut {
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.as_mut().as_mut_ptr()
+    }
 }

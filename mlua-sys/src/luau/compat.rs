@@ -19,7 +19,6 @@ pub const LUA_RESUMEERROR: c_int = -1;
 // bytes; 32 gives a generous margin over that without scanning the whole chunk.
 const BINARY_SNIFF_WINDOW: usize = 32;
 
-/// Whether `data` (of length `size`) looks like a Luau bytecode blob rather than source text.
 /// This just checks for the leading bytes being a valid bytecode version before NUL/etc.,
 /// and doesn't actually check if the bytecode itself is valid.
 ///
@@ -473,7 +472,7 @@ pub unsafe fn luaL_loadbufferenv(
 /// (e.g. output freshly produced by `luau_compile`), skipping straight to `luau_load`.
 ///
 /// This is purely a fast path over `luaL_loadbufferenv`: it saves the redundant
-/// `is_luau_bytecode` sniff when the caller already knows the answer. It is not required
+/// `looks_like_luau_bytecode` sniff when the caller already knows the answer. It is not required
 /// for correctness -- `luaL_loadbufferenv` itself must correctly classify arbitrary,
 /// externally-supplied bytecode (e.g. loaded from disk) that never goes through this path.
 pub unsafe fn luau_load_trusted_binary(
