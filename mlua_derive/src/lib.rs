@@ -103,7 +103,7 @@ pub fn chunk(input: TokenStream) -> TokenStream {
 
         struct InnerChunk<F: FnOnce(&Lua) -> Result<Table>>(Cell<Option<F>>);
 
-        impl<F> AsChunk for InnerChunk<F>
+        unsafe impl<F> AsChunk for InnerChunk<F>
         where
             F: FnOnce(&Lua) -> Result<Table>,
         {

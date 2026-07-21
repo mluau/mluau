@@ -17,8 +17,13 @@ use crate::value::Value;
 /// Prefer [`ChunkSource`] over this trait. `AsChunk` is kept mainly so `&str`/`String` literals
 /// can still be passed to [`Lua::load`] directly; anything else should use `ChunkSource`.
 ///
+/// # Safety
+///
+/// Implementer is responsible for ensuring `source()` is valid/trusted bytecode whenever
+/// `mode()` returns `Some(ChunkMode::Binary)`.
+///
 /// [loadable by Lua]: https://www.lua.org/manual/5.4/manual.html#3.3.2
-pub trait AsChunk {
+pub unsafe trait AsChunk {
     /// Returns optional chunk name
     ///
     /// See [`Chunk::set_name`] for possible name prefixes.
@@ -45,7 +50,7 @@ pub trait AsChunk {
         Self: 'a;
 }
 
-impl AsChunk for &str {
+unsafe impl AsChunk for &str {
     fn mode(&self) -> Option<ChunkMode> {
         Some(ChunkMode::Text)
     }
@@ -58,7 +63,7 @@ impl AsChunk for &str {
     }
 }
 
-impl AsChunk for StdString {
+unsafe impl AsChunk for StdString {
     fn mode(&self) -> Option<ChunkMode> {
         Some(ChunkMode::Text)
     }
@@ -68,7 +73,7 @@ impl AsChunk for StdString {
     }
 }
 
-impl AsChunk for &StdString {
+unsafe impl AsChunk for &StdString {
     fn mode(&self) -> Option<ChunkMode> {
         Some(ChunkMode::Text)
     }
@@ -81,7 +86,7 @@ impl AsChunk for &StdString {
     }
 }
 
-impl<C: AsChunk + ?Sized> AsChunk for Box<C> {
+unsafe impl<C: AsChunk + ?Sized> AsChunk for Box<C> {
     fn name(&self) -> Option<StdString> {
         (**self).name()
     }
@@ -174,7 +179,7 @@ impl<'a> ChunkSource<'a> {
     }
 }
 
-impl AsChunk for ChunkSource<'_> {
+unsafe impl AsChunk for ChunkSource<'_> {
     fn name(&self) -> Option<StdString> {
         match self {
             ChunkSource::Src(_, name) => name.clone(),
