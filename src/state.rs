@@ -993,7 +993,7 @@ impl Lua {
         buffer: B,
     ) -> Result<Buffer> {
         let (data, size, userdata, free_cb) = buffer.into_raw();
-        unsafe { Ok(self.lock().create_external_buffer(size, data, userdata, free_cb, 1)?.1) }
+        unsafe { Ok(self.lock().create_external_buffer(size, data, userdata, free_cb, ffi::LUA_BHOST_IMMUTABLE)?.1) }
     }
 
     /// Creates and returns an externally managed mutable Luau [buffer] object.
@@ -1006,7 +1006,7 @@ impl Lua {
         buffer: B,
     ) -> Result<Buffer> {
         let (data, size, userdata, free_cb) = buffer.into_raw();
-        unsafe { Ok(self.lock().create_external_buffer(size, data, userdata, free_cb, 2)?.1) }
+        unsafe { Ok(self.lock().create_external_buffer(size, data, userdata, free_cb, ffi::LUA_BHOST_MUTABLE)?.1) }
     }
 
     /// Creates and returns a Luau [buffer] object with the specified size.
