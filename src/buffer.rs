@@ -258,6 +258,25 @@ pub unsafe trait ExternalBufferMut: ExternalBuffer {
     fn as_mut_ptr(&mut self) -> *mut u8;
 }
 
+/// A marker trait for primitive types that are safe to be treated as raw bytes and mutated
+/// by the Luau VM. Types implementing this must not contain references, padding bytes with 
+/// undefined behavior, or complex drop logic. Crucially, any arbitrary bit pattern must 
+/// represent a valid instance of the type without causing undefined behavior.
+pub unsafe trait Primitive {}
+
+unsafe impl Primitive for u8 {}
+unsafe impl Primitive for i8 {}
+unsafe impl Primitive for u16 {}
+unsafe impl Primitive for i16 {}
+unsafe impl Primitive for u32 {}
+unsafe impl Primitive for i32 {}
+unsafe impl Primitive for u64 {}
+unsafe impl Primitive for i64 {}
+unsafe impl Primitive for u128 {}
+unsafe impl Primitive for i128 {}
+unsafe impl Primitive for f32 {}
+unsafe impl Primitive for f64 {}
+
 #[doc(hidden)]
 #[repr(C)]
 pub struct ExternalBufferHeader {
@@ -285,12 +304,43 @@ unsafe impl<T: 'static> ExternalBuffer for Vec<T> {
     }
 }
 
-// SAFETY: `Vec<u8>` contains only plain bytes. Mutating it directly from the Luau VM 
-// is safe because any arbitrary bit pattern is a valid `u8`, and modifying the backing 
-// bytes does not violate any of `Vec`'s invariants or cause UB during dropping.
-unsafe impl ExternalBufferMut for Vec<u8> {
+// SAFETY: `Vec<T>` where `T: Primitive` contains only plain bytes. Mutating it directly from 
+// the Luau VM is safe because any arbitrary bit pattern is a valid instance of `T` (or at least
+// mutating it via VM won't cause UB during drops or pointer derefs).
+unsafe impl<T: Primitive + 'static> ExternalBufferMut for Vec<T> {
     fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.as_mut_slice().as_mut_ptr()
+        self.as_mut_slice().as_mut_ptr() as *mut u8
+    }
+}
+
+// SAFETY: `Arc<T>` is a reference-counted pointer to `T`. The underlying memory
+// allocation managed by `T` is stable and valid for reading as long as the `Arc` is alive.
+//
+// Thread Safety: `Arc` provides thread-safe reference counting, making it perfectly safe
+// if the Luau VM's garbage collector drops this object from a different thread.
+unsafe impl<T: ExternalBuffer> ExternalBuffer for std::sync::Arc<T> {
+    fn as_ptr(&self) -> *const u8 {
+        (**self).as_ptr()
+    }
+
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+}
+
+#[cfg(not(feature = "send"))]
+// SAFETY: `Rc<T>` is a reference-counted pointer to `T`. The underlying memory
+// allocation managed by `T` is stable and valid for reading as long as the `Rc` is alive.
+//
+// Thread Safety: `Rc` is explicitly NOT thread-safe. It is only available when the `send`
+// feature is disabled, guaranteeing that the Luau state and its GC will never cross thread boundaries.
+unsafe impl<T: ExternalBuffer> ExternalBuffer for std::rc::Rc<T> {
+    fn as_ptr(&self) -> *const u8 {
+        (**self).as_ptr()
+    }
+
+    fn len(&self) -> usize {
+        (**self).len()
     }
 }
 

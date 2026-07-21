@@ -313,3 +313,27 @@ fn test_external_buffer_downcast() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_external_buffer_arc() -> Result<()> {
+    use std::sync::Arc;
+    let lua = Lua::new();
+    let data = Arc::new(b"hello, Arc".to_vec());
+    let buf = lua.create_external_buffer(data.clone())?;
+
+    assert_eq!(buf.len(), 10);
+    assert_eq!(buf.to_vec(), b"hello, Arc");
+
+    let arc_ref = buf.downcast_ref::<Arc<Vec<u8>>>();
+    assert!(arc_ref.is_some());
+    assert!(Arc::ptr_eq(arc_ref.unwrap(), &data));
+
+    // Ensure memory lifecycle works on GC
+    assert_eq!(Arc::strong_count(&data), 2);
+    drop(buf);
+    lua.gc_collect()?;
+    lua.gc_collect()?;
+    assert_eq!(Arc::strong_count(&data), 1);
+
+    Ok(())
+}
