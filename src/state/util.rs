@@ -40,7 +40,7 @@ impl PreallocatedFailure {
 
         // We need to check stack for Luau in case when callback is called from interrupt
         // See https://github.com/luau-lang/luau/issues/446 and mlua #142 and #153
-        
+
         ffi::lua_rawcheckstack(state, 2);
         // Place it to the beginning of the stack
         let ud = WrappedFailure::new_userdata(state);
@@ -59,7 +59,7 @@ impl PreallocatedFailure {
             PreallocatedFailure::Reserved => {
                 let index = (*extra).wrapped_failure_pool.pop().unwrap();
                 ffi::lua_settop(state, 0);
-                
+
                 ffi::lua_rawcheckstack(state, 2);
                 ffi::lua_xpush(ref_thread.ref_thread, state, index);
                 ffi::lua_pushnil(ref_thread.ref_thread);
@@ -88,18 +88,11 @@ impl PreallocatedFailure {
 unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s: String) {
     unsafe fn push_error_string_errorable(
         state: *mut ffi::lua_State,
-        extra: *mut ExtraData,
+        _extra: *mut ExtraData,
         s: String,
     ) -> Result<()> {
-        let rawlua = (*extra).raw_lua();
-        if rawlua.unlikely_memory_error() {
-            check_stack(state, 1)?;
-            push_string(state, s.as_ref(), false)?;
-            return Ok(());
-        }
-
         check_stack(state, 3)?;
-        push_string(state, s.as_ref(), true)?;
+        push_string(state, s.as_ref())?;
         Ok(())
     }
 

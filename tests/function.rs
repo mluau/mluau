@@ -160,13 +160,13 @@ fn test_function_info() -> Result<()> {
     let function3 = lua.create_function(|_, ()| Ok(()))?;
 
     let function1_info = function1.info();
-    
+
     assert_eq!(function1_info.name.as_deref(), Some("function1"));
     assert_eq!(function1_info.source.as_deref(), Some("source1"));
     assert_eq!(function1_info.line_defined, Some(2));
     #[cfg(not(feature = "luau"))]
     assert_eq!(function1_info.last_line_defined, Some(4));
-    
+
     assert_eq!(function1_info.last_line_defined, None);
     assert_eq!(function1_info.what, "Lua");
 
@@ -176,7 +176,7 @@ fn test_function_info() -> Result<()> {
     assert_eq!(function2_info.line_defined, Some(3));
     #[cfg(not(feature = "luau"))]
     assert_eq!(function2_info.last_line_defined, Some(3));
-    
+
     assert_eq!(function2_info.last_line_defined, None);
     assert_eq!(function2_info.what, "Lua");
 
@@ -188,7 +188,7 @@ fn test_function_info() -> Result<()> {
     assert_eq!(function3_info.what, "C");
 
     let print_info = globals.get::<Function>("print")?.info();
-    
+
     assert_eq!(print_info.name.as_deref(), Some("print"));
     assert_eq!(print_info.source.as_deref(), Some("=[C]"));
     assert_eq!(print_info.what, "C");
@@ -211,7 +211,6 @@ fn test_function_dump() -> Result<()> {
 
     Ok(())
 }
-
 
 #[test]
 fn test_function_coverage() -> Result<()> {
@@ -298,7 +297,6 @@ fn test_function_pointer() -> Result<()> {
 
     Ok(())
 }
-
 
 #[test]
 fn test_function_deep_clone() -> Result<()> {

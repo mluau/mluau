@@ -26,7 +26,8 @@ use crate::thread::ContinuationStatus;
 
 use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaMulti};
 use crate::types::{
-    AppDataRef, AppDataRefMut, ArcReentrantMutexGuard, Integer, LuaType, MaybeSend, MaybeSync, Number, ReentrantMutex, ReentrantMutexGuard, RegistryKey, VmState, XRc, XWeak
+    AppDataRef, AppDataRefMut, ArcReentrantMutexGuard, Integer, LuaType, MaybeSend, MaybeSync, Number,
+    ReentrantMutex, ReentrantMutexGuard, RegistryKey, VmState, XRc, XWeak,
 };
 use crate::userdata::{AnyUserData, UserData, UserDataProxy, UserDataRegistry, UserDataStorage};
 use crate::util::{assert_stack, check_stack, protect_lua_closure, push_string, rawset_field, StackGuard};
@@ -230,7 +231,6 @@ impl Lua {
             collect_garbage: true,
         };
 
-        
         mlua_expect!(lua.configure_luau(), "Error configuring Luau");
 
         lua
@@ -320,7 +320,7 @@ impl Lua {
         if !modname.starts_with('@') {
             return Err(Error::runtime("module name must begin with '@'"));
         }
-        
+
         let modname = modname.to_ascii_lowercase();
         unsafe {
             self.exec_raw::<()>(value, |state| {
@@ -390,7 +390,7 @@ impl Lua {
     ///
     /// ```
     /// # use mluau::{Lua, Result};
-    /// # 
+    /// #
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
     ///
@@ -450,7 +450,7 @@ impl Lua {
     /// ```
     /// # use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
     /// # use mluau::{Lua, Result, ThreadStatus, VmState};
-    /// # 
+    /// #
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
     /// let count = Arc::new(AtomicU64::new(0));
@@ -602,7 +602,6 @@ impl Lua {
         }
     }
 
-    
     pub(crate) unsafe extern "C-unwind" fn userthread_proc(
         parent: *mut ffi::lua_State,
         child: *mut ffi::lua_State,
@@ -838,7 +837,7 @@ impl Lua {
     pub fn gc_set_pause(&self, pause: c_int) -> c_int {
         let lua = self.lock();
         let state = lua.main_state();
-        unsafe {            
+        unsafe {
             return ffi::lua_gc(state, ffi::LUA_GCSETGOAL, pause);
         }
     }
@@ -873,7 +872,6 @@ impl Lua {
                 ffi::lua_gc(state, ffi::LUA_GCSETSTEPMUL, step_multiplier);
             }
 
-            
             if step_size > 0 {
                 ffi::lua_gc(state, ffi::LUA_GCSETSTEPSIZE, step_size);
             }
@@ -909,7 +907,7 @@ impl Lua {
     /// Sets Luau feature flag (global setting).
     ///
     /// See https://github.com/luau-lang/luau/blob/master/CONTRIBUTING.md#feature-flags for details.
-    
+
     #[allow(clippy::result_unit_err)]
     pub fn set_fflag(name: &str, enabled: bool) -> StdResult<(), ()> {
         if let Ok(name) = std::ffi::CString::new(name) {
@@ -1002,7 +1000,9 @@ impl Lua {
         unsafe {
             let state = self.lock();
             (*state.extra()).external_buffers.insert(userdata);
-            Ok(state.create_external_buffer(size, data, userdata, Some(buffer_free_cb), mode)?.1)
+            Ok(state
+                .create_external_buffer(size, data, userdata, Some(buffer_free_cb), mode)?
+                .1)
         }
     }
 
@@ -1011,10 +1011,7 @@ impl Lua {
     /// [buffer]: https://luau.org/library#buffer-library
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn create_external_buffer<B: ExternalBuffer>(
-        &self,
-        buffer: B,
-    ) -> Result<Buffer> {
+    pub fn create_external_buffer<B: ExternalBuffer>(&self, buffer: B) -> Result<Buffer> {
         let data = buffer.as_ptr() as *mut u8;
         unsafe { self.create_external_buffer_with_mode(buffer, data, ffi::LUA_BHOST_IMMUTABLE) }
     }
@@ -1024,10 +1021,7 @@ impl Lua {
     /// [buffer]: https://luau.org/library#buffer-library
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn create_external_buffer_mut<B: ExternalBufferMut>(
-        &self,
-        mut buffer: B,
-    ) -> Result<Buffer> {
+    pub fn create_external_buffer_mut<B: ExternalBufferMut>(&self, mut buffer: B) -> Result<Buffer> {
         let data = buffer.as_mut_ptr();
         unsafe { self.create_external_buffer_with_mode(buffer, data, ffi::LUA_BHOST_MUTABLE) }
     }
@@ -1191,7 +1185,7 @@ impl Lua {
     }
 
     /// Same as ``create_function`` but with an added ``debugname``
-    
+
     pub fn create_function_with_debug<F, A, R>(
         &self,
         func: F,
@@ -1213,7 +1207,7 @@ impl Lua {
     }
 
     /// Same as ``create_function_mut`` but with an added ``debugname``
-    
+
     pub fn create_function_mut_with_debug<F, A, R>(
         &self,
         func: F,
@@ -1253,11 +1247,7 @@ impl Lua {
             let _sg = StackGuard::new(state);
             check_stack(state, 3)?;
 
-            if lua.unlikely_memory_error() {
-                ffi::lua_pushcfunction(state, func);
-            } else {
-                protect_lua!(state, 0, 1, |state| ffi::lua_pushcfunction(state, func))?;
-            }
+            protect_lua!(state, 0, 1, |state| ffi::lua_pushcfunction(state, func))?;
             Ok(Function(lua.pop_ref()))
         }
     }
@@ -1487,7 +1477,6 @@ impl Lua {
         let lua = self.lock();
         let state = lua.state();
         unsafe {
-            
             if (*lua.extra.get()).sandboxed {
                 return Err(Error::runtime("cannot change globals in a sandboxed Lua state"));
             }
@@ -1499,7 +1488,7 @@ impl Lua {
             ffi::lua_replace(state, ffi::LUA_GLOBALSINDEX);
         }
 
-            Ok(())
+        Ok(())
     }
 
     /// Returns a handle to the active `Thread`.
@@ -1532,13 +1521,9 @@ impl Lua {
                 check_stack(state, 4)?;
 
                 lua.push_value_at(&v, state)?;
-                let res = if lua.unlikely_memory_error() {
+                let res = protect_lua!(state, 1, 1, |state| {
                     ffi::lua_tolstring(state, -1, ptr::null_mut())
-                } else {
-                    protect_lua!(state, 1, 1, |state| {
-                        ffi::lua_tolstring(state, -1, ptr::null_mut())
-                    })?
-                };
+                })?;
                 if !res.is_null() {
                     Some(String(lua.pop_ref()))
                 } else {
@@ -1661,8 +1646,7 @@ impl Lua {
             let _sg = StackGuard::new(state);
             check_stack(state, 3)?;
 
-            let protect = !lua.unlikely_memory_error();
-            push_string(state, key.as_bytes(), protect)?;
+            push_string(state, key.as_bytes())?;
             ffi::lua_rawget(state, ffi::LUA_REGISTRYINDEX);
 
             T::from_specified_stack(-1, &lua, state)
@@ -1710,13 +1694,9 @@ impl Lua {
             }
 
             // Allocate a new RegistryKey slot
-            let registry_id = if lua.unlikely_memory_error() {
+            let registry_id = protect_lua!(state, 1, 0, |state| {
                 ffi::luaL_ref(state, ffi::LUA_REGISTRYINDEX)
-            } else {
-                protect_lua!(state, 1, 0, |state| {
-                    ffi::luaL_ref(state, ffi::LUA_REGISTRYINDEX)
-                })?
-            };
+            })?;
             Ok(RegistryKey::new(registry_id, unref_list))
         }
     }
@@ -1949,7 +1929,7 @@ impl Lua {
     #[inline(always)]
     pub(crate) fn lock(&self) -> ReentrantMutexGuard<'_, RawLua> {
         let rawlua = self.raw.lock();
-        
+
         if unsafe { (*rawlua.extra.get()).running_gc } {
             panic!("Luau VM is suspended while GC is running");
         }
@@ -2033,7 +2013,7 @@ impl Lua {
     /// Returns the state of the garbage collector as a string
     ///
     /// Useful when paired with GC interrupts
-    
+
     pub fn gc_state_name(&self, state: c_int) -> Option<StdString> {
         let raw = self.lock_gc_safe();
         raw.gc_state_name(state)
@@ -2042,7 +2022,7 @@ impl Lua {
     /// Returns the current allocation rate of garbage collector
     ///
     /// Returns -1 on failure
-    
+
     pub fn gc_allocation_rate(&self) -> i64 {
         let raw = self.lock_gc_safe();
         raw.gc_allocation_rate()
@@ -2071,7 +2051,8 @@ impl Lua {
         XRc::weak_count(&self.raw)
     }
 
-    /// Runs callback with the inner RawLua value. It can be used to manually push and get values on the stack.
+    /// Runs callback with the inner RawLua value. It can be used to manually push and get values on
+    /// the stack.
     ///
     /// This function is safe because all unsafe actions with RawLua can only be done with unsafe
     #[doc(hidden)]
@@ -2086,7 +2067,7 @@ impl WeakLua {
     #[inline(always)]
     pub(crate) fn lock(&self) -> LuaGuard {
         let guard = LuaGuard::new(self.0.upgrade().expect("Lua instance is destroyed"));
-        
+
         if unsafe { (*guard.extra.get()).running_gc } {
             panic!("Luau VM is suspended while GC is running");
         }
@@ -2189,7 +2170,7 @@ unsafe extern "C" fn buffer_free_cb(
         }
 
         let drop_fn = unsafe { (*(userdata as *const crate::buffer::ExternalBufferHeader)).drop_fn };
-        
+
         if !extra.is_null() {
             let prev_gc = (*extra).running_gc;
             (*extra).running_gc = true;

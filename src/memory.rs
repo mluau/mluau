@@ -13,12 +13,10 @@ pub(crate) struct MemoryState {
     // This is used when calling `lua_pushcfunction` for lua5.1/jit/luau.
     ignore_limit: bool,
     // Indicates that the memory limit was reached on the last allocation.
-    
     limit_reached: bool,
 }
 
 impl MemoryState {
-    
     #[inline]
     pub(crate) unsafe fn get(state: *mut ffi::lua_State) -> *mut Self {
         let mut mem_state = ptr::null_mut();
@@ -95,7 +93,7 @@ unsafe extern "C" fn allocator(
     nsize: usize,
 ) -> *mut c_void {
     let mem_state = &mut *(extra as *mut MemoryState);
-    
+
     {
         // Reset the flag
         mem_state.limit_reached = false;
@@ -124,7 +122,6 @@ unsafe extern "C" fn allocator(
     let mem_limit = mem_state.memory_limit;
     let new_used_memory = mem_state.used_memory + mem_diff;
     if mem_limit > 0 && new_used_memory > mem_limit && !mem_state.ignore_limit {
-        
         {
             mem_state.limit_reached = true;
         }

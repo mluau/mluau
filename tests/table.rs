@@ -150,7 +150,7 @@ fn test_table_clear() -> Result<()> {
     let t = lua.create_table()?;
 
     // Check readonly error
-    
+
     {
         t.set_readonly(true);
         assert!(matches!(

@@ -441,14 +441,12 @@ impl FromLua for LightUserData {
     }
 }
 
-
 impl IntoLua for crate::Vector {
     #[inline]
     fn into_lua(self, _: &Lua) -> Result<Value> {
         Ok(Value::Vector(self))
     }
 }
-
 
 impl FromLua for crate::Vector {
     #[inline]
@@ -464,14 +462,12 @@ impl FromLua for crate::Vector {
     }
 }
 
-
 impl IntoLua for crate::Buffer {
     #[inline]
     fn into_lua(self, _: &Lua) -> Result<Value> {
         Ok(Value::Buffer(self))
     }
 }
-
 
 impl IntoLua for &crate::Buffer {
     #[inline]
@@ -485,7 +481,6 @@ impl IntoLua for &crate::Buffer {
         Ok(())
     }
 }
-
 
 impl FromLua for crate::Buffer {
     #[inline]
@@ -568,7 +563,7 @@ impl IntoLua for Cow<'_, str> {
 
     #[inline]
     unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
-        // use str's implementation of push_into_specified_stack so we don't accidentally 
+        // use str's implementation of push_into_specified_stack so we don't accidentally
         // hit fallback into_lua case where it converts into { number } instead of string
         (&*self).push_into_specified_stack(lua, state)
     }
@@ -678,7 +673,7 @@ impl FromLua for BString {
         let ty = value.type_name();
         match value {
             Value::String(s) => Ok((*s.as_bytes()).into()),
-            
+
             Value::Buffer(buf) => Ok(buf.to_vec().into()),
             _ => Ok((*lua
                 .coerce_string(value)?
@@ -699,7 +694,7 @@ impl FromLua for BString {
                 let data = ffi::lua_tolstring(state, idx, &mut size);
                 Ok(slice::from_raw_parts(data as *const u8, size).into())
             }
-            
+
             ffi::LUA_TBUFFER => {
                 let mut size = 0;
                 let buf = ffi::lua_tobuffer(state, idx, &mut size);
@@ -831,13 +826,6 @@ unsafe fn push_bytes_into_stack<T>(this: T, lua: &RawLua, state: *mut ffi::lua_S
 where
     T: IntoLua + AsRef<[u8]>,
 {
-    let bytes = this.as_ref();
-    if lua.unlikely_memory_error() && bytes.len() < (1 << 30) {
-        // Fast path: push directly into the Lua stack.
-        ffi::lua_pushlstring(state, bytes.as_ptr() as *const _, bytes.len());
-        return Ok(());
-    }
-    // Fallback to default
     lua.push_value_at(&T::into_lua(this, lua.lua())?, state)
 }
 
@@ -1002,7 +990,6 @@ where
     #[inline]
     fn from_lua(value: Value, _lua: &Lua) -> Result<Self> {
         match value {
-            
             #[rustfmt::skip]
             Value::Vector(v) if N == crate::Vector::SIZE => unsafe {
                 use std::{mem, ptr};

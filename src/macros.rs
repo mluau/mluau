@@ -78,8 +78,6 @@ macro_rules! mlua_expect {
     };
 }
 
-
-
 macro_rules! protect_lua {
     ($state:expr, $nargs:expr, $nresults:expr, $f:expr) => {
         crate::util::protect_lua_closure($state, $nargs, $nresults, $f)

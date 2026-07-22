@@ -2,7 +2,6 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_int;
 use std::ptr;
 
-
 use crate::chunk::ChunkMode;
 use crate::error::{Error, Result};
 use crate::function::Function;
@@ -12,9 +11,6 @@ use crate::types::MaybeSend;
 
 pub use heap_dump::HeapDump;
 pub use require::{NavigateError, Require, TextRequirer};
-
-
-
 
 // Since Luau has some missing standard functions, we re-implement them here
 
@@ -98,8 +94,16 @@ impl Lua {
         {
             static INIT_FFLAGS: std::sync::Once = std::sync::Once::new();
             INIT_FFLAGS.call_once(|| {
-                for fflag in ["LuauIntegerType2", "LuauIntegerFastcalls", "LuauIntegerLibrary", "LuauExternallyManagedBuffers"] {
-                    mlua_expect!(Self::set_fflag(fflag, true), "integer/extern buffers fflag not set")
+                for fflag in [
+                    "LuauIntegerType2",
+                    "LuauIntegerFastcalls",
+                    "LuauIntegerLibrary",
+                    "LuauExternallyManagedBuffers",
+                ] {
+                    mlua_expect!(
+                        Self::set_fflag(fflag, true),
+                        "integer/extern buffers fflag not set"
+                    )
                 }
             });
         }

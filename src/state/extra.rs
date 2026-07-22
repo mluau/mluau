@@ -81,7 +81,7 @@ pub(crate) struct ExtraData {
 
     #[cfg(feature = "dynamic-userdata")]
     pub(crate) dyn_userdata_set: FxHashSet<*mut c_void>,
-    
+
     #[cfg(any(feature = "luau", doc))]
     pub(crate) external_buffers: rustc_hash::FxHashSet<*mut c_void>,
 
@@ -94,8 +94,6 @@ pub(crate) struct ExtraData {
 
     pub(super) safe: bool,
     pub(super) libs: StdLib,
-    // Used in module mode
-    pub(super) skip_memory_check: bool,
 
     // Auxiliary threads to store references
     pub(super) ref_thread: Vec<RefThread>,
@@ -115,21 +113,21 @@ pub(crate) struct ExtraData {
     pub(super) hook_triggers: crate::debug::HookTriggers,
     #[cfg(feature = "lua54")]
     pub(super) warn_callback: Option<crate::types::WarnCallback>,
-    
+
     pub(super) interrupt_callback: Option<crate::types::InterruptCallback>,
-    
+
     pub(super) gc_interrupt_callback: Option<crate::types::GcInterruptCallback>,
-    
+
     pub(super) thread_creation_callback: Option<crate::types::ThreadCreationCallback>,
-    
+
     pub(super) thread_collection_callback: Option<crate::types::ThreadCollectionCallback>,
-    
+
     pub(crate) have_thread_data: bool, // It is a memory leak in this case
-    
+
     pub(crate) running_gc: bool,
-    
+
     pub(crate) sandboxed: bool,
-    
+
     pub(super) compiler: Option<Compiler>,
     #[cfg(feature = "luau-jit")]
     pub(super) enable_jit: bool,
@@ -148,7 +146,6 @@ pub(crate) struct ExtraData {
     #[cfg(not(feature = "send"))]
     pub(super) on_close: Option<Box<dyn Fn() + 'static>>,
 
-    
     pub(crate) mem_categories: Vec<std::ffi::CString>,
 }
 
@@ -205,7 +202,6 @@ impl ExtraData {
             app_data_priv: AppData::default(),
             safe: false,
             libs: StdLib::NONE,
-            skip_memory_check: false,
             ref_thread: vec![RefThread::new(state)],
             ref_thread_internal: RefThread::new(state),
             wrapped_failure_pool: Vec::with_capacity(WRAPPED_FAILURE_POOL_DEFAULT_CAPACITY),
@@ -217,29 +213,29 @@ impl ExtraData {
             hook_triggers: Default::default(),
             #[cfg(feature = "lua54")]
             warn_callback: None,
-            
+
             interrupt_callback: None,
-            
+
             gc_interrupt_callback: None,
-            
+
             thread_creation_callback: None,
-            
+
             thread_collection_callback: None,
-            
+
             have_thread_data: false,
-            
+
             sandboxed: false,
-            
+
             compiler: None,
             #[cfg(feature = "luau-jit")]
             enable_jit: true,
-            
+
             running_gc: false,
             #[cfg(not(feature = "lua51"))]
             yielded_values: None,
             disable_error_userdata: false,
             on_close: None,
-            
+
             mem_categories: vec![std::ffi::CString::new("main").unwrap()],
         }));
 
@@ -258,12 +254,10 @@ impl ExtraData {
     }
 
     pub(crate) unsafe fn get(state: *mut ffi::lua_State) -> *mut Self {
-        
         return (*ffi::lua_callbacks(state)).userdata as *mut _;
     }
 
     unsafe fn store(extra: &XRc<UnsafeCell<Self>>, state: *mut ffi::lua_State) -> Result<()> {
-        
         if cfg!(not(feature = "module")) {
             (*ffi::lua_callbacks(state)).userdata = extra.get() as *mut _;
             return Ok(());
@@ -292,7 +286,7 @@ impl ExtraData {
     }
 
     #[inline(always)]
-    
+
     pub(crate) unsafe fn get_userdata_dtor(&self, type_id: TypeId) -> Option<ffi::lua_CFunction> {
         self.registered_userdata_dtors.get(&type_id).copied()
     }

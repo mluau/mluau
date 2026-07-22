@@ -103,14 +103,10 @@ fn test_vectors() -> Result<()> {
 fn test_int64() -> Result<()> {
     let lua = Lua::new();
 
-    let v: i64 = lua
-        .load("return 123i")
-        .eval()?;
+    let v: i64 = lua.load("return 123i").eval()?;
     assert_eq!(v, 123);
 
-    let v: i64 = lua
-        .load("return integer.add(..., 1i)")
-        .call(Value::Int64(10))?;
+    let v: i64 = lua.load("return integer.add(..., 1i)").call(Value::Int64(10))?;
     assert_eq!(v, 11);
 
     Ok(())

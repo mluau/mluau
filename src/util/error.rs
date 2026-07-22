@@ -192,7 +192,11 @@ unsafe fn push_error_traceback(state: *mut ffi::lua_State) {
     use crate::state::ExtraData;
     let extra = ExtraData::get(state);
     if !extra.is_null() {
-        ffi::lua_xpush((*extra).ref_thread_internal.ref_thread, state, ExtraData::ERROR_TRACEBACK_IDX);
+        ffi::lua_xpush(
+            (*extra).ref_thread_internal.ref_thread,
+            state,
+            ExtraData::ERROR_TRACEBACK_IDX,
+        );
     } else {
         push_cached_cfunction(state, error_traceback);
     }
@@ -302,7 +306,7 @@ where
 pub(crate) unsafe extern "C-unwind" fn error_traceback(state: *mut ffi::lua_State) -> c_int {
     // Luau calls error handler for memory allocation errors, skip it
     // See https://github.com/luau-lang/luau/issues/880
-    
+
     if MemoryState::limit_reached(state) {
         return 0;
     }
@@ -335,7 +339,7 @@ pub(crate) unsafe extern "C-unwind" fn error_traceback(state: *mut ffi::lua_Stat
                             let cause = Error::Value((value, traceback));
                             let wrapped_error = WrappedFailure::Error(cause);
                             ffi::lua_remove(state, -2); // Remove original error and traceback
-                            push_internal_userdata(state, wrapped_error, false).unwrap();
+                            push_internal_userdata(state, wrapped_error, true).unwrap();
                             return 1;
                         } else {
                             // Remove the traceback we pushed
@@ -422,7 +426,7 @@ pub(crate) unsafe fn init_error_registry(state: *mut ffi::lua_State) -> Result<(
                 }
             }?;
 
-            push_string(state, (*err_buf).as_bytes(), true)?;
+            push_string(state, (*err_buf).as_bytes())?;
             (*err_buf).clear();
 
             Ok(1)
@@ -447,7 +451,7 @@ pub(crate) unsafe fn init_error_registry(state: *mut ffi::lua_State) -> Result<(
         callback_error(state, |_| Err(Error::UserDataDestructed))
     }
 
-    push_table(state, 0, 26, true)?;
+    push_table(state, 0, 26)?;
     ffi::lua_pushcfunction(state, destructed_error);
     for &method in &[
         "__add",
@@ -484,9 +488,7 @@ pub(crate) unsafe fn init_error_registry(state: *mut ffi::lua_State) -> Result<(
         "__pairs",
         #[cfg(any(feature = "lua53", feature = "lua52", feature = "luajit52"))]
         "__ipairs",
-        
         "__iter",
-        
         "__namecall",
         #[cfg(feature = "lua54")]
         "__close",

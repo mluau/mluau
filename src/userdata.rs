@@ -206,7 +206,7 @@ impl MetaMethod {
             MetaMethod::Pairs => "__pairs",
             #[cfg(any(feature = "lua52", feature = "luajit52"))]
             MetaMethod::IPairs => "__ipairs",
-            
+
             MetaMethod::Iter => "__iter",
 
             #[cfg(feature = "lua54")]
@@ -272,7 +272,7 @@ pub trait UserDataMethods<T> {
     /// Will disable namecall optimization if enabled
     ///
     /// [`add_method`]: UserDataMethods::add_method
-    
+
     fn add_method_with_debug<M, A, R>(
         &mut self,
         name: impl Into<StdString>,
@@ -301,7 +301,7 @@ pub trait UserDataMethods<T> {
     /// Will disable namecall optimization if enabled
     ///
     /// [`add_method_mut`]: UserDataMethods::add_method_mut
-    
+
     fn add_method_mut_with_debug<M, A, R>(
         &mut self,
         name: impl Into<StdString>,
@@ -351,7 +351,7 @@ pub trait UserDataMethods<T> {
     /// This is a version of [`add_function`] that accepts a debug name
     ///
     /// [`add_function`]: UserDataMethods::add_function
-    
+
     fn add_function_with_debug<F, A, R>(
         &mut self,
         name: impl Into<StdString>,
@@ -379,7 +379,7 @@ pub trait UserDataMethods<T> {
     /// name
     ///
     /// [`add_function`]: UserDataMethods::add_function
-    
+
     fn add_function_mut_with_debug<F, A, R>(
         &mut self,
         name: impl Into<StdString>,
@@ -738,7 +738,7 @@ impl AnyUserData {
             check_stack(state, 3)?;
 
             // Luau does not have __gc
-            
+
             {
                 match lua.get_userdata_ref_type_id(&self.0)? {
                     Some(type_id) => {
@@ -946,7 +946,7 @@ impl AnyUserData {
             if ffi::lua_getuservalue(state, -1) != ffi::LUA_TTABLE {
                 return V::from_lua(Value::Nil, lua.lua());
             }
-            push_string(state, name.as_bytes(), !lua.unlikely_memory_error())?;
+            push_string(state, name.as_bytes())?;
             ffi::lua_rawget(state, -2);
 
             V::from_specified_stack(-1, &lua, state)
@@ -1049,14 +1049,9 @@ impl AnyUserData {
             check_stack(state, 3)?;
 
             lua.push_userdata_ref_at(&self.0, state)?;
-            let protect = !lua.unlikely_memory_error();
-            let name_type = if protect {
-                protect_lua!(state, 1, 1, |state| {
-                    ffi::luaL_getmetafield(state, -1, MetaMethod::Type.as_cstr().as_ptr())
-                })?
-            } else {
+            let name_type = protect_lua!(state, 1, 1, |state| {
                 ffi::luaL_getmetafield(state, -1, MetaMethod::Type.as_cstr().as_ptr())
-            };
+            })?;
             match name_type {
                 ffi::LUA_TSTRING => Ok(Some(String(lua.pop_ref()).to_str()?.to_owned())),
                 _ => Ok(None),

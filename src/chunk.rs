@@ -140,7 +140,7 @@ pub struct Chunk<'a> {
     pub(crate) env: Result<Option<Table>>,
     pub(crate) mode: Option<ChunkMode>,
     pub(crate) source: IoResult<Cow<'a, [u8]>>,
-    
+
     pub(crate) compiler: Option<Compiler>,
 
     /// Set by `compile` once it has replaced `source` with bytecode it just produced
@@ -442,7 +442,6 @@ impl Compiler {
             static LIBRARY_MEMBER_CONSTANT_MAP: RefCell<LibraryMemberConstantMap> = Default::default();
         }
 
-        
         unsafe extern "C-unwind" fn library_member_constant_callback(
             library: *const c_char,
             member: *const c_char,
@@ -610,16 +609,19 @@ impl Chunk<'_> {
     /// This simply compiles the chunk without actually executing it.
     #[cfg_attr(not(feature = "luau"), allow(unused_mut))]
     pub fn into_function(mut self) -> Result<Function> {
-        
         if self.compiler.is_some() {
             // We don't need to compile source if no compiler set
             self.compile();
         }
 
         let name = Self::convert_name(self.name)?;
-        self.lua
-            .lock()
-            .load_chunk(Some(&name), self.env?.as_ref(), self.mode, self.source?.as_ref(), self.trusted_binary)
+        self.lua.lock().load_chunk(
+            Some(&name),
+            self.env?.as_ref(),
+            self.mode,
+            self.source?.as_ref(),
+            self.trusted_binary,
+        )
     }
 
     /// Compiles the chunk and changes mode to binary.
@@ -628,7 +630,6 @@ impl Chunk<'_> {
     fn compile(&mut self) {
         if let Ok(ref source) = self.source {
             if self.detect_mode() == ChunkMode::Text {
-                
                 if let Ok(data) = self.compiler.get_or_insert_with(Default::default).compile(source) {
                     self.source = Ok(Cow::Owned(data));
                     self.mode = Some(ChunkMode::Binary);
@@ -686,7 +687,7 @@ impl Chunk<'_> {
         let source = source.map_err(Error::runtime)?;
         let source = Self::expression_source(source);
         // We don't need to compile source if no compiler options set
-        
+
         let compiled = self.compiler.as_ref().map(|c| c.compile(&source)).transpose()?;
         let trusted_binary = compiled.is_some();
         let source = compiled.unwrap_or(source);
@@ -697,7 +698,9 @@ impl Chunk<'_> {
             Ok(None) => None,
             Err(err) => return Err(err.clone()),
         };
-        self.lua.lock().load_chunk(Some(&name), env, None, &source, trusted_binary)
+        self.lua
+            .lock()
+            .load_chunk(Some(&name), env, None, &source, trusted_binary)
     }
 
     fn detect_mode(&self) -> ChunkMode {
@@ -709,7 +712,8 @@ impl Chunk<'_> {
             // same call: the leading byte is a bytecode version, not an arbitrary cutoff, so
             // this must track the actual valid version range rather than a fixed byte value
             // (a fixed cutoff goes stale as soon as Luau ships a new bytecode version).
-            if unsafe { ffi::is_luau_bytecode(source.as_ptr() as *const std::os::raw::c_char, source.len()) } {
+            if unsafe { ffi::is_luau_bytecode(source.as_ptr() as *const std::os::raw::c_char, source.len()) }
+            {
                 return ChunkMode::Binary;
             }
         }

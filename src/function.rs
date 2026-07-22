@@ -379,34 +379,21 @@ impl Function {
                 return Ok(self.clone());
             }
 
-            if lua.unlikely_memory_error() {
-                ffi::lua_clonefunction(ref_thread, self.0.index);
+            let ref_thread_internal = lua.ref_thread_internal();
+            check_stack(ref_thread_internal, 4)?; // 3+1
+            lua.push_ref_at(&self.0, ref_thread_internal);
+            protect_lua!(ref_thread_internal, 1, 1, move |ref_thread_internal| {
+                ffi::lua_clonefunction(ref_thread_internal, -1)
+            })?;
 
-                // Get the real next spot
-                let (aux_thread, index, replace) = get_next_spot(lua.extra());
-                ffi::lua_xmove(ref_thread, lua.ref_thread(aux_thread), 1);
-                if replace {
-                    ffi::lua_replace(lua.ref_thread(aux_thread), index);
-                }
-
-                Ok(Function(lua.new_value_ref(aux_thread, index)))
-            } else {
-                let ref_thread_internal = lua.ref_thread_internal();
-                check_stack(ref_thread_internal, 4)?; // 3+1
-                lua.push_ref_at(&self.0, ref_thread_internal);
-                protect_lua!(ref_thread_internal, 1, 1, move |ref_thread_internal| {
-                    ffi::lua_clonefunction(ref_thread_internal, -1)
-                })?;
-
-                // Get the real next spot
-                let (aux_thread, index, replace) = get_next_spot(lua.extra());
-                ffi::lua_xmove(ref_thread_internal, lua.ref_thread(aux_thread), 1);
-                if replace {
-                    ffi::lua_replace(lua.ref_thread(aux_thread), index);
-                }
-
-                Ok(Function(lua.new_value_ref(aux_thread, index)))
+            // Get the real next spot
+            let (aux_thread, index, replace) = get_next_spot(lua.extra());
+            ffi::lua_xmove(ref_thread_internal, lua.ref_thread(aux_thread), 1);
+            if replace {
+                ffi::lua_replace(lua.ref_thread(aux_thread), index);
             }
+
+            Ok(Function(lua.new_value_ref(aux_thread, index)))
         }
     }
 

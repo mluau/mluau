@@ -242,7 +242,6 @@ impl Table {
         let lua = self.0.lua.lock();
         let state = lua.state();
         unsafe {
-            
             self.check_readonly_write(&lua)?;
 
             let _sg = StackGuard::new(state);
@@ -252,13 +251,7 @@ impl Table {
             key.push_into_specified_stack(&lua, state)?;
             value.push_into_specified_stack(&lua, state)?;
 
-            if lua.unlikely_memory_error() {
-                ffi::lua_rawset(state, -3);
-                ffi::lua_pop(state, 1);
-                Ok(())
-            } else {
-                protect_lua!(state, 3, 0, fn(state) ffi::lua_rawset(state, -3))
-            }
+            protect_lua!(state, 3, 0, fn(state) ffi::lua_rawset(state, -3))
         }
     }
 
@@ -312,7 +305,6 @@ impl Table {
         let lua = self.0.lua.lock();
         let state = lua.state();
         unsafe {
-            
             self.check_readonly_write(&lua)?;
 
             let _sg = StackGuard::new(state);
@@ -326,11 +318,7 @@ impl Table {
                 ffi::lua_rawseti(state, -2, len + 1);
             }
 
-            if lua.unlikely_memory_error() {
-                callback(state);
-            } else {
-                protect_lua!(state, 2, 0, fn(state) callback(state))?;
-            }
+            protect_lua!(state, 2, 0, fn(state) callback(state))?;
         }
         Ok(())
     }
@@ -340,7 +328,6 @@ impl Table {
         let lua = self.0.lua.lock();
         let state = lua.state();
         unsafe {
-            
             self.check_readonly_write(&lua)?;
 
             let _sg = StackGuard::new(state);
@@ -400,7 +387,6 @@ impl Table {
     pub fn clear(&self) -> Result<()> {
         let lua = self.0.lua.lock();
         unsafe {
-            
             {
                 self.check_readonly_write(&lua)?;
                 ffi::lua_cleartable(lua.ref_thread(self.0.aux_thread), self.0.index);
@@ -493,7 +479,7 @@ impl Table {
     /// nothing).
     pub fn set_metatable(&self, metatable: Option<Table>) -> Result<()> {
         // Workaround to throw readonly error without returning Result
-        
+
         if self.is_readonly() {
             return Err(Error::runtime("attempt to modify a readonly table"));
         }
@@ -728,7 +714,6 @@ impl Table {
         let lua = self.0.lua.lock();
         let state = lua.state();
         unsafe {
-            
             self.check_readonly_write(&lua)?;
 
             let _sg = StackGuard::new(state);
@@ -738,11 +723,7 @@ impl Table {
             value.push_into_specified_stack(&lua, state)?;
 
             let idx = idx.try_into().unwrap();
-            if lua.unlikely_memory_error() {
-                ffi::lua_rawseti(state, -2, idx);
-            } else {
-                protect_lua!(state, 2, 0, |state| ffi::lua_rawseti(state, -2, idx))?;
-            }
+            protect_lua!(state, 2, 0, |state| ffi::lua_rawseti(state, -2, idx))?;
         }
         Ok(())
     }
@@ -829,7 +810,6 @@ impl Table {
         None
     }
 
-    
     #[inline(always)]
     fn check_readonly_write(&self, lua: &RawLua) -> Result<()> {
         if unsafe { ffi::lua_getreadonly(lua.ref_thread(self.0.aux_thread), self.0.index) != 0 } {
