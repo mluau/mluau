@@ -53,9 +53,9 @@ type CallbackFn<'a> = dyn Fn(&RawLua, c_int) -> Result<c_int> + 'a;
 
 pub(crate) type Callback = Box<CallbackFn<'static>>;
 
-#[cfg(all(feature = "send", not(feature = "lua51"), not(feature = "luajit")))]
+#[cfg(feature = "send")]
 pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> Result<c_int> + Send + 'static>;
-#[cfg(all(not(feature = "send"), not(feature = "lua51"), not(feature = "luajit")))]
+#[cfg(not(feature = "send"))]
 pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> Result<c_int> + 'static>;
 
 #[cfg(all(feature = "luau", feature = "send"))]
@@ -75,7 +75,6 @@ pub(crate) struct Upvalue<T> {
 
 pub(crate) type CallbackUpvalue = Upvalue<Option<Callback>>;
 
-#[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 pub(crate) type ContinuationUpvalue = Upvalue<Option<(Callback, Continuation)>>;
 
 pub(crate) type NamecallCallbackUpvalue = Upvalue<Option<NamecallCallback>>;

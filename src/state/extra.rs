@@ -3,7 +3,6 @@ use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
 use std::os::raw::{c_int, c_void};
 use std::ptr;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -32,7 +31,7 @@ const WRAPPED_FAILURE_POOL_DEFAULT_CAPACITY: usize = 64;
 pub const REF_STACK_RESERVE: c_int = 3;
 
 pub(crate) struct RefThread {
-    pub(super) ref_thread: *mut ffi::lua_State,
+    pub(crate) ref_thread: *mut ffi::lua_State,
     pub(super) stack_size: c_int,
     pub(super) stack_top: c_int,
     pub(super) free: Vec<c_int>,
@@ -53,7 +52,6 @@ impl RefThread {
         );
 
         // Store `error_traceback` function on the ref stack
-        #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
         {
             ffi::lua_pushcfunction(ref_thread, crate::util::error_traceback);
             assert_eq!(ffi::lua_gettop(ref_thread), ExtraData::ERROR_TRACEBACK_IDX);
@@ -102,7 +100,7 @@ pub(crate) struct ExtraData {
     // Auxiliary threads to store references
     pub(super) ref_thread: Vec<RefThread>,
     // Special auxiliary thread for mlua internal use
-    pub(super) ref_thread_internal: RefThread,
+    pub(crate) ref_thread_internal: RefThread,
 
     // Pool of `WrappedFailure` enums in the ref thread (as userdata)
     pub(super) wrapped_failure_pool: Vec<c_int>,
@@ -178,8 +176,7 @@ impl TypeKey for XRc<UnsafeCell<ExtraData>> {
 
 impl ExtraData {
     // Index of `error_traceback` function in auxiliary thread stack
-    #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
-    pub(super) const ERROR_TRACEBACK_IDX: c_int = 1;
+    pub(crate) const ERROR_TRACEBACK_IDX: c_int = 1;
 
     pub(super) unsafe fn init(state: *mut ffi::lua_State, owned: bool) -> XRc<UnsafeCell<Self>> {
         let wrapped_failure_mt_ptr = {
@@ -262,21 +259,7 @@ impl ExtraData {
 
     pub(crate) unsafe fn get(state: *mut ffi::lua_State) -> *mut Self {
         
-        if cfg!(not(feature = "module")) {
-            // In the main app we can use `lua_callbacks` to access ExtraData
-            return (*ffi::lua_callbacks(state)).userdata as *mut _;
-        }
-
-        let extra_key = &EXTRA_REGISTRY_KEY as *const u8 as *const c_void;
-        if ffi::lua_rawgetp(state, ffi::LUA_REGISTRYINDEX, extra_key) != ffi::LUA_TUSERDATA {
-            // `ExtraData` can be null only when Lua state is foreign.
-            // This case in used in `Lua::try_from_ptr()`.
-            ffi::lua_pop(state, 1);
-            return ptr::null_mut();
-        }
-        let extra_ptr = ffi::lua_touserdata(state, -1) as *mut Rc<UnsafeCell<ExtraData>>;
-        ffi::lua_pop(state, 1);
-        (*extra_ptr).get()
+        return (*ffi::lua_callbacks(state)).userdata as *mut _;
     }
 
     unsafe fn store(extra: &XRc<UnsafeCell<Self>>, state: *mut ffi::lua_State) -> Result<()> {

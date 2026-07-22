@@ -3,7 +3,6 @@ use std::os::raw::c_void;
 
 use crate::types::{Callback, CallbackUpvalue};
 
-#[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 use crate::types::ContinuationUpvalue;
 
 
@@ -37,7 +36,6 @@ impl TypeKey for CallbackUpvalue {
     }
 }
 
-#[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 impl TypeKey for ContinuationUpvalue {
     #[inline(always)]
     fn type_key() -> *const c_void {

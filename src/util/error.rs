@@ -173,6 +173,31 @@ pub(crate) unsafe fn pop_error(state: *mut ffi::lua_State, err_code: c_int) -> E
     }
 }
 
+unsafe fn push_cached_cfunction(
+    state: *mut ffi::lua_State,
+    f: unsafe extern "C-unwind" fn(*mut ffi::lua_State) -> c_int,
+) {
+    ffi::lua_pushlightuserdata(state, f as usize as *mut c_void);
+    ffi::lua_rawget(state, ffi::LUA_REGISTRYINDEX);
+    if ffi::lua_type(state, -1) == ffi::LUA_TNIL {
+        ffi::lua_pop(state, 1);
+        ffi::lua_pushcfunction(state, f);
+        ffi::lua_pushlightuserdata(state, f as usize as *mut c_void);
+        ffi::lua_pushvalue(state, -2);
+        ffi::lua_rawset(state, ffi::LUA_REGISTRYINDEX);
+    }
+}
+
+unsafe fn push_error_traceback(state: *mut ffi::lua_State) {
+    use crate::state::ExtraData;
+    let extra = ExtraData::get(state);
+    if !extra.is_null() {
+        ffi::lua_xpush((*extra).ref_thread_internal.ref_thread, state, ExtraData::ERROR_TRACEBACK_IDX);
+    } else {
+        push_cached_cfunction(state, error_traceback);
+    }
+}
+
 // Call a function that calls into the Lua API and may trigger a Lua error (longjmp) in a safe way.
 // Wraps the inner function in a call to `lua_pcall`, so the inner function only has access to a
 // limited lua stack. `nargs` is the same as the the parameter to `lua_pcall`, and `nresults` is
@@ -187,8 +212,8 @@ pub(crate) unsafe fn protect_lua_call(
     let stack_start = ffi::lua_gettop(state) - nargs;
 
     MemoryState::relax_limit_with(state, || {
-        ffi::lua_pushcfunction(state, error_traceback);
-        ffi::lua_pushcfunction(state, f);
+        push_error_traceback(state);
+        push_cached_cfunction(state, f);
     });
     if nargs > 0 {
         ffi::lua_rotate(state, stack_start + 1, 2);
@@ -248,8 +273,8 @@ where
     let stack_start = ffi::lua_gettop(state) - nargs;
 
     MemoryState::relax_limit_with(state, || {
-        ffi::lua_pushcfunction(state, error_traceback);
-        ffi::lua_pushcfunction(state, do_call::<F, R>);
+        push_error_traceback(state);
+        push_cached_cfunction(state, do_call::<F, R>);
     });
     if nargs > 0 {
         ffi::lua_rotate(state, stack_start + 1, 2);

@@ -44,10 +44,8 @@ pub struct FunctionInfo {
     /// The line number where the definition of the function ends (not set by Luau).
     pub last_line_defined: Option<usize>,
     /// Number of function parameters
-    #[cfg(any(not(any(feature = "lua51", feature = "luajit")), doc))]
     pub num_params: usize,
     /// True if function accepts variable args
-    #[cfg(any(not(any(feature = "lua51", feature = "luajit")), doc))]
     pub is_vararg: bool,
 }
 
@@ -230,17 +228,7 @@ impl Function {
                 return None;
             }
 
-            #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
             ffi::lua_getfenv(state, -1);
-            #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-            for i in 1..=255 {
-                // Traverse upvalues until we find the _ENV one
-                match ffi::lua_getupvalue(state, -1, i) {
-                    s if s.is_null() => break,
-                    s if std::ffi::CStr::from_ptr(s as _) == c"_ENV" => break,
-                    _ => ffi::lua_pop(state, 1),
-                }
-            }
 
             if ffi::lua_type(state, -1) != ffi::LUA_TTABLE {
                 return None;
@@ -267,30 +255,9 @@ impl Function {
                 return Ok(false);
             }
 
-            #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
             {
                 lua.push_ref_at(&env.0, state);
                 ffi::lua_setfenv(state, -2);
-            }
-            #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-            for i in 1..=255 {
-                match ffi::lua_getupvalue(state, -1, i) {
-                    s if s.is_null() => return Ok(false),
-                    s if std::ffi::CStr::from_ptr(s as _) == c"_ENV" => {
-                        ffi::lua_pop(state, 1);
-                        // Create an anonymous function with the new environment
-                        let f_with_env = lua
-                            .lua()
-                            .load("return _ENV")
-                            .set_environment(env)
-                            .try_cache()
-                            .into_function()?;
-                        lua.push_ref_at(&f_with_env.0, state);
-                        ffi::lua_upvaluejoin(state, -2, i, -1, 1);
-                        break;
-                    }
-                    _ => ffi::lua_pop(state, 1),
-                }
             }
 
             Ok(true)
@@ -322,9 +289,7 @@ impl Function {
                 short_src: ptr_to_lossy_str(ar.short_src).map(|s| s.into_owned()),
                 line_defined: linenumber_to_usize(ar.linedefined),
                 last_line_defined: None,
-                #[cfg(not(any(feature = "lua51", feature = "luajit")))]
                 num_params: ar.nparams as usize,
-                #[cfg(not(any(feature = "lua51", feature = "luajit")))]
                 is_vararg: ar.isvararg != 0,
             }
         }

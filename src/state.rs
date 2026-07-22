@@ -13,7 +13,6 @@ use crate::table::Table;
 use crate::thread::Thread;
 use std::any::TypeId;
 use std::cell::{BorrowError, BorrowMutError, RefCell};
-#[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -375,14 +374,6 @@ impl Lua {
         R: IntoLua,
     {
         Self::entrypoint(state, move |lua, _: ()| func(lua))
-    }
-
-    /// Skips memory checks for some operations.
-    #[doc(hidden)]
-    #[cfg(feature = "module")]
-    pub fn skip_memory_check(&self, skip: bool) {
-        let lua = self.lock();
-        unsafe { (*lua.extra.get()).skip_memory_check = skip };
     }
 
     /// Enables (or disables) sandbox mode on this Lua instance.
@@ -1151,7 +1142,6 @@ impl Lua {
     /// Returning a value from a continuation without setting yield
     /// arguments will then be returned as the final return value of the Lua function call.
     /// Values returned in a function in which there is also yielding will be ignored
-    #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
     pub fn create_function_with_continuation<F, FC, A, AC, R, RC>(
         &self,
         func: F,
@@ -1478,9 +1468,6 @@ impl Lua {
         unsafe {
             let _sg = StackGuard::new(state);
             assert_stack(state, 1);
-            #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-            ffi::lua_rawgeti(state, ffi::LUA_REGISTRYINDEX, ffi::LUA_RIDX_GLOBALS);
-            #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
             ffi::lua_pushvalue(state, ffi::LUA_GLOBALSINDEX);
             Table(lua.pop_ref())
         }
@@ -1509,14 +1496,10 @@ impl Lua {
             check_stack(state, 1)?;
 
             lua.push_ref_at(&globals.0, state);
-
-            #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-            ffi::lua_rawseti(state, ffi::LUA_REGISTRYINDEX, ffi::LUA_RIDX_GLOBALS);
-            #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
             ffi::lua_replace(state, ffi::LUA_GLOBALSINDEX);
         }
 
-        Ok(())
+            Ok(())
     }
 
     /// Returns a handle to the active `Thread`.
@@ -2086,70 +2069,6 @@ impl Lua {
     #[inline(always)]
     pub fn weak_count(&self) -> usize {
         XRc::weak_count(&self.raw)
-    }
-
-    /// Tries to execute a Rust closure `L` inside of a C++ try/catch block
-    ///
-    /// If the underlying Luau VM throws a C++ exception, it will be caught and converted into a
-    /// Rust error
-    ///
-    /// This can be useful for more safety critical users of mluau as the Luau VM may throw
-    /// exceptions in some cases that may not be protected by mluau's normal protect_lua
-    /// heuristics
-    
-    pub fn try_call<F, R>(&self, func: F) -> Result<R>
-    where
-        F: FnOnce(&Lua) -> R + MaybeSend + 'static,
-        R: 'static,
-    {
-        #[repr(C)]
-        struct CallData<F, R> {
-            func: Option<F>,
-            result: Option<R>,
-        }
-        unsafe extern "C-unwind" fn call<F, R>(state: *mut ffi::lua_State, data: *mut c_void) -> *mut c_void
-        where
-            F: FnOnce(&Lua) -> R + MaybeSend + 'static,
-            R: 'static,
-        {
-            let data = &mut *(data as *mut CallData<F, R>);
-            let Some(func) = data.func.take() else {
-                return std::ptr::null_mut();
-            };
-            let extra = ExtraData::get(state);
-            let lua = (*&*extra).lua();
-            data.result = Some(func(&lua));
-            std::ptr::null_mut()
-        }
-
-        let data: Box<CallData<F, R>> = Box::new(CallData {
-            func: Some(func),
-            result: None,
-        });
-        let data_ptr = Box::into_raw(data) as *mut c_void;
-
-        unsafe {
-            let state = self.lock_gc_safe().main_state();
-            let res = ffi::luau_try(state, call::<F, R>, data_ptr);
-            let data: Box<CallData<F, R>> = Box::from_raw(data_ptr as *mut CallData<F, R>);
-            match res.status {
-                0 => {
-                    if let Some(result) = data.result {
-                        Ok(result)
-                    } else {
-                        Err(Error::RuntimeError("Unknown error in luau_try".to_string()))
-                    }
-                }
-                1 => {
-                    // Pop error message from stack
-                    use crate::util::to_string;
-                    let s = to_string(state, -1);
-                    ffi::lua_pop(state, 1);
-                    Err(Error::RuntimeError(s))
-                }
-                _ => Err(Error::RuntimeError("Unknown error in luau_try".to_string())),
-            }
-        }
     }
 
     /// Runs callback with the inner RawLua value. It can be used to manually push and get values on the stack.
