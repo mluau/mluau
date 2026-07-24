@@ -116,8 +116,8 @@ pub fn chunk(input: TokenStream) -> TokenStream {
                 Ok(None)
             }
 
-            fn mode(&self) -> Option<ChunkMode> {
-                Some(ChunkMode::Text)
+            fn mode(&self) -> ChunkMode {
+                ChunkMode::Text
             }
 
             fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>> {
