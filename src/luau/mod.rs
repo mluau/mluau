@@ -1,8 +1,6 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_int;
 use std::ptr;
-use std::sync::atomic::AtomicBool;
-
 
 use crate::chunk::ChunkMode;
 use crate::error::{Error, Result};
@@ -13,16 +11,6 @@ use crate::types::MaybeSend;
 
 pub use heap_dump::HeapDump;
 pub use require::{NavigateError, Require, TextRequirer};
-
-
-/// Tracks whether `DebugLuauUserDefinedClassesRuntime` was enabled via [`Lua::set_fflag`].
-///
-/// Luau doesn't expose a way to read back a feature flag's current value, so mluau
-/// keeps track of this one itself: `configure_luau` reads it to decide whether to
-/// register the `class` global table, mirroring what Luau's own `luaL_openlibs` does
-/// internally when this flag is on.
-#[cfg(any(feature = "luau-classes", doc))]
-pub(crate) static CLASSES_RUNTIME_ENABLED: AtomicBool = AtomicBool::new(false);
 
 // Since Luau has some missing standard functions, we re-implement them here
 
@@ -109,14 +97,24 @@ impl Lua {
                 for fflag in ["LuauIntegerType2", "LuauIntegerFastcalls", "LuauIntegerLibrary", "LuauExternallyManagedBuffers"] {
                     mlua_expect!(Self::set_fflag(fflag, true), "integer/extern buffers fflag not set")
                 }
+                
+                // both flags need to be enabled together for feature to work
+                #[cfg(feature = "luau-classes")]
+                for fflag in ["DebugLuauUserDefinedClasses", "DebugLuauUserDefinedClassesRuntime"] {
+                    mlua_expect!(Self::set_fflag(fflag, true), "classes fastflag not set")
+                }
             });
         }
 
-        // Register the `class` global table when the user has enabled Luau's
-        // (experimental) user-defined-classes runtime via `set_fflag`, mirroring what
-        // Luau's own `luaL_openlibs` does internally when that flag is on.
+        // Register the `class` global table when the user-defined-classes runtime fastflag is
+        // enabled, mirroring what Luau's own `luaL_openlibs` does internally when that flag is on.
+
+        // Register the `class` libarry if the luau-classes feature is enabled
+        // we know DebugLuauUserDefinedClassesRuntime is enabled because
+        // - we just enabled it right above
+        // - it not allowed to be disabled while luau-classes is active
         #[cfg(feature = "luau-classes")]
-        if CLASSES_RUNTIME_ENABLED.load(std::sync::atomic::Ordering::Acquire) {
+        {
             let lua = self.lock();
             let state = lua.state();
             protect_lua!(state, 0, 0, |state| {
