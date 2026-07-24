@@ -103,7 +103,7 @@ pub fn chunk(input: TokenStream) -> TokenStream {
 
         struct InnerChunk<F: FnOnce(&Lua) -> Result<Table>>(Cell<Option<F>>);
 
-        impl<F> AsChunk for InnerChunk<F>
+        unsafe impl<F> AsChunk for InnerChunk<F>
         where
             F: FnOnce(&Lua) -> Result<Table>,
         {
@@ -116,8 +116,8 @@ pub fn chunk(input: TokenStream) -> TokenStream {
                 Ok(None)
             }
 
-            fn mode(&self) -> Option<ChunkMode> {
-                Some(ChunkMode::Text)
+            fn mode(&self) -> ChunkMode {
+                ChunkMode::Text
             }
 
             fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>> {

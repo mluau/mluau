@@ -307,6 +307,10 @@ fn test_value_exhaustive_match() {
         Value::UserData(_) => {}
 
         Value::Buffer(_) => {}
+        #[cfg(feature = "luau-classes")]
+        Value::Class(_) => {}
+        #[cfg(feature = "luau-classes")]
+        Value::Object(_) => {}
         Value::Error(_) => {}
         Value::Other(_) => {}
     }

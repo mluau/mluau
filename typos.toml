@@ -4,3 +4,6 @@ extend-ignore-identifiers-re = ["2nd", "ser"]
 [default.extend-words]
 thr = "thr"
 aas = "aas"
+
+[files]
+extend-exclude = ["src/luau/json.rs"]

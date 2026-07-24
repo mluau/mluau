@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::ffi::CString;
 use std::io::Result as IoResult;
 use std::panic::Location;
-use std::path::{Path, PathBuf};
 use std::string::String as StdString;
 
 use crate::error::{Error, Result};
@@ -15,8 +14,16 @@ use crate::value::Value;
 
 /// Trait for types [loadable by Lua] and convertible to a [`Chunk`]
 ///
+/// Prefer [`ChunkSource`] over this trait. `AsChunk` is kept mainly so `&str`/`String` literals
+/// can still be passed to [`Lua::load`] directly; anything else should use `ChunkSource`.
+///
+/// # Safety
+///
+/// Implementer is responsible for ensuring `source()` is valid/trusted bytecode whenever
+/// `mode()` returns `Some(ChunkMode::Binary)`.
+///
 /// [loadable by Lua]: https://www.lua.org/manual/5.4/manual.html#3.3.2
-pub trait AsChunk {
+pub unsafe trait AsChunk {
     /// Returns optional chunk name
     ///
     /// See [`Chunk::set_name`] for possible name prefixes.
@@ -33,9 +40,7 @@ pub trait AsChunk {
     }
 
     /// Returns optional chunk mode (text or binary)
-    fn mode(&self) -> Option<ChunkMode> {
-        None
-    }
+    fn mode(&self) -> ChunkMode;
 
     /// Returns chunk data (can be text or binary)
     fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>>
@@ -43,7 +48,11 @@ pub trait AsChunk {
         Self: 'a;
 }
 
-impl AsChunk for &str {
+unsafe impl AsChunk for &str {
+    fn mode(&self) -> ChunkMode {
+        ChunkMode::Text
+    }
+
     fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>>
     where
         Self: 'a,
@@ -52,13 +61,21 @@ impl AsChunk for &str {
     }
 }
 
-impl AsChunk for StdString {
+unsafe impl AsChunk for StdString {
+    fn mode(&self) -> ChunkMode {
+        ChunkMode::Text
+    }
+
     fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>> {
         Ok(Cow::Owned(self.clone().into_bytes()))
     }
 }
 
-impl AsChunk for &StdString {
+unsafe impl AsChunk for &StdString {
+    fn mode(&self) -> ChunkMode {
+        ChunkMode::Text
+    }
+
     fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>>
     where
         Self: 'a,
@@ -67,51 +84,7 @@ impl AsChunk for &StdString {
     }
 }
 
-impl AsChunk for &[u8] {
-    fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>>
-    where
-        Self: 'a,
-    {
-        Ok(Cow::Borrowed(self))
-    }
-}
-
-impl AsChunk for Vec<u8> {
-    fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>> {
-        Ok(Cow::Owned(self.clone()))
-    }
-}
-
-impl AsChunk for &Vec<u8> {
-    fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>>
-    where
-        Self: 'a,
-    {
-        Ok(Cow::Borrowed(self))
-    }
-}
-
-impl AsChunk for &Path {
-    fn name(&self) -> Option<StdString> {
-        Some(format!("@{}", self.display()))
-    }
-
-    fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>> {
-        std::fs::read(self).map(Cow::Owned)
-    }
-}
-
-impl AsChunk for PathBuf {
-    fn name(&self) -> Option<StdString> {
-        Some(format!("@{}", self.display()))
-    }
-
-    fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>> {
-        std::fs::read(self).map(Cow::Owned)
-    }
-}
-
-impl<C: AsChunk + ?Sized> AsChunk for Box<C> {
+unsafe impl<C: AsChunk + ?Sized> AsChunk for Box<C> {
     fn name(&self) -> Option<StdString> {
         (**self).name()
     }
@@ -120,7 +93,7 @@ impl<C: AsChunk + ?Sized> AsChunk for Box<C> {
         (**self).environment(lua)
     }
 
-    fn mode(&self) -> Option<ChunkMode> {
+    fn mode(&self) -> ChunkMode {
         (**self).mode()
     }
 
@@ -132,17 +105,119 @@ impl<C: AsChunk + ?Sized> AsChunk for Box<C> {
     }
 }
 
+/// Private marker that gates construction of [`ChunkSource::Bytecode`].
+///
+/// It has no public constructor, so the only way to build a `ChunkSource::Bytecode` from outside
+/// this crate is through the `unsafe fn` [`ChunkSource::bytecode`], which requires the caller to
+/// assert the safety precondition. Downstream code can still pattern-match the variant freely
+/// (e.g. `ChunkSource::Bytecode(bytes, _)`); it just can't construct one without going through the
+/// unsafe constructor.
+#[doc(hidden)]
+pub struct ChunkSourceBytecodeSealed(());
+
+/// An owned chunk of Lua/Luau code, explicitly tagged as either source text or precompiled
+/// bytecode.
+///
+/// Prefer this over [`AsChunk`] for anything other than a plain string literal. Passing raw bytes
+/// to [`Lua::load`] is ambiguous: is this buffer source code, or bytecode?
+/// Guessing wrong (or trusting a caller-supplied guess) can segfault, because binary chunks are
+/// not validated the way source text is. `ChunkSource` makes the choice explicit at the type
+/// level: [`ChunkSource::Src`] is always safe to build, while [`ChunkSource::Bytecode`] can only
+/// be built via the `unsafe fn` [`ChunkSource::bytecode`].
+///
+/// The optional chunk name (used in error messages/tracebacks) is set with the [`name`] or
+/// [`path`] builder methods; neither reads from the filesystem, unlike the old `AsChunk` impls for
+/// `&Path`/`PathBuf` this type replaces. Callers who want to load a file must read it themselves
+/// (e.g. via `std::fs::read`/`std::fs::read_to_string`) and pass the contents in.
+///
+/// [`Lua::load`]: crate::Lua::load
+/// [`name`]: ChunkSource::name
+/// [`path`]: ChunkSource::path
+pub enum ChunkSource<'a> {
+    /// Lua/Luau source code (text).
+    Src(Cow<'a, str>, Option<StdString>),
+    /// Precompiled bytecode. Only constructible via [`ChunkSource::bytecode`].
+    Bytecode(Cow<'a, [u8]>, Option<StdString>, ChunkSourceBytecodeSealed),
+}
+
+impl<'a> ChunkSource<'a> {
+    /// Wraps `source` as a [`ChunkSource::Src`], with no name set.
+    pub fn src(source: impl Into<Cow<'a, str>>) -> Self {
+        ChunkSource::Src(source.into(), None)
+    }
+
+    /// Wraps `bytecode` as a [`ChunkSource::Bytecode`], with no name set.
+    ///
+    /// # Safety
+    ///
+    /// `bytecode` must be valid Luau bytecode (e.g. produced by [`Compiler::compile`] or
+    /// [`Function::dump`](crate::Function::dump)). Passing arbitrary or corrupted bytes here can
+    /// cause undefined behavior, including segfaults, when the resulting chunk is loaded.
+    pub unsafe fn bytecode(bytecode: impl Into<Cow<'a, [u8]>>) -> Self {
+        ChunkSource::Bytecode(bytecode.into(), None, ChunkSourceBytecodeSealed(()))
+    }
+
+    /// Sets a custom chunk name, used as-is in error messages/tracebacks.
+    ///
+    /// See [`Chunk::set_name`] for the meaning of the `@`/`=` name prefixes; this method does not
+    /// apply either automatically. Use [`path`](ChunkSource::path) if the name is a file path.
+    #[must_use]
+    pub fn name(self, name: impl Into<StdString>) -> Self {
+        let name = Some(name.into());
+        match self {
+            ChunkSource::Src(source, _) => ChunkSource::Src(source, name),
+            ChunkSource::Bytecode(bytecode, _, sealed) => ChunkSource::Bytecode(bytecode, name, sealed),
+        }
+    }
+
+    /// Sets the chunk name from a file path, applying Lua's `@` file-path prefix convention.
+    #[must_use]
+    pub fn path(self, path: impl std::fmt::Display) -> Self {
+        self.name(format!("@{path}"))
+    }
+}
+
+unsafe impl AsChunk for ChunkSource<'_> {
+    fn name(&self) -> Option<StdString> {
+        match self {
+            ChunkSource::Src(_, name) => name.clone(),
+            ChunkSource::Bytecode(_, name, _) => name.clone(),
+        }
+    }
+
+    fn mode(&self) -> ChunkMode {
+        match self {
+            ChunkSource::Src(..) => ChunkMode::Text,
+            ChunkSource::Bytecode(..) => ChunkMode::Binary,
+        }
+    }
+
+    fn source<'b>(&self) -> IoResult<Cow<'b, [u8]>>
+    where
+        Self: 'b,
+    {
+        Ok(match self {
+            ChunkSource::Src(cow, _) => match cow {
+                Cow::Borrowed(s) => Cow::Borrowed((*s).as_bytes()),
+                Cow::Owned(s) => Cow::Owned(s.clone().into_bytes()),
+            },
+            ChunkSource::Bytecode(cow, _, _) => match cow {
+                Cow::Borrowed(b) => Cow::Borrowed(*b),
+                Cow::Owned(b) => Cow::Owned(b.clone()),
+            },
+        })
+    }
+}
+
 /// Returned from [`Lua::load`] and is used to finalize loading and executing Lua main chunks.
 #[must_use = "`Chunk`s do nothing unless one of `exec`, `eval`, `call`, or `into_function` are called on them"]
 pub struct Chunk<'a> {
     pub(crate) lua: WeakLua,
     pub(crate) name: StdString,
     pub(crate) env: Result<Option<Table>>,
-    pub(crate) mode: Option<ChunkMode>,
+    pub(crate) mode: ChunkMode,
     pub(crate) source: IoResult<Cow<'a, [u8]>>,
-
     pub(crate) compiler: Option<Compiler>,
-
     /// Set by `compile` once it has replaced `source` with bytecode it just produced
     /// itself. Lets `load_chunk` skip the binary/text sniff in `luaL_loadbufferenv`,
     /// which only guesses from the leading byte (the bytecode version number) and
@@ -547,18 +622,9 @@ impl Chunk<'_> {
         self
     }
 
-    /// Returns the mode (auto-detected by default) of this chunk.
+    /// Returns the mode of this chunk.
     pub fn mode(&self) -> ChunkMode {
-        self.detect_mode()
-    }
-
-    /// Sets whether the chunk is text or binary (autodetected by default).
-    ///
-    /// Be aware, Lua does not check the consistency of the code inside binary chunks.
-    /// Running maliciously crafted bytecode can crash the interpreter.
-    pub fn set_mode(mut self, mode: ChunkMode) -> Self {
-        self.mode = Some(mode);
-        self
+        self.mode
     }
 
     /// Sets or overwrites a Luau compiler used for this chunk.
@@ -588,7 +654,7 @@ impl Chunk<'_> {
         // For source code, first try interpreting the lua as an expression by adding
         // "return", then as a statement. This is the same thing the
         // actual lua repl does.
-        if self.detect_mode() == ChunkMode::Binary {
+        if self.mode == ChunkMode::Binary {
             self.call(())
         } else if let Ok(function) = self.to_expression() {
             function.call(())
@@ -629,10 +695,10 @@ impl Chunk<'_> {
     /// It does nothing if the chunk is already binary or invalid.
     fn compile(&mut self) {
         if let Ok(ref source) = self.source {
-            if self.detect_mode() == ChunkMode::Text {
+            if self.mode == ChunkMode::Text {
                 if let Ok(data) = self.compiler.get_or_insert_with(Default::default).compile(source) {
                     self.source = Ok(Cow::Owned(data));
-                    self.mode = Some(ChunkMode::Binary);
+                    self.mode = ChunkMode::Binary;
                     self.trusted_binary = true;
                 }
             }
@@ -648,12 +714,13 @@ impl Chunk<'_> {
         // Try to fetch compiled chunk from cache
         let mut text_source = None;
         if let Ok(ref source) = self.source {
-            if self.detect_mode() == ChunkMode::Text {
+            if self.mode == ChunkMode::Text {
                 let lua = self.lua.lock();
                 if let Some(cache) = lua.priv_app_data_ref::<ChunksCache>() {
                     if let Some(data) = cache.0.get(source.as_ref()) {
                         self.source = Ok(Cow::Owned(data.clone()));
-                        self.mode = Some(ChunkMode::Binary);
+                        self.mode = ChunkMode::Binary;
+                        self.trusted_binary = true;
                         return self;
                     }
                 }
@@ -665,7 +732,7 @@ impl Chunk<'_> {
         if let Some(text_source) = text_source {
             self.compile();
             if let Ok(ref binary_source) = self.source {
-                if self.detect_mode() == ChunkMode::Binary {
+                if self.mode == ChunkMode::Binary {
                     let lua = self.lua.lock();
                     if let Some(mut cache) = lua.priv_app_data_mut::<ChunksCache>() {
                         cache.0.insert(text_source, binary_source.to_vec());
@@ -682,13 +749,21 @@ impl Chunk<'_> {
     }
 
     fn to_expression(&self) -> Result<Function> {
+        if matches!(self.mode, ChunkMode::Binary) {
+            return Err(Error::RuntimeError(String::from("Expression should be a chunk of source code, not compiled bytecode")));
+        }
+
         // We assume that mode is Text
         let source = self.source.as_ref();
         let source = source.map_err(Error::runtime)?;
         let source = Self::expression_source(source);
         // We don't need to compile source if no compiler options set
+        let compiled = self
+            .compiler
+            .as_ref()
+            .map(|c| c.compile(&source))
+            .transpose()?;
 
-        let compiled = self.compiler.as_ref().map(|c| c.compile(&source)).transpose()?;
         let trusted_binary = compiled.is_some();
         let source = compiled.unwrap_or(source);
 
@@ -698,26 +773,10 @@ impl Chunk<'_> {
             Ok(None) => None,
             Err(err) => return Err(err.clone()),
         };
+
         self.lua
             .lock()
-            .load_chunk(Some(&name), env, None, &source, trusted_binary)
-    }
-
-    fn detect_mode(&self) -> ChunkMode {
-        if let Some(mode) = self.mode {
-            return mode;
-        }
-        if let Ok(source) = &self.source {
-            // Mirrors `ffi::is_luau_bytecode`, which `luaL_loadbufferenv` uses to make the
-            // same call: the leading byte is a bytecode version, not an arbitrary cutoff, so
-            // this must track the actual valid version range rather than a fixed byte value
-            // (a fixed cutoff goes stale as soon as Luau ships a new bytecode version).
-            if unsafe { ffi::is_luau_bytecode(source.as_ptr() as *const std::os::raw::c_char, source.len()) }
-            {
-                return ChunkMode::Binary;
-            }
-        }
-        ChunkMode::Text
+            .load_chunk(Some(&name), env, ChunkMode::Text, &source, trusted_binary)
     }
 
     fn convert_name(name: StdString) -> Result<CString> {

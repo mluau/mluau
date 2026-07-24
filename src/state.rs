@@ -910,20 +910,47 @@ impl Lua {
 
     #[allow(clippy::result_unit_err)]
     pub fn set_fflag(name: &str, enabled: bool) -> StdResult<(), ()> {
-        if let Ok(name) = std::ffi::CString::new(name) {
-            if unsafe { ffi::luau_setfflag(name.as_ptr(), enabled as c_int) != 0 } {
+        // treat setting either of them without the `luau-classes` feature as a usage bug
+        #[cfg(not(feature = "luau-classes"))]
+        mlua_debug_assert!(
+            !matches!(
+                name,
+                "DebugLuauUserDefinedClasses" | "DebugLuauUserDefinedClassesRuntime"
+            ),
+            "cannot set Luau classes fastflag \"{}\" because the `luau-classes` feature is not \
+             enabled on the `mluau` crate; enable it to use Luau's (experimental) user-defined classes",
+            name
+        );
+
+        #[cfg(feature = "luau-classes")]
+        {
+            if matches!(name, "DebugLuauUserDefinedClasses" | "DebugLuauUserDefinedClassesRuntime")
+                && !enabled
+            {
+                mlua_debug_assert!(false, "DebugLuauUserDefinedClasses and DebugLuauUserDefinedClassesRuntime cannot be disabled while the luau-classes feature is enabled on mluau");
+                return Err(());
+            } 
+        }
+
+        if let Ok(cname) = std::ffi::CString::new(name) {
+            if unsafe { ffi::luau_setfflag(cname.as_ptr(), enabled as c_int) != 0 } {
                 return Ok(());
             }
         }
         Err(())
     }
 
-    /// Returns Lua source code as a `Chunk` builder type.
+    /// Returns Luau source code as a `Chunk` builder type.
+    /// 
+    /// `chunk` should be created via [`ChunkSource`] to prevent ambiguity of whether
+    /// the passed chunk is Luau sourcecode or Luau bytecode.
+    /// Passing a String or similar utf-8 content (obviously source code) as `chunk` is also allowed.
     ///
     /// In order to actually compile or run the resulting code, you must call [`Chunk::exec`] or
     /// similar on the returned builder. Code is not even parsed until one of these methods is
     /// called.
     ///
+    /// [`ChunkSource`]: crate::ChunkSource
     /// [`Chunk::exec`]: crate::Chunk::exec
     #[track_caller]
     pub fn load<'a>(&self, chunk: impl AsChunk + 'a) -> Chunk<'a> {

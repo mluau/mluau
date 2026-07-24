@@ -2,7 +2,6 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_int;
 use std::ptr;
 
-use crate::chunk::ChunkMode;
 use crate::error::{Error, Result};
 use crate::function::Function;
 use crate::state::{callback_error_ext, ExtraData, Lua};
@@ -105,7 +104,29 @@ impl Lua {
                         "integer/extern buffers fflag not set"
                     )
                 }
+                
+                // both flags need to be enabled together for feature to work
+                #[cfg(feature = "luau-classes")]
+                for fflag in ["DebugLuauUserDefinedClasses", "DebugLuauUserDefinedClassesRuntime"] {
+                    mlua_expect!(Self::set_fflag(fflag, true), "classes fastflag not set")
+                }
             });
+        }
+
+        // Register the `class` global table when the user-defined-classes runtime fastflag is
+        // enabled, mirroring what Luau's own `luaL_openlibs` does internally when that flag is on.
+
+        // Register the `class` library if the luau-classes feature is enabled
+        // we know DebugLuauUserDefinedClassesRuntime is enabled because
+        // - we just enabled it right above
+        // - it not allowed to be disabled while luau-classes is active
+        #[cfg(feature = "luau-classes")]
+        {
+            let lua = self.lock();
+            let state = lua.state();
+            protect_lua!(state, 0, 0, |state| {
+                ffi::luaL_requiref(state, ffi::LUA_CLASSLIBNAME, ffi::luaopen_class, 1)
+            })?;
         }
 
         Ok(())
@@ -164,7 +185,6 @@ unsafe extern "C-unwind" fn lua_loadstring(state: *mut ffi::lua_State) -> c_int 
         (rawlua.lua())
             .load(chunk)
             .set_name(chunk_name)
-            .set_mode(ChunkMode::Text)
             .into_function()?
             .push_into_specified_stack(rawlua, state)?;
         Ok(1)

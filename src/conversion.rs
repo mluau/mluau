@@ -496,6 +496,80 @@ impl FromLua for crate::Buffer {
     }
 }
 
+#[cfg(any(feature = "luau-classes", doc))]
+impl IntoLua for crate::Class {
+    #[inline]
+    fn into_lua(self, _: &Lua) -> Result<Value> {
+        Ok(Value::Class(self))
+    }
+}
+
+#[cfg(any(feature = "luau-classes", doc))]
+impl IntoLua for &crate::Class {
+    #[inline]
+    fn into_lua(self, _: &Lua) -> Result<Value> {
+        Ok(Value::Class(self.clone()))
+    }
+
+    #[inline]
+    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
+        lua.push_ref_at(&self.0, state);
+        Ok(())
+    }
+}
+
+#[cfg(any(feature = "luau-classes", doc))]
+impl FromLua for crate::Class {
+    #[inline]
+    fn from_lua(value: Value, _: &Lua) -> Result<Self> {
+        match value {
+            Value::Class(c) => Ok(c),
+            _ => Err(Error::FromLuaConversionError {
+                from: value.type_name(),
+                to: "class".to_string(),
+                message: None,
+            }),
+        }
+    }
+}
+
+#[cfg(any(feature = "luau-classes", doc))]
+impl IntoLua for crate::Object {
+    #[inline]
+    fn into_lua(self, _: &Lua) -> Result<Value> {
+        Ok(Value::Object(self))
+    }
+}
+
+#[cfg(any(feature = "luau-classes", doc))]
+impl IntoLua for &crate::Object {
+    #[inline]
+    fn into_lua(self, _: &Lua) -> Result<Value> {
+        Ok(Value::Object(self.clone()))
+    }
+
+    #[inline]
+    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
+        lua.push_ref_at(&self.0, state);
+        Ok(())
+    }
+}
+
+#[cfg(any(feature = "luau-classes", doc))]
+impl FromLua for crate::Object {
+    #[inline]
+    fn from_lua(value: Value, _: &Lua) -> Result<Self> {
+        match value {
+            Value::Object(o) => Ok(o),
+            _ => Err(Error::FromLuaConversionError {
+                from: value.type_name(),
+                to: "object".to_string(),
+                message: None,
+            }),
+        }
+    }
+}
+
 impl IntoLua for StdString {
     #[inline]
     fn into_lua(self, lua: &Lua) -> Result<Value> {

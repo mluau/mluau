@@ -66,6 +66,8 @@ mod macros;
 
 mod buffer;
 mod chunk;
+#[cfg(any(feature = "luau-classes", doc))]
+mod class;
 mod conversion;
 mod debug;
 mod error;
@@ -91,7 +93,7 @@ pub mod prelude;
 pub use bstr::BString;
 pub use ffi::{self, lua_CFunction, lua_State};
 
-pub use crate::chunk::{AsChunk, Chunk, ChunkMode};
+pub use crate::chunk::{AsChunk, Chunk, ChunkMode, ChunkSource};
 pub use crate::debug::{Debug, DebugEvent, DebugNames, DebugSource, DebugStack};
 pub use crate::error::{Error, ErrorContext, ExternalError, ExternalResult, Result};
 pub use crate::function::{Function, FunctionInfo};
@@ -124,6 +126,10 @@ pub use crate::{
     types::XRc,
     vector::Vector,
 };
+
+#[cfg(any(feature = "luau-classes", doc))]
+#[cfg_attr(docsrs, doc(cfg(feature = "luau-classes")))]
+pub use crate::class::{Class, Object};
 
 #[cfg(feature = "serde")]
 #[doc(inline)]

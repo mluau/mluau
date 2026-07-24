@@ -370,7 +370,7 @@ impl RawLua {
         &self,
         name: Option<&CStr>,
         env: Option<&Table>,
-        mode: Option<ChunkMode>,
+        mode: ChunkMode,
         source: &[u8],
         trusted_binary: bool,
     ) -> Result<Function> {
@@ -381,9 +381,9 @@ impl RawLua {
 
             let name = name.map(CStr::as_ptr).unwrap_or(ptr::null());
             let mode = match mode {
-                Some(ChunkMode::Binary) => cstr!("b"),
-                Some(ChunkMode::Text) => cstr!("t"),
-                None => cstr!("bt"),
+                ChunkMode::Binary => cstr!("b"),
+                ChunkMode::Text => cstr!("t"),
+                // None => cstr!("bt"),
             };
             let status = protect_lua!(state, 0, 1, |state| {
                 self.load_chunk_inner(state, name, env, mode, source, trusted_binary)
@@ -614,6 +614,11 @@ impl RawLua {
             Value::UserData(ud) => self.push_ref_at(&ud.0, state),
 
             Value::Buffer(buf) => self.push_ref_at(&buf.0, state),
+
+            #[cfg(any(feature = "luau-classes", doc))]
+            Value::Class(c) => self.push_ref_at(&c.0, state),
+            #[cfg(any(feature = "luau-classes", doc))]
+            Value::Object(o) => self.push_ref_at(&o.0, state),
             Value::Error(err) => {
                 //let ed = &*self.extra.get();
                 //if ed.disable_error_userdata {
@@ -751,6 +756,28 @@ impl RawLua {
                     ffi::lua_replace(ref_thread, idxs);
                 }
                 Ok(Value::Buffer(crate::Buffer(self.new_value_ref(aux_thread, idxs))))
+            }
+
+            #[cfg(feature = "luau-classes")]
+            ffi::LUA_TCLASS => {
+                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
+                let ref_thread = self.ref_thread(aux_thread);
+                ffi::lua_xpush(state, ref_thread, idx);
+                if replace {
+                    ffi::lua_replace(ref_thread, idxs);
+                }
+                Ok(Value::Class(crate::Class(self.new_value_ref(aux_thread, idxs))))
+            }
+
+            #[cfg(feature = "luau-classes")]
+            ffi::LUA_TOBJECT => {
+                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
+                let ref_thread = self.ref_thread(aux_thread);
+                ffi::lua_xpush(state, ref_thread, idx);
+                if replace {
+                    ffi::lua_replace(ref_thread, idxs);
+                }
+                Ok(Value::Object(crate::Object(self.new_value_ref(aux_thread, idxs))))
             }
 
             _ => {
