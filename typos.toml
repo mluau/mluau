@@ -6,4 +6,4 @@ thr = "thr"
 aas = "aas"
 
 [files]
-extend-exclude = ["./src/luau/json.rs"]
+extend-exclude = ["src/luau/json.rs"]
