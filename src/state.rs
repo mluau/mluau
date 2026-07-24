@@ -21,7 +21,6 @@ use std::os::raw::{c_char, c_int};
 use std::panic::Location;
 use std::result::Result as StdResult;
 use std::string::String as StdString;
-#[cfg(any(feature = "luau-classes", doc))]
 use std::{fmt, mem, ptr};
 
 use crate::thread::ContinuationStatus;

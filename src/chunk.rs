@@ -40,9 +40,7 @@ pub unsafe trait AsChunk {
     }
 
     /// Returns optional chunk mode (text or binary)
-    fn mode(&self) -> Option<ChunkMode> {
-        None
-    }
+    fn mode(&self) -> ChunkMode;
 
     /// Returns chunk data (can be text or binary)
     fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>>
@@ -51,8 +49,8 @@ pub unsafe trait AsChunk {
 }
 
 unsafe impl AsChunk for &str {
-    fn mode(&self) -> Option<ChunkMode> {
-        Some(ChunkMode::Text)
+    fn mode(&self) -> ChunkMode {
+        ChunkMode::Text
     }
 
     fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>>
@@ -64,8 +62,8 @@ unsafe impl AsChunk for &str {
 }
 
 unsafe impl AsChunk for StdString {
-    fn mode(&self) -> Option<ChunkMode> {
-        Some(ChunkMode::Text)
+    fn mode(&self) -> ChunkMode {
+        ChunkMode::Text
     }
 
     fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>> {
@@ -74,8 +72,8 @@ unsafe impl AsChunk for StdString {
 }
 
 unsafe impl AsChunk for &StdString {
-    fn mode(&self) -> Option<ChunkMode> {
-        Some(ChunkMode::Text)
+    fn mode(&self) -> ChunkMode {
+        ChunkMode::Text
     }
 
     fn source<'a>(&self) -> IoResult<Cow<'a, [u8]>>
@@ -95,7 +93,7 @@ unsafe impl<C: AsChunk + ?Sized> AsChunk for Box<C> {
         (**self).environment(lua)
     }
 
-    fn mode(&self) -> Option<ChunkMode> {
+    fn mode(&self) -> ChunkMode {
         (**self).mode()
     }
 
@@ -187,10 +185,10 @@ unsafe impl AsChunk for ChunkSource<'_> {
         }
     }
 
-    fn mode(&self) -> Option<ChunkMode> {
+    fn mode(&self) -> ChunkMode {
         match self {
-            ChunkSource::Src(..) => Some(ChunkMode::Text),
-            ChunkSource::Bytecode(..) => Some(ChunkMode::Binary),
+            ChunkSource::Src(..) => ChunkMode::Text,
+            ChunkSource::Bytecode(..) => ChunkMode::Binary,
         }
     }
 
@@ -217,7 +215,7 @@ pub struct Chunk<'a> {
     pub(crate) lua: WeakLua,
     pub(crate) name: StdString,
     pub(crate) env: Result<Option<Table>>,
-    pub(crate) mode: Option<ChunkMode>,
+    pub(crate) mode: ChunkMode,
     pub(crate) source: IoResult<Cow<'a, [u8]>>,
 
     pub(crate) compiler: Option<Compiler>,
@@ -625,18 +623,9 @@ impl Chunk<'_> {
         self
     }
 
-    /// Returns the mode (auto-detected by default) of this chunk.
+    /// Returns the mode of this chunk.
     pub fn mode(&self) -> ChunkMode {
-        self.detect_mode()
-    }
-
-    /// Sets whether the chunk is text or binary (autodetected by default).
-    ///
-    /// Be aware, Lua does not check the consistency of the code inside binary chunks.
-    /// Running maliciously crafted bytecode can crash the interpreter.
-    pub fn set_mode(mut self, mode: ChunkMode) -> Self {
-        self.mode = Some(mode);
-        self
+        self.mode
     }
 
     /// Sets or overwrites a Luau compiler used for this chunk.
@@ -666,7 +655,7 @@ impl Chunk<'_> {
         // For source code, first try interpreting the lua as an expression by adding
         // "return", then as a statement. This is the same thing the
         // actual lua repl does.
-        if self.detect_mode() == ChunkMode::Binary {
+        if self.mode == ChunkMode::Binary {
             self.call(())
         } else if let Ok(function) = self.to_expression() {
             function.call(())
@@ -707,10 +696,10 @@ impl Chunk<'_> {
     /// It does nothing if the chunk is already binary or invalid.
     fn compile(&mut self) {
         if let Ok(ref source) = self.source {
-            if self.detect_mode() == ChunkMode::Text {
+            if self.mode == ChunkMode::Text {
                 if let Ok(data) = self.compiler.get_or_insert_with(Default::default).compile(source) {
                     self.source = Ok(Cow::Owned(data));
-                    self.mode = Some(ChunkMode::Binary);
+                    self.mode = ChunkMode::Binary;
                     self.trusted_binary = true;
                 }
             }
@@ -726,12 +715,12 @@ impl Chunk<'_> {
         // Try to fetch compiled chunk from cache
         let mut text_source = None;
         if let Ok(ref source) = self.source {
-            if self.detect_mode() == ChunkMode::Text {
+            if self.mode == ChunkMode::Text {
                 let lua = self.lua.lock();
                 if let Some(cache) = lua.priv_app_data_ref::<ChunksCache>() {
                     if let Some(data) = cache.0.get(source.as_ref()) {
                         self.source = Ok(Cow::Owned(data.clone()));
-                        self.mode = Some(ChunkMode::Binary);
+                        self.mode = ChunkMode::Binary;
                         self.trusted_binary = true;
                         return self;
                     }
@@ -744,7 +733,7 @@ impl Chunk<'_> {
         if let Some(text_source) = text_source {
             self.compile();
             if let Ok(ref binary_source) = self.source {
-                if self.detect_mode() == ChunkMode::Binary {
+                if self.mode == ChunkMode::Binary {
                     let lua = self.lua.lock();
                     if let Some(mut cache) = lua.priv_app_data_mut::<ChunksCache>() {
                         cache.0.insert(text_source, binary_source.to_vec());
@@ -761,13 +750,21 @@ impl Chunk<'_> {
     }
 
     fn to_expression(&self) -> Result<Function> {
+        if matches!(self.mode, ChunkMode::Binary) {
+            return Err(Error::RuntimeError(String::from("Expression should be a chunk of source code, not compiled bytecode")));
+        }
+
         // We assume that mode is Text
         let source = self.source.as_ref();
         let source = source.map_err(Error::runtime)?;
         let source = Self::expression_source(source);
         // We don't need to compile source if no compiler options set
+        let compiled = self
+            .compiler
+            .as_ref()
+            .map(|c| c.compile(&source))
+            .transpose()?;
 
-        let compiled = self.compiler.as_ref().map(|c| c.compile(&source)).transpose()?;
         let trusted_binary = compiled.is_some();
         let source = compiled.unwrap_or(source);
 
@@ -777,26 +774,27 @@ impl Chunk<'_> {
             Ok(None) => None,
             Err(err) => return Err(err.clone()),
         };
+
         self.lua
             .lock()
-            .load_chunk(Some(&name), env, None, &source, trusted_binary)
+            .load_chunk(Some(&name), env, ChunkMode::Text, &source, trusted_binary)
     }
 
-    fn detect_mode(&self) -> ChunkMode {
-        if let Some(mode) = self.mode {
-            return mode;
-        }
-        if let Ok(source) = &self.source {
-            // Mirrors `ffi::looks_like_luau_bytecode`, which `luaL_loadbufferenv` uses to make the
-            // same call: the leading byte is a bytecode version, not an arbitrary cutoff, so
-            // this must track the actual valid version range rather than a fixed byte value
-            // (a fixed cutoff goes stale as soon as Luau ships a new bytecode version).
-            if unsafe { ffi::looks_like_luau_bytecode(source.as_ptr() as *const std::os::raw::c_char, source.len()) } {
-                return ChunkMode::Binary;
-            }
-        }
-        ChunkMode::Text
-    }
+    // fn detect_mode(&self) -> ChunkMode {
+    //     if let Some(mode) = self.mode {
+    //         return mode;
+    //     }
+    //     if let Ok(source) = &self.source {
+    //         // Mirrors `ffi::looks_like_luau_bytecode`, which `luaL_loadbufferenv` uses to make the
+    //         // same call: the leading byte is a bytecode version, not an arbitrary cutoff, so
+    //         // this must track the actual valid version range rather than a fixed byte value
+    //         // (a fixed cutoff goes stale as soon as Luau ships a new bytecode version).
+    //         if unsafe { ffi::looks_like_luau_bytecode(source.as_ptr() as *const std::os::raw::c_char, source.len()) } {
+    //             return ChunkMode::Binary;
+    //         }
+    //     }
+    //     ChunkMode::Text
+    // }
 
     fn convert_name(name: StdString) -> Result<CString> {
         CString::new(name).map_err(|err| Error::runtime(format!("invalid name: {err}")))
