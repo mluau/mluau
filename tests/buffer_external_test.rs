@@ -1,3 +1,5 @@
+#![cfg(feature = "bytes")]
+
 use mluau::prelude::*;
 
 #[test]
