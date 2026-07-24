@@ -637,7 +637,7 @@ impl IntoLua for Cow<'_, str> {
 
     #[inline]
     unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
-        // use str's implementation of push_into_specified_stack so we don't accidentally 
+        // use str's implementation of push_into_specified_stack so we don't accidentally
         // hit fallback into_lua case where it converts into { number } instead of string
         (&*self).push_into_specified_stack(lua, state)
     }
@@ -900,13 +900,6 @@ unsafe fn push_bytes_into_stack<T>(this: T, lua: &RawLua, state: *mut ffi::lua_S
 where
     T: IntoLua + AsRef<[u8]>,
 {
-    let bytes = this.as_ref();
-    if lua.unlikely_memory_error() && bytes.len() < (1 << 30) {
-        // Fast path: push directly into the Lua stack.
-        ffi::lua_pushlstring(state, bytes.as_ptr() as *const _, bytes.len());
-        return Ok(());
-    }
-    // Fallback to default
     lua.push_value_at(&T::into_lua(this, lua.lua())?, state)
 }
 

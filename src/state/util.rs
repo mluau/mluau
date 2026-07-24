@@ -88,18 +88,11 @@ impl PreallocatedFailure {
 unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s: String) {
     unsafe fn push_error_string_errorable(
         state: *mut ffi::lua_State,
-        extra: *mut ExtraData,
+        _extra: *mut ExtraData,
         s: String,
     ) -> Result<()> {
-        let rawlua = (*extra).raw_lua();
-        if rawlua.unlikely_memory_error() {
-            check_stack(state, 1)?;
-            push_string(state, s.as_ref(), false)?;
-            return Ok(());
-        }
-
         check_stack(state, 3)?;
-        push_string(state, s.as_ref(), true)?;
+        push_string(state, s.as_ref())?;
         Ok(())
     }
 

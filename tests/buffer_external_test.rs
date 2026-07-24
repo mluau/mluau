@@ -8,7 +8,7 @@ fn test_external_buffer_tostring() {
     lua.globals().set("buf", buf).unwrap();
     let res: String = lua.load("return buffer.tostring(buf)").eval().unwrap();
     assert_eq!(res, "hello world");
-    
+
     let len: usize = lua.load("return buffer.len(buf)").eval().unwrap();
     assert_eq!(len, 11);
 }

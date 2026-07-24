@@ -93,8 +93,16 @@ impl Lua {
         {
             static INIT_FFLAGS: std::sync::Once = std::sync::Once::new();
             INIT_FFLAGS.call_once(|| {
-                for fflag in ["LuauIntegerType2", "LuauIntegerFastcalls", "LuauIntegerLibrary", "LuauExternallyManagedBuffers"] {
-                    mlua_expect!(Self::set_fflag(fflag, true), "integer/extern buffers fflag not set")
+                for fflag in [
+                    "LuauIntegerType2",
+                    "LuauIntegerFastcalls",
+                    "LuauIntegerLibrary",
+                    "LuauExternallyManagedBuffers",
+                ] {
+                    mlua_expect!(
+                        Self::set_fflag(fflag, true),
+                        "integer/extern buffers fflag not set"
+                    )
                 }
                 
                 // both flags need to be enabled together for feature to work

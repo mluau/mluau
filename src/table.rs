@@ -251,13 +251,7 @@ impl Table {
             key.push_into_specified_stack(&lua, state)?;
             value.push_into_specified_stack(&lua, state)?;
 
-            if lua.unlikely_memory_error() {
-                ffi::lua_rawset(state, -3);
-                ffi::lua_pop(state, 1);
-                Ok(())
-            } else {
-                protect_lua!(state, 3, 0, fn(state) ffi::lua_rawset(state, -3))
-            }
+            protect_lua!(state, 3, 0, fn(state) ffi::lua_rawset(state, -3))
         }
     }
 
@@ -324,11 +318,7 @@ impl Table {
                 ffi::lua_rawseti(state, -2, len + 1);
             }
 
-            if lua.unlikely_memory_error() {
-                callback(state);
-            } else {
-                protect_lua!(state, 2, 0, fn(state) callback(state))?;
-            }
+            protect_lua!(state, 2, 0, fn(state) callback(state))?;
         }
         Ok(())
     }
@@ -733,11 +723,7 @@ impl Table {
             value.push_into_specified_stack(&lua, state)?;
 
             let idx = idx.try_into().unwrap();
-            if lua.unlikely_memory_error() {
-                ffi::lua_rawseti(state, -2, idx);
-            } else {
-                protect_lua!(state, 2, 0, |state| ffi::lua_rawseti(state, -2, idx))?;
-            }
+            protect_lua!(state, 2, 0, |state| ffi::lua_rawseti(state, -2, idx))?;
         }
         Ok(())
     }

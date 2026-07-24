@@ -217,7 +217,6 @@ pub struct Chunk<'a> {
     pub(crate) env: Result<Option<Table>>,
     pub(crate) mode: ChunkMode,
     pub(crate) source: IoResult<Cow<'a, [u8]>>,
-
     pub(crate) compiler: Option<Compiler>,
     /// Set by `compile` once it has replaced `source` with bytecode it just produced
     /// itself. Lets `load_chunk` skip the binary/text sniff in `luaL_loadbufferenv`,

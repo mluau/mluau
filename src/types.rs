@@ -15,14 +15,12 @@ pub use either::Either;
 pub use registry_key::RegistryKey;
 pub(crate) use value_ref::ValueRef;
 
-
 use std::collections::HashMap;
 
 /// Type of Lua integer numbers.
 pub type Integer = ffi::lua_Integer;
 /// Type of Lua floating point numbers.
 pub type Number = ffi::lua_Number;
-
 
 #[repr(C)]
 pub(crate) struct ThreadDataHeader {
@@ -53,9 +51,9 @@ type CallbackFn<'a> = dyn Fn(&RawLua, c_int) -> Result<c_int> + 'a;
 
 pub(crate) type Callback = Box<CallbackFn<'static>>;
 
-#[cfg(all(feature = "send", not(feature = "lua51"), not(feature = "luajit")))]
+#[cfg(feature = "send")]
 pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> Result<c_int> + Send + 'static>;
-#[cfg(all(not(feature = "send"), not(feature = "lua51"), not(feature = "luajit")))]
+#[cfg(not(feature = "send"))]
 pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> Result<c_int> + 'static>;
 
 #[cfg(all(feature = "luau", feature = "send"))]
@@ -75,17 +73,14 @@ pub(crate) struct Upvalue<T> {
 
 pub(crate) type CallbackUpvalue = Upvalue<Option<Callback>>;
 
-#[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 pub(crate) type ContinuationUpvalue = Upvalue<Option<(Callback, Continuation)>>;
 
 pub(crate) type NamecallCallbackUpvalue = Upvalue<Option<NamecallCallback>>;
-
 
 pub struct NamecallMap {
     pub(crate) map: HashMap<String, NamecallCallback>,
     pub(crate) dynamic: Option<DynamicCallback>,
 }
-
 
 pub(crate) type NamecallMapUpvalue = Upvalue<Option<NamecallMap>>;
 
@@ -115,7 +110,6 @@ pub(crate) type InterruptCallback = XRc<dyn Fn(&Lua) -> Result<VmState> + Send>;
 
 #[cfg(all(not(feature = "send"), feature = "luau"))]
 pub(crate) type InterruptCallback = XRc<dyn Fn(&Lua) -> Result<VmState>>;
-
 
 pub(crate) type GcInterruptCallback = XRc<dyn Fn(&Lua, c_int) -> ()>;
 

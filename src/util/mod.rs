@@ -86,27 +86,17 @@ impl Drop for StackGuard {
 
 // Uses 3 (or 1 if unprotected) stack spaces, does not call checkstack.
 #[inline(always)]
-pub(crate) unsafe fn push_string(state: *mut ffi::lua_State, s: &[u8], protect: bool) -> Result<()> {
-    // Always use protected mode if the string is too long
-    if protect || s.len() >= const { 1 << 30 } {
-        protect_lua!(state, 0, 1, |state| {
-            ffi::lua_pushlstring(state, s.as_ptr() as *const c_char, s.len());
-        })
-    } else {
+pub(crate) unsafe fn push_string(state: *mut ffi::lua_State, s: &[u8]) -> Result<()> {
+    protect_lua!(state, 0, 1, |state| {
         ffi::lua_pushlstring(state, s.as_ptr() as *const c_char, s.len());
-        Ok(())
-    }
+    })
 }
 
 // Uses 3 stack spaces (when protect), does not call checkstack.
 
 #[inline(always)]
-pub(crate) unsafe fn push_buffer(state: *mut ffi::lua_State, size: usize, protect: bool) -> Result<*mut u8> {
-    let data = if protect || size > const { 1024 * 1024 * 1024 } {
-        protect_lua!(state, 0, 1, |state| ffi::lua_newbuffer(state, size))?
-    } else {
-        ffi::lua_newbuffer(state, size)
-    };
+pub(crate) unsafe fn push_buffer(state: *mut ffi::lua_State, size: usize) -> Result<*mut u8> {
+    let data = protect_lua!(state, 0, 1, |state| ffi::lua_newbuffer(state, size))?;
     Ok(data as *mut u8)
 }
 
@@ -118,32 +108,24 @@ pub(crate) unsafe fn push_external_buffer(
     userdata: *mut std::ffi::c_void,
     free_cb: Option<ffi::lua_BufferFree>,
     mode: std::os::raw::c_int,
-    protect: bool,
 ) -> Result<*mut u8> {
-    let buf_data = if protect || size > const { 1024 * 1024 * 1024 } {
-        protect_lua!(state, 0, 1, |state| ffi::lua_newexternalbuffer(state, size, data as *mut std::ffi::c_void, userdata, free_cb, mode))?
-    } else {
-        ffi::lua_newexternalbuffer(state, size, data as *mut std::ffi::c_void, userdata, free_cb, mode)
-    };
+    let buf_data = protect_lua!(state, 0, 1, |state| ffi::lua_newexternalbuffer(
+        state,
+        size,
+        data as *mut std::ffi::c_void,
+        userdata,
+        free_cb,
+        mode
+    ))?;
     Ok(buf_data as *mut u8)
 }
 
 // Uses 3 stack spaces, does not call checkstack.
 #[inline]
-pub(crate) unsafe fn push_table(
-    state: *mut ffi::lua_State,
-    narr: usize,
-    nrec: usize,
-    protect: bool,
-) -> Result<()> {
+pub(crate) unsafe fn push_table(state: *mut ffi::lua_State, narr: usize, nrec: usize) -> Result<()> {
     let narr: c_int = narr.try_into().unwrap_or(c_int::MAX);
     let nrec: c_int = nrec.try_into().unwrap_or(c_int::MAX);
-    if protect || narr >= const { 1 << 26 } || nrec >= const { 1 << 26 } {
-        protect_lua!(state, 0, 1, |state| ffi::lua_createtable(state, narr, nrec))
-    } else {
-        ffi::lua_createtable(state, narr, nrec);
-        Ok(())
-    }
+    protect_lua!(state, 0, 1, |state| ffi::lua_createtable(state, narr, nrec))
 }
 
 // Uses 4 stack spaces, does not call checkstack.

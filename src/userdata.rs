@@ -946,7 +946,7 @@ impl AnyUserData {
             if ffi::lua_getuservalue(state, -1) != ffi::LUA_TTABLE {
                 return V::from_lua(Value::Nil, lua.lua());
             }
-            push_string(state, name.as_bytes(), !lua.unlikely_memory_error())?;
+            push_string(state, name.as_bytes())?;
             ffi::lua_rawget(state, -2);
 
             V::from_specified_stack(-1, &lua, state)
@@ -1049,14 +1049,9 @@ impl AnyUserData {
             check_stack(state, 3)?;
 
             lua.push_userdata_ref_at(&self.0, state)?;
-            let protect = !lua.unlikely_memory_error();
-            let name_type = if protect {
-                protect_lua!(state, 1, 1, |state| {
-                    ffi::luaL_getmetafield(state, -1, MetaMethod::Type.as_cstr().as_ptr())
-                })?
-            } else {
+            let name_type = protect_lua!(state, 1, 1, |state| {
                 ffi::luaL_getmetafield(state, -1, MetaMethod::Type.as_cstr().as_ptr())
-            };
+            })?;
             match name_type {
                 ffi::LUA_TSTRING => Ok(Some(String(lua.pop_ref()).to_str()?.to_owned())),
                 _ => Ok(None),

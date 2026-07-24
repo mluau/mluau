@@ -549,7 +549,6 @@ fn test_functions() -> Result<()> {
     assert_eq!(get.call::<i64>(())?, 100);
     assert_eq!(get_constant.call::<i64>(())?, 7);
 
-    
     assert!(globals.get::<Function>("not_me")?.call::<bool>(()).unwrap());
 
     Ok(())
@@ -713,7 +712,7 @@ fn test_metatable() -> Result<()> {
     #[cfg(any(feature = "lua54", feature = "lua53", feature = "luau"))]
     lua.load(r#"assert(tostring(ud):sub(1, 11) == "MyUserData:")"#)
         .exec()?;
-    
+
     lua.load(r#"assert(typeof(ud) == "MyUserData")"#).exec()?;
 
     let ud: AnyUserData = globals.get("ud")?;
@@ -730,7 +729,7 @@ fn test_metatable() -> Result<()> {
         .map(|kv: Result<(_, Value)>| Ok(kv?.0))
         .collect::<Result<Vec<_>>>()?;
     methods.sort();
-    
+
     assert_eq!(methods, vec!["__index", "__namecall", MetaMethod::Type.name()]);
 
     #[derive(Copy, Clone)]

@@ -257,8 +257,8 @@ pub unsafe trait ExternalBufferMut: ExternalBuffer {
 }
 
 /// A marker trait for primitive types that are safe to be treated as raw bytes and mutated
-/// by the Luau VM. Types implementing this must not contain references, padding bytes with 
-/// undefined behavior, or complex drop logic. Crucially, any arbitrary bit pattern must 
+/// by the Luau VM. Types implementing this must not contain references, padding bytes with
+/// undefined behavior, or complex drop logic. Crucially, any arbitrary bit pattern must
 /// represent a valid instance of the type without causing undefined behavior.
 pub unsafe trait Primitive {}
 
@@ -289,7 +289,7 @@ pub struct ExternalBufferWrapper<T> {
     pub buffer: T,
 }
 
-// SAFETY: `Vec<T>` manages a heap allocation that will not move or be deallocated 
+// SAFETY: `Vec<T>` manages a heap allocation that will not move or be deallocated
 // as long as the `Vec` itself is alive. The pointer and length returned are valid
 // to safely read from.
 unsafe impl<T: 'static> ExternalBuffer for Vec<T> {
@@ -302,7 +302,7 @@ unsafe impl<T: 'static> ExternalBuffer for Vec<T> {
     }
 }
 
-// SAFETY: `Vec<T>` where `T: Primitive` contains only plain bytes. Mutating it directly from 
+// SAFETY: `Vec<T>` where `T: Primitive` contains only plain bytes. Mutating it directly from
 // the Luau VM is safe because any arbitrary bit pattern is a valid instance of `T` (or at least
 // mutating it via VM won't cause UB during drops or pointer derefs).
 unsafe impl<T: Primitive + 'static> ExternalBufferMut for Vec<T> {
@@ -331,7 +331,8 @@ unsafe impl<T: ExternalBuffer> ExternalBuffer for std::sync::Arc<T> {
 // allocation managed by `T` is stable and valid for reading as long as the `Rc` is alive.
 //
 // Thread Safety: `Rc` is explicitly NOT thread-safe. It is only available when the `send`
-// feature is disabled, guaranteeing that the Luau state and its GC will never cross thread boundaries.
+// feature is disabled, guaranteeing that the Luau state and its GC will never cross thread
+// boundaries.
 unsafe impl<T: ExternalBuffer> ExternalBuffer for std::rc::Rc<T> {
     fn as_ptr(&self) -> *const u8 {
         (**self).as_ptr()
@@ -369,7 +370,7 @@ unsafe impl ExternalBuffer for bytes::BytesMut {
 }
 
 #[cfg(feature = "bytes")]
-// SAFETY: `bytes::BytesMut` contains only plain bytes. Mutating it directly from the Luau VM 
+// SAFETY: `bytes::BytesMut` contains only plain bytes. Mutating it directly from the Luau VM
 // is safe because any arbitrary bit pattern is a valid `u8` and it doesn't cause UB.
 unsafe impl ExternalBufferMut for bytes::BytesMut {
     fn as_mut_ptr(&mut self) -> *mut u8 {

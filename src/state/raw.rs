@@ -385,14 +385,9 @@ impl RawLua {
                 ChunkMode::Text => cstr!("t"),
                 // None => cstr!("bt"),
             };
-            let status = if self.unlikely_memory_error() {
+            let status = protect_lua!(state, 0, 1, |state| {
                 self.load_chunk_inner(state, name, env, mode, source, trusted_binary)
-            } else {
-                // Luau and Lua 5.2 can trigger an exception during chunk loading
-                protect_lua!(state, 0, 1, |state| {
-                    self.load_chunk_inner(state, name, env, mode, source, trusted_binary)
-                })?
-            };
+            })?;
             match status {
                 ffi::LUA_OK => Ok(Function(self.pop_ref())),
                 err => Err(pop_error(state, err)),
@@ -418,13 +413,7 @@ impl RawLua {
         };
 
         let status = if trusted_binary {
-            ffi::luau_load_trusted_binary(
-                state,
-                source.as_ptr() as *const c_char,
-                source.len(),
-                name,
-                env,
-            )
+            ffi::luau_load_trusted_binary(state, source.as_ptr() as *const c_char, source.len(), name, env)
         } else {
             ffi::luaL_loadbufferenv(
                 state,
@@ -447,54 +436,41 @@ impl RawLua {
     /// See [`Lua::create_string`]
     pub(crate) unsafe fn create_string(&self, s: &[u8]) -> Result<String> {
         let state = self.state();
-        if self.unlikely_memory_error() {
-            push_string(state, s, false)?;
-            return Ok(String(self.pop_ref()));
-        }
-
         let _sg = StackGuard::new(state);
         check_stack(state, 3)?;
-        push_string(state, s, true)?;
+        push_string(state, s)?;
         Ok(String(self.pop_ref()))
     }
 
     pub(crate) unsafe fn create_buffer_with_capacity(&self, size: usize) -> Result<(*mut u8, crate::Buffer)> {
         let state = self.state();
-        if self.unlikely_memory_error() {
-            let ptr = crate::util::push_buffer(state, size, false)?;
-            return Ok((ptr, crate::Buffer(self.pop_ref())));
-        }
-
         let _sg = StackGuard::new(state);
         check_stack(state, 3)?;
-        let ptr = crate::util::push_buffer(state, size, true)?;
+        let ptr = crate::util::push_buffer(state, size)?;
         Ok((ptr, crate::Buffer(self.pop_ref())))
     }
 
-    pub(crate) unsafe fn create_external_buffer(&self, size: usize, data: *mut u8, userdata: *mut std::ffi::c_void, free_cb: Option<ffi::lua_BufferFree>, mode: std::os::raw::c_int) -> Result<(*mut u8, crate::Buffer)> {
+    pub(crate) unsafe fn create_external_buffer(
+        &self,
+        size: usize,
+        data: *mut u8,
+        userdata: *mut std::ffi::c_void,
+        free_cb: Option<ffi::lua_BufferFree>,
+        mode: std::os::raw::c_int,
+    ) -> Result<(*mut u8, crate::Buffer)> {
         let state = self.state();
-        if self.unlikely_memory_error() {
-            let ptr = crate::util::push_external_buffer(state, size, data, userdata, free_cb, mode, false)?;
-            return Ok((ptr, crate::Buffer(self.pop_ref())));
-        }
-
         let _sg = StackGuard::new(state);
         check_stack(state, 3)?;
-        let ptr = crate::util::push_external_buffer(state, size, data, userdata, free_cb, mode, true)?;
+        let ptr = crate::util::push_external_buffer(state, size, data, userdata, free_cb, mode)?;
         Ok((ptr, crate::Buffer(self.pop_ref())))
     }
 
     /// See [`Lua::create_table_with_capacity`]
     pub(crate) unsafe fn create_table_with_capacity(&self, narr: usize, nrec: usize) -> Result<Table> {
         let state = self.state();
-        if self.unlikely_memory_error() {
-            push_table(state, narr, nrec, false)?;
-            return Ok(Table(self.pop_ref()));
-        }
-
         let _sg = StackGuard::new(state);
         check_stack(state, 3)?;
-        push_table(state, narr, nrec, true)?;
+        push_table(state, narr, nrec)?;
         Ok(Table(self.pop_ref()))
     }
 
@@ -511,16 +487,11 @@ impl RawLua {
 
         let iter = iter.into_iter();
         let lower_bound = iter.size_hint().0;
-        let protect = !self.unlikely_memory_error();
-        push_table(state, 0, lower_bound, protect)?;
+        push_table(state, 0, lower_bound)?;
         for (k, v) in iter {
             self.push_at(state, k)?;
             self.push_at(state, v)?;
-            if protect {
-                protect_lua!(state, 3, 1, fn(state) ffi::lua_rawset(state, -3))?;
-            } else {
-                ffi::lua_rawset(state, -3);
-            }
+            protect_lua!(state, 3, 1, fn(state) ffi::lua_rawset(state, -3))?;
         }
 
         Ok(Table(self.pop_ref()))
@@ -538,17 +509,12 @@ impl RawLua {
 
         let iter = iter.into_iter();
         let lower_bound = iter.size_hint().0;
-        let protect = !self.unlikely_memory_error();
-        push_table(state, lower_bound, 0, protect)?;
+        push_table(state, lower_bound, 0)?;
         for (i, v) in iter.enumerate() {
             self.push_at(state, v)?;
-            if protect {
-                protect_lua!(state, 2, 1, |state| {
-                    ffi::lua_rawseti(state, -2, (i + 1) as Integer);
-                })?;
-            } else {
+            protect_lua!(state, 2, 1, |state| {
                 ffi::lua_rawseti(state, -2, (i + 1) as Integer);
-            }
+            })?;
         }
 
         Ok(Table(self.pop_ref()))
@@ -564,15 +530,7 @@ impl RawLua {
         let thread_state = {
             check_stack(state, 3)?;
 
-            let protect = !self.unlikely_memory_error();
-
-            let protect = protect || (*self.extra.get()).thread_creation_callback.is_some();
-
-            let thread_state = if !protect {
-                ffi::lua_newthread(state)
-            } else {
-                protect_lua!(state, 0, 1, |state| ffi::lua_newthread(state))?
-            };
+            let thread_state = protect_lua!(state, 0, 1, |state| ffi::lua_newthread(state))?;
 
             thread_state
         };
@@ -662,14 +620,12 @@ impl RawLua {
             #[cfg(any(feature = "luau-classes", doc))]
             Value::Object(o) => self.push_ref_at(&o.0, state),
             Value::Error(err) => {
-                let protect = !self.unlikely_memory_error();
-
                 //let ed = &*self.extra.get();
                 //if ed.disable_error_userdata {
                 //
                 //}
 
-                push_internal_userdata(state, WrappedFailure::Error(*err.clone()), protect)?;
+                push_internal_userdata(state, WrappedFailure::Error(*err.clone()), true)?;
             }
             Value::Other(vref) => self.push_ref_at(vref, state),
         }
@@ -898,20 +854,6 @@ impl RawLua {
         ffi::lua_pushcfunction(state, crate::util::error_traceback);
     }
 
-    #[inline]
-    pub(crate) unsafe fn unlikely_memory_error(&self) -> bool {
-        #[cfg(debug_assertions)]
-        if cfg!(force_memory_limit) {
-            return false;
-        }
-
-        // MemoryInfo is empty in module mode so we cannot predict memory limits
-        match MemoryState::get(self.state()) {
-            mem_state if !mem_state.is_null() => (*mem_state).memory_limit() == 0,
-            _ => (*self.extra.get()).skip_memory_check, // Check the special flag (only for module mode)
-        }
-    }
-
     pub(crate) unsafe fn make_userdata<T>(&self, data: UserDataStorage<T>) -> Result<AnyUserData>
     where
         T: UserData + 'static,
@@ -962,8 +904,7 @@ impl RawLua {
 
         // We generate metatable first to make sure it *always* available when userdata pushed
         let mt_id = get_metatable_id()?;
-        let protect = !self.unlikely_memory_error();
-        push_userdata(state, data, protect)?;
+        push_userdata(state, data)?;
         ffi::lua_rawgeti(state, ffi::LUA_REGISTRYINDEX, mt_id);
         ffi::lua_setmetatable(state, -2);
         Ok(AnyUserData(self.pop_ref()))
@@ -979,8 +920,7 @@ impl RawLua {
         let _sg = StackGuard::new(state);
         check_stack(state, 3)?;
 
-        let protect = !self.unlikely_memory_error();
-        crate::util::push_userdata_dyn(state, data, protect)?;
+        crate::util::push_userdata_dyn(state, data)?;
         let ud_ptr = ffi::lua_topointer(state, -1);
         (*self.extra.get()).dyn_userdata_set.insert(ud_ptr as *mut c_void);
 
@@ -1028,7 +968,7 @@ impl RawLua {
 
         // Prepare metatable, add meta methods first and then meta fields
         let metatable_nrec = registry.meta_methods.len() + registry.meta_fields.len();
-        push_table(state, 0, metatable_nrec, true)?;
+        push_table(state, 0, metatable_nrec)?;
         for (k, m) in registry.meta_methods {
             self.push_at(state, self.create_callback_with_debug(m, std::ptr::null())?)?;
             rawset_field(state, -2, MetaMethod::validate(&k)?)?;
@@ -1042,7 +982,7 @@ impl RawLua {
         // Set `__name/__type` if not provided
         if !has_name {
             let type_name = registry.type_name;
-            push_string(state, type_name.as_bytes(), !self.unlikely_memory_error())?;
+            push_string(state, type_name.as_bytes())?;
             rawset_field(state, -2, MetaMethod::Type.name())?;
         }
         let metatable_index = ffi::lua_absindex(state, -1);
@@ -1056,7 +996,7 @@ impl RawLua {
                     if index_type == ffi::LUA_TNIL {
                         // Create a new table
                         ffi::lua_pop(state, 1);
-                        push_table(state, 0, fields_nrec, true)?;
+                        push_table(state, 0, fields_nrec)?;
                     }
                     for (k, v) in mem::take(&mut registry.fields) {
                         v?.push_into_specified_stack(self, state)?;
@@ -1074,7 +1014,7 @@ impl RawLua {
         let mut field_getters_index = None;
         let field_getters_nrec = registry.field_getters.len() + registry.fields.len();
         if field_getters_nrec > 0 {
-            push_table(state, 0, field_getters_nrec, true)?;
+            push_table(state, 0, field_getters_nrec)?;
             for (k, m) in registry.field_getters {
                 self.push_at(state, self.create_callback_with_debug(m, std::ptr::null())?)?;
                 rawset_field(state, -2, &k)?;
@@ -1096,7 +1036,7 @@ impl RawLua {
         let mut field_setters_index = None;
         let field_setters_nrec = registry.field_setters.len();
         if field_setters_nrec > 0 {
-            push_table(state, 0, field_setters_nrec, true)?;
+            push_table(state, 0, field_setters_nrec)?;
             for (k, m) in registry.field_setters {
                 self.push_at(state, self.create_callback_with_debug(m, std::ptr::null())?)?;
                 rawset_field(state, -2, &k)?;
@@ -1130,7 +1070,7 @@ impl RawLua {
                 _ => {
                     // Create a new table
                     ffi::lua_pop(state, 1);
-                    push_table(state, 0, methods_nrec, true)?;
+                    push_table(state, 0, methods_nrec)?;
                 }
             }
 
@@ -1287,15 +1227,10 @@ impl RawLua {
 
             let func = Some(func);
             let extra = XRc::clone(&self.extra);
-            let protect = !self.unlikely_memory_error();
-            push_internal_userdata(state, CallbackUpvalue { data: func, extra }, protect)?;
-            if protect {
-                protect_lua!(state, 1, 1, fn(state) {
-                    ffi::lua_pushcclosure(state, call_callback, 1);
-                })?;
-            } else {
+            push_internal_userdata(state, CallbackUpvalue { data: func, extra }, true)?;
+            protect_lua!(state, 1, 1, fn(state) {
                 ffi::lua_pushcclosure(state, call_callback, 1);
-            }
+            })?;
 
             Ok(Function(self.pop_ref()))
         }
@@ -1338,15 +1273,10 @@ impl RawLua {
 
                 let func = Some(func);
                 let extra = XRc::clone(&self.extra);
-                let protect = !self.unlikely_memory_error();
-                push_internal_userdata(state, CallbackUpvalue { data: func, extra }, protect)?;
-                if protect {
-                    protect_lua!(state, 1, 1, |state| {
-                        ffi::lua_pushcclosurek(state, call_callback, debugname, 1, None);
-                    })?;
-                } else {
+                push_internal_userdata(state, CallbackUpvalue { data: func, extra }, true)?;
+                protect_lua!(state, 1, 1, |state| {
                     ffi::lua_pushcclosurek(state, call_callback, debugname, 1, None);
-                }
+                })?;
 
                 Ok(Function(self.pop_ref()))
             }
@@ -1385,15 +1315,10 @@ impl RawLua {
 
             let func = Some(func);
             let extra = XRc::clone(&self.extra);
-            let protect = !self.unlikely_memory_error();
-            push_internal_userdata(state, NamecallCallbackUpvalue { data: func, extra }, protect)?;
-            if protect {
-                protect_lua!(state, 1, 1, |state| {
-                    ffi::lua_pushcclosurek(state, call_callback, debugname, 1, None);
-                })?;
-            } else {
+            push_internal_userdata(state, NamecallCallbackUpvalue { data: func, extra }, true)?;
+            protect_lua!(state, 1, 1, |state| {
                 ffi::lua_pushcclosurek(state, call_callback, debugname, 1, None);
-            }
+            })?;
 
             Ok(Function(self.pop_ref()))
         }
@@ -1455,15 +1380,10 @@ impl RawLua {
 
             let func = Some(map);
             let extra = XRc::clone(&self.extra);
-            let protect = !self.unlikely_memory_error();
-            push_internal_userdata(state, NamecallMapUpvalue { data: func, extra }, protect)?;
-            if protect {
-                protect_lua!(state, 1, 1, |state| {
-                    ffi::lua_pushcclosurek(state, call_callback, c"__namecall".as_ptr(), 1, None);
-                })?;
-            } else {
+            push_internal_userdata(state, NamecallMapUpvalue { data: func, extra }, true)?;
+            protect_lua!(state, 1, 1, |state| {
                 ffi::lua_pushcclosurek(state, call_callback, c"__namecall".as_ptr(), 1, None);
-            }
+            })?;
 
             Ok(Function(self.pop_ref()))
         }
@@ -1529,15 +1449,10 @@ impl RawLua {
 
             let func = Some((func, cont));
             let extra = XRc::clone(&self.extra);
-            let protect = !self.unlikely_memory_error();
-            push_internal_userdata(state, ContinuationUpvalue { data: func, extra }, protect)?;
-            if protect {
-                protect_lua!(state, 1, 1, |state| {
-                    ffi::lua_pushcclosurek(state, call_callback, debugname, 1, Some(cont_callback));
-                })?;
-            } else {
+            push_internal_userdata(state, ContinuationUpvalue { data: func, extra }, true)?;
+            protect_lua!(state, 1, 1, |state| {
                 ffi::lua_pushcclosurek(state, call_callback, debugname, 1, Some(cont_callback));
-            }
+            })?;
 
             Ok(Function(self.pop_ref()))
         }

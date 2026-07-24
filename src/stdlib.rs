@@ -28,7 +28,6 @@ impl StdLib {
     pub const UTF8: StdLib = StdLib(1 << 5);
 
     /// [`bit`](https://www.lua.org/manual/5.2/manual.html#6.7) library
-    #[cfg(any(feature = "lua52", feature = "luajit", feature = "luau", doc))]
     #[cfg_attr(
         docsrs,
         doc(cfg(any(feature = "lua52", feature = "luajit", feature = "luau")))

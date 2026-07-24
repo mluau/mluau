@@ -36,7 +36,6 @@ impl<'a> Debug<'a> {
     ///
     /// Corresponds to the `f` "what" mask.
     pub fn function(&self) -> Function {
-        
         {
             let extra = self.lua.extra();
             if unsafe { (*extra).running_gc } {
@@ -47,7 +46,7 @@ impl<'a> Debug<'a> {
         unsafe {
             let _sg = StackGuard::new(self.state);
             assert_stack(self.state, 1);
-            
+
             mlua_assert!(
                 ffi::lua_getinfo(self.state, self.level, cstr!("f"), self.ar) != 0,
                 "lua_getinfo failed with `f`"
@@ -65,14 +64,14 @@ impl<'a> Debug<'a> {
 
     /// Corresponds to the `n` "what" mask.
     pub fn names(&self) -> DebugNames<'_> {
-        unsafe {            
+        unsafe {
             mlua_assert!(
                 ffi::lua_getinfo(self.state, self.level, cstr!("n"), self.ar) != 0,
                 "lua_getinfo failed with `n`"
             );
 
             DebugNames {
-                name: ptr_to_lossy_str((*self.ar).name),                
+                name: ptr_to_lossy_str((*self.ar).name),
                 name_what: None,
             }
         }
@@ -87,7 +86,7 @@ impl<'a> Debug<'a> {
             );
 
             DebugSource {
-                source: ptr_to_lossy_str((*self.ar).source),                
+                source: ptr_to_lossy_str((*self.ar).source),
                 short_src: ptr_to_lossy_str((*self.ar).short_src),
                 line_defined: linenumber_to_usize((*self.ar).linedefined),
                 last_line_defined: None,
@@ -121,7 +120,7 @@ impl<'a> Debug<'a> {
                 ffi::lua_getinfo(self.state, self.level, cstr!("au"), self.ar) != 0,
                 "lua_getinfo failed with `au`"
             );
-            
+
             let stack = DebugStack {
                 num_ups: (*self.ar).nupvals,
                 num_params: (*self.ar).nparams,

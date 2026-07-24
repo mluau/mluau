@@ -13,7 +13,6 @@ use crate::table::Table;
 use crate::thread::Thread;
 use std::any::TypeId;
 use std::cell::{BorrowError, BorrowMutError, RefCell};
-#[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -375,14 +374,6 @@ impl Lua {
         R: IntoLua,
     {
         Self::entrypoint(state, move |lua, _: ()| func(lua))
-    }
-
-    /// Skips memory checks for some operations.
-    #[doc(hidden)]
-    #[cfg(feature = "module")]
-    pub fn skip_memory_check(&self, skip: bool) {
-        let lua = self.lock();
-        unsafe { (*lua.extra.get()).skip_memory_check = skip };
     }
 
     /// Enables (or disables) sandbox mode on this Lua instance.
@@ -1036,7 +1027,9 @@ impl Lua {
         unsafe {
             let state = self.lock();
             (*state.extra()).external_buffers.insert(userdata);
-            Ok(state.create_external_buffer(size, data, userdata, Some(buffer_free_cb), mode)?.1)
+            Ok(state
+                .create_external_buffer(size, data, userdata, Some(buffer_free_cb), mode)?
+                .1)
         }
     }
 
@@ -1045,10 +1038,7 @@ impl Lua {
     /// [buffer]: https://luau.org/library#buffer-library
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn create_external_buffer<B: ExternalBuffer>(
-        &self,
-        buffer: B,
-    ) -> Result<Buffer> {
+    pub fn create_external_buffer<B: ExternalBuffer>(&self, buffer: B) -> Result<Buffer> {
         let data = buffer.as_ptr() as *mut u8;
         unsafe { self.create_external_buffer_with_mode(buffer, data, ffi::LUA_BHOST_IMMUTABLE) }
     }
@@ -1058,10 +1048,7 @@ impl Lua {
     /// [buffer]: https://luau.org/library#buffer-library
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn create_external_buffer_mut<B: ExternalBufferMut>(
-        &self,
-        mut buffer: B,
-    ) -> Result<Buffer> {
+    pub fn create_external_buffer_mut<B: ExternalBufferMut>(&self, mut buffer: B) -> Result<Buffer> {
         let data = buffer.as_mut_ptr();
         unsafe { self.create_external_buffer_with_mode(buffer, data, ffi::LUA_BHOST_MUTABLE) }
     }
@@ -1176,7 +1163,6 @@ impl Lua {
     /// Returning a value from a continuation without setting yield
     /// arguments will then be returned as the final return value of the Lua function call.
     /// Values returned in a function in which there is also yielding will be ignored
-    #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
     pub fn create_function_with_continuation<F, FC, A, AC, R, RC>(
         &self,
         func: F,
@@ -1288,11 +1274,7 @@ impl Lua {
             let _sg = StackGuard::new(state);
             check_stack(state, 3)?;
 
-            if lua.unlikely_memory_error() {
-                ffi::lua_pushcfunction(state, func);
-            } else {
-                protect_lua!(state, 0, 1, |state| ffi::lua_pushcfunction(state, func))?;
-            }
+            protect_lua!(state, 0, 1, |state| ffi::lua_pushcfunction(state, func))?;
             Ok(Function(lua.pop_ref()))
         }
     }
@@ -1503,9 +1485,6 @@ impl Lua {
         unsafe {
             let _sg = StackGuard::new(state);
             assert_stack(state, 1);
-            #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-            ffi::lua_rawgeti(state, ffi::LUA_REGISTRYINDEX, ffi::LUA_RIDX_GLOBALS);
-            #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
             ffi::lua_pushvalue(state, ffi::LUA_GLOBALSINDEX);
             Table(lua.pop_ref())
         }
@@ -1533,10 +1512,6 @@ impl Lua {
             check_stack(state, 1)?;
 
             lua.push_ref_at(&globals.0, state);
-
-            #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-            ffi::lua_rawseti(state, ffi::LUA_REGISTRYINDEX, ffi::LUA_RIDX_GLOBALS);
-            #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
             ffi::lua_replace(state, ffi::LUA_GLOBALSINDEX);
         }
 
@@ -1573,13 +1548,9 @@ impl Lua {
                 check_stack(state, 4)?;
 
                 lua.push_value_at(&v, state)?;
-                let res = if lua.unlikely_memory_error() {
+                let res = protect_lua!(state, 1, 1, |state| {
                     ffi::lua_tolstring(state, -1, ptr::null_mut())
-                } else {
-                    protect_lua!(state, 1, 1, |state| {
-                        ffi::lua_tolstring(state, -1, ptr::null_mut())
-                    })?
-                };
+                })?;
                 if !res.is_null() {
                     Some(String(lua.pop_ref()))
                 } else {
@@ -1702,8 +1673,7 @@ impl Lua {
             let _sg = StackGuard::new(state);
             check_stack(state, 3)?;
 
-            let protect = !lua.unlikely_memory_error();
-            push_string(state, key.as_bytes(), protect)?;
+            push_string(state, key.as_bytes())?;
             ffi::lua_rawget(state, ffi::LUA_REGISTRYINDEX);
 
             T::from_specified_stack(-1, &lua, state)
@@ -1751,13 +1721,9 @@ impl Lua {
             }
 
             // Allocate a new RegistryKey slot
-            let registry_id = if lua.unlikely_memory_error() {
+            let registry_id = protect_lua!(state, 1, 0, |state| {
                 ffi::luaL_ref(state, ffi::LUA_REGISTRYINDEX)
-            } else {
-                protect_lua!(state, 1, 0, |state| {
-                    ffi::luaL_ref(state, ffi::LUA_REGISTRYINDEX)
-                })?
-            };
+            })?;
             Ok(RegistryKey::new(registry_id, unref_list))
         }
     }
@@ -2112,71 +2078,8 @@ impl Lua {
         XRc::weak_count(&self.raw)
     }
 
-    /// Tries to execute a Rust closure `L` inside of a C++ try/catch block
-    ///
-    /// If the underlying Luau VM throws a C++ exception, it will be caught and converted into a
-    /// Rust error
-    ///
-    /// This can be useful for more safety critical users of mluau as the Luau VM may throw
-    /// exceptions in some cases that may not be protected by mluau's normal protect_lua
-    /// heuristics
-
-    pub fn try_call<F, R>(&self, func: F) -> Result<R>
-    where
-        F: FnOnce(&Lua) -> R + MaybeSend + 'static,
-        R: 'static,
-    {
-        #[repr(C)]
-        struct CallData<F, R> {
-            func: Option<F>,
-            result: Option<R>,
-        }
-        unsafe extern "C-unwind" fn call<F, R>(state: *mut ffi::lua_State, data: *mut c_void) -> *mut c_void
-        where
-            F: FnOnce(&Lua) -> R + MaybeSend + 'static,
-            R: 'static,
-        {
-            let data = &mut *(data as *mut CallData<F, R>);
-            let Some(func) = data.func.take() else {
-                return std::ptr::null_mut();
-            };
-            let extra = ExtraData::get(state);
-            let lua = (*&*extra).lua();
-            data.result = Some(func(&lua));
-            std::ptr::null_mut()
-        }
-
-        let data: Box<CallData<F, R>> = Box::new(CallData {
-            func: Some(func),
-            result: None,
-        });
-        let data_ptr = Box::into_raw(data) as *mut c_void;
-
-        unsafe {
-            let state = self.lock_gc_safe().main_state();
-            let res = ffi::luau_try(state, call::<F, R>, data_ptr);
-            let data: Box<CallData<F, R>> = Box::from_raw(data_ptr as *mut CallData<F, R>);
-            match res.status {
-                0 => {
-                    if let Some(result) = data.result {
-                        Ok(result)
-                    } else {
-                        Err(Error::RuntimeError("Unknown error in luau_try".to_string()))
-                    }
-                }
-                1 => {
-                    // Pop error message from stack
-                    use crate::util::to_string;
-                    let s = to_string(state, -1);
-                    ffi::lua_pop(state, 1);
-                    Err(Error::RuntimeError(s))
-                }
-                _ => Err(Error::RuntimeError("Unknown error in luau_try".to_string())),
-            }
-        }
-    }
-
-    /// Runs callback with the inner RawLua value. It can be used to manually push and get values on the stack.
+    /// Runs callback with the inner RawLua value. It can be used to manually push and get values on
+    /// the stack.
     ///
     /// This function is safe because all unsafe actions with RawLua can only be done with unsafe
     #[doc(hidden)]
@@ -2294,7 +2197,7 @@ unsafe extern "C" fn buffer_free_cb(
         }
 
         let drop_fn = unsafe { (*(userdata as *const crate::buffer::ExternalBufferHeader)).drop_fn };
-        
+
         if !extra.is_null() {
             let prev_gc = (*extra).running_gc;
             (*extra).running_gc = true;
