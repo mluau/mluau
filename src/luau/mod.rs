@@ -116,7 +116,7 @@ impl Lua {
         // Register the `class` global table when the user-defined-classes runtime fastflag is
         // enabled, mirroring what Luau's own `luaL_openlibs` does internally when that flag is on.
 
-        // Register the `class` libarry if the luau-classes feature is enabled
+        // Register the `class` library if the luau-classes feature is enabled
         // we know DebugLuauUserDefinedClassesRuntime is enabled because
         // - we just enabled it right above
         // - it not allowed to be disabled while luau-classes is active

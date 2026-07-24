@@ -98,7 +98,7 @@ impl Buffer {
     ///
     /// Offset is 0-based.
     ///
-    /// Unline read_bytes, this function returns a vector of bytes and is
+    /// Unlike read_bytes, this function returns a vector of bytes and is
     /// not generic over the number of bytes.
     #[track_caller]
     pub fn read_bytes_to_vec(&self, offset: usize, len: usize) -> Vec<u8> {
