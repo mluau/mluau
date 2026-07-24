@@ -779,22 +779,6 @@ impl Chunk<'_> {
             .load_chunk(Some(&name), env, ChunkMode::Text, &source, trusted_binary)
     }
 
-    // fn detect_mode(&self) -> ChunkMode {
-    //     if let Some(mode) = self.mode {
-    //         return mode;
-    //     }
-    //     if let Ok(source) = &self.source {
-    //         // Mirrors `ffi::looks_like_luau_bytecode`, which `luaL_loadbufferenv` uses to make the
-    //         // same call: the leading byte is a bytecode version, not an arbitrary cutoff, so
-    //         // this must track the actual valid version range rather than a fixed byte value
-    //         // (a fixed cutoff goes stale as soon as Luau ships a new bytecode version).
-    //         if unsafe { ffi::looks_like_luau_bytecode(source.as_ptr() as *const std::os::raw::c_char, source.len()) } {
-    //             return ChunkMode::Binary;
-    //         }
-    //     }
-    //     ChunkMode::Text
-    // }
-
     fn convert_name(name: StdString) -> Result<CString> {
         CString::new(name).map_err(|err| Error::runtime(format!("invalid name: {err}")))
     }
