@@ -216,7 +216,7 @@ pub trait ObjectLike: Sealed {
                     Err(Error::runtime(err))
                 }
             }?;
-            if safe_nil && (current == Value::Nil || current == Value::NULL) {
+            if safe_nil && (current == Value::Nil || current == Value::None) {
                 break;
             }
         }

@@ -22,7 +22,7 @@ fn test_serialize() -> Result<(), Box<dyn StdError>> {
 
     let ud = lua.create_ser_userdata(MyUserData(123, "test userdata".into()))?;
     globals.set("ud", ud)?;
-    globals.set("null", lua.null())?;
+    globals.set("null", Value::None)?;
 
     let empty_array = lua.create_table()?;
     empty_array.set_metatable(Some(lua.array_metatable()))?;
@@ -170,7 +170,7 @@ fn test_serialize_sorted() -> LuaResult<()> {
     let lua = Lua::new();
 
     let globals = lua.globals();
-    globals.set("null", lua.null())?;
+    globals.set("null", Value::None)?;
 
     let empty_array = lua.create_table()?;
     empty_array.set_metatable(Some(lua.array_metatable()))?;
@@ -312,7 +312,7 @@ fn test_serialize_mixed_table() -> LuaResult<()> {
 fn test_to_value_struct() -> LuaResult<()> {
     let lua = Lua::new();
     let globals = lua.globals();
-    globals.set("null", lua.null())?;
+    globals.set("null", Value::None)?;
 
     #[derive(Serialize)]
     struct Test {
@@ -379,7 +379,7 @@ fn test_to_value_enum() -> LuaResult<()> {
 fn test_to_value_with_options() -> Result<(), Box<dyn StdError>> {
     let lua = Lua::new();
     let globals = lua.globals();
-    globals.set("null", lua.null())?;
+    globals.set("null", Value::None)?;
 
     // set_array_metatable
     let data = lua.to_value_with(
@@ -529,7 +529,7 @@ fn test_from_value_newtype_struct() -> Result<(), Box<dyn StdError>> {
 #[test]
 fn test_from_value_enum() -> Result<(), Box<dyn StdError>> {
     let lua = Lua::new();
-    lua.globals().set("null", lua.null())?;
+    lua.globals().set("null", Value::None)?;
 
     #[derive(Deserialize, PartialEq, Debug)]
     struct UnitStruct;
@@ -573,7 +573,7 @@ fn test_from_value_enum() -> Result<(), Box<dyn StdError>> {
 #[test]
 fn test_from_value_enum_untagged() -> Result<(), Box<dyn StdError>> {
     let lua = Lua::new();
-    lua.globals().set("null", lua.null())?;
+    lua.globals().set("null", Value::None)?;
 
     #[derive(Deserialize, PartialEq, Debug)]
     #[serde(untagged)]

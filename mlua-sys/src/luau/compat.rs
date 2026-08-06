@@ -341,7 +341,7 @@ pub unsafe fn luaL_checkinteger(L: *mut lua_State, narg: c_int) -> lua_Integer {
 }
 
 pub unsafe fn luaL_optinteger(L: *mut lua_State, narg: c_int, def: lua_Integer) -> lua_Integer {
-    if lua_isnoneornil(L, narg) != 0 {
+    if lua_isnovalornil(L, narg) != 0 {
         def
     } else {
         luaL_checkinteger(L, narg)

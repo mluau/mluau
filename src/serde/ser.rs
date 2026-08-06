@@ -184,7 +184,7 @@ impl<'a> ser::Serializer for Serializer<'a> {
     #[inline]
     fn serialize_none(self) -> Result<Value> {
         if self.options.serialize_none_to_null {
-            Ok(self.lua.null())
+            Ok(Value::None)
         } else {
             Ok(Value::Nil)
         }
@@ -201,7 +201,7 @@ impl<'a> ser::Serializer for Serializer<'a> {
     #[inline]
     fn serialize_unit(self) -> Result<Value> {
         if self.options.serialize_unit_to_null {
-            Ok(self.lua.null())
+            Ok(Value::None)
         } else {
             Ok(Value::Nil)
         }
@@ -210,7 +210,7 @@ impl<'a> ser::Serializer for Serializer<'a> {
     #[inline]
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Value> {
         if self.options.serialize_unit_to_null {
-            Ok(self.lua.null())
+            Ok(Value::None)
         } else {
             Ok(Value::Nil)
         }

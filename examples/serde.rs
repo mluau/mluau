@@ -38,7 +38,7 @@ fn main() -> Result<()> {
     )?;
 
     // Set it as (serializable) userdata
-    globals.set("null", lua.null())?;
+    globals.set("null", Value::None)?;
     globals.set("array_mt", lua.array_metatable())?;
     globals.set("car", lua.create_ser_userdata(car)?)?;
 

@@ -16,27 +16,6 @@ use crate::value::Value;
 /// Trait for serializing/deserializing Lua values using Serde.
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub trait LuaSerdeExt: Sealed {
-    /// A special value (lightuserdata) to encode/decode optional (none) values.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use std::collections::HashMap;
-    /// use mluau::{Lua, Result, LuaSerdeExt};
-    ///
-    /// fn main() -> Result<()> {
-    ///     let lua = Lua::new();
-    ///     lua.globals().set("null", lua.null())?;
-    ///
-    ///     let val = lua.load(r#"{a = null}"#).eval()?;
-    ///     let map: HashMap<String, Option<String>> = lua.from_value(val)?;
-    ///     assert_eq!(map["a"], None);
-    ///
-    ///     Ok(())
-    /// }
-    /// ```
-    fn null(&self) -> Value;
-
     /// A metatable attachable to a Lua table to systematically encode it as Array (instead of Map).
     /// As result, encoded Array will contain only sequence part of the table, with the same length
     /// as the `#` operator on that table.
@@ -177,10 +156,6 @@ pub trait LuaSerdeExt: Sealed {
 }
 
 impl LuaSerdeExt for Lua {
-    fn null(&self) -> Value {
-        Value::NULL
-    }
-
     fn array_metatable(&self) -> Table {
         let lua = self.lock();
         unsafe {

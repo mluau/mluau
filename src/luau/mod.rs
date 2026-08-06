@@ -11,6 +11,31 @@ use crate::types::MaybeSend;
 pub use heap_dump::HeapDump;
 pub use require::{NavigateError, Require, TextRequirer};
 
+pub static ENABLED_FFLAGS: &[&str] = &[
+    "LuauIntegerType2",
+    "LuauIntegerFastcalls",
+    "LuauIntegerLibrary",
+    "LuauExternallyManagedBuffers",
+    #[cfg(feature = "luau-classes")]
+    "DebugLuauUserDefinedClasses",
+    #[cfg(feature = "luau-classes")]
+    "DebugLuauUserDefinedClassesRuntime",
+    #[cfg(feature = "none-primitive")]
+    "LuauNonePrimitive"
+];
+
+pub static RESTRICTED_FFLAGS: &[&str] = &[
+    "LuauIntegerType2",
+    "LuauIntegerFastcalls",
+    "LuauIntegerLibrary",
+    "LuauExternallyManagedBuffers",
+    // luau-classes
+    "DebugLuauUserDefinedClasses",
+    "DebugLuauUserDefinedClassesRuntime",
+    // none primitive
+    "LuauNonePrimitive"
+];
+
 // Since Luau has some missing standard functions, we re-implement them here
 
 impl Lua {
@@ -88,27 +113,15 @@ impl Lua {
         let require = self.create_require_function(require::TextRequirer::new())?;
         self.globals().raw_set("require", require)?;
 
-        // Unconditionally enable integer+extern buffers fflags to ensure safety on Luau
-        // TODO: Remove later
+        // init needed fflags
         {
             static INIT_FFLAGS: std::sync::Once = std::sync::Once::new();
             INIT_FFLAGS.call_once(|| {
-                for fflag in [
-                    "LuauIntegerType2",
-                    "LuauIntegerFastcalls",
-                    "LuauIntegerLibrary",
-                    "LuauExternallyManagedBuffers",
-                ] {
+                for fflag in ENABLED_FFLAGS {
                     mlua_expect!(
-                        Self::set_fflag(fflag, true),
-                        "integer/extern buffers fflag not set"
+                        Self::set_fflag_inner(fflag, true),
+                        "base fflag {fflag} not set",
                     )
-                }
-                
-                // both flags need to be enabled together for feature to work
-                #[cfg(feature = "luau-classes")]
-                for fflag in ["DebugLuauUserDefinedClasses", "DebugLuauUserDefinedClassesRuntime"] {
-                    mlua_expect!(Self::set_fflag(fflag, true), "classes fastflag not set")
                 }
             });
         }

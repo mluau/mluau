@@ -22,17 +22,19 @@ rustdoc-args = ["--cfg", "docsrs"]
 members = ["mlua_derive", "mlua-sys"]
 
 [features]
-default = ["luau", "dynamic-userdata", "bytes"]
+default = ["luau", "dynamic-userdata", "bytes", "none-primitive", "serde"]
 luau = ["ffi/luau"]
 luau-jit = ["luau", "ffi/luau-codegen"]
 luau-vector4 = ["luau", "ffi/luau-vector4"]
 # Luau's user-defined classes support is experimental upstream (gated behind
 # fastflags prefixed `Debug*`) and its shape may still change, so this is opt-in.
 luau-classes = ["luau", "ffi/luau-classes"]
+# Custom `none` primitive in mluau/luau
+none-primitive = ["luau", "ffi/none-primitive"]
 module = ["mlua_derive", "ffi/module"]
 send = ["error-send"]
 error-send = []
-serde = ["dep:serde", "dep:erased-serde", "dep:serde-value", "bstr/serde"]
+serde = ["dep:serde", "dep:erased-serde", "dep:serde-value", "bstr/serde", "none-primitive"]
 macros = ["mlua_derive/macros"]
 anyhow = ["dep:anyhow", "error-send"]
 userdata-wrappers = ["parking_lot/send_guard"]

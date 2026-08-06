@@ -33,6 +33,10 @@ pub enum Value {
     /// The Lua value `nil`.
     #[default]
     Nil,
+    /// A Luau none primitive (mluau only)
+    #[cfg(any(feature = "none-primitive", doc))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "none-primitive")))]
+    None,
     /// The Lua value `true` or `false`.
     Boolean(bool),
     /// A "light userdata" object, equivalent to a raw pointer.
@@ -89,15 +93,12 @@ pub enum Value {
 pub use self::Value::Nil;
 
 impl Value {
-    /// A special value (lightuserdata) to represent null value.
-    ///
-    /// It can be used in Lua tables without downsides of `nil`.
-    pub const NULL: Value = Value::LightUserData(LightUserData(ptr::null_mut()));
-
     /// Returns type name of this value.
     pub fn type_name(&self) -> &'static str {
         match *self {
             Value::Nil => "nil",
+            #[cfg(any(feature = "none-primitive", doc))]
+            Value::None => "none",
             Value::Boolean(_) => "boolean",
             Value::LightUserData(_) => "lightuserdata",
             Value::Integer(_) => "number",
@@ -192,8 +193,9 @@ impl Value {
 
         match self {
             Value::Nil => Ok("nil".to_string()),
+            #[cfg(feature = "none-primitive")]
+            Value::None => Ok("none".to_string()),
             Value::Boolean(b) => Ok(b.to_string()),
-            Value::LightUserData(ud) if ud.0.is_null() => Ok("null".to_string()),
             Value::LightUserData(ud) => Ok(format!("lightuserdata: {:p}", ud.0)),
             Value::Integer(i) => Ok(i.to_string()),
 
@@ -224,12 +226,10 @@ impl Value {
         self == &Nil
     }
 
-    /// Returns `true` if the value is a [`NULL`].
-    ///
-    /// [`NULL`]: Value::NULL
+    /// Returns `true` if the value is a [`None`]
     #[inline]
-    pub fn is_null(&self) -> bool {
-        self == &Self::NULL
+    pub fn is_none(&self) -> bool {
+        self == &Self::None
     }
 
     /// Returns `true` if the value is a boolean.
@@ -594,10 +594,16 @@ impl Value {
             (Value::Nil, Value::Nil) => Ordering::Equal,
             (Value::Nil, _) => Ordering::Less,
             (_, Value::Nil) => Ordering::Greater,
+            // None
+            #[cfg(feature = "none-primitive")]
+            (Value::None, Value::None) => Ordering::Equal,
+            #[cfg(feature = "none-primitive")]
+            (Value::None, _) => Ordering::Less,
+            #[cfg(feature = "none-primitive")]
+            (_, Value::None) => Ordering::Greater,
+
             // Null (a special case)
             (Value::LightUserData(ud1), Value::LightUserData(ud2)) if ud1 == ud2 => Ordering::Equal,
-            (Value::LightUserData(ud1), _) if ud1.0.is_null() => Ordering::Less,
-            (_, Value::LightUserData(ud2)) if ud2.0.is_null() => Ordering::Greater,
             // Boolean
             (Value::Boolean(a), Value::Boolean(b)) => a.cmp(b),
             (Value::Boolean(_), _) => Ordering::Less,
@@ -631,8 +637,9 @@ impl Value {
     ) -> fmt::Result {
         match self {
             Value::Nil => write!(fmt, "nil"),
+            #[cfg(feature = "none-primitive")]
+            Value::None => write!(fmt, "none"),
             Value::Boolean(b) => write!(fmt, "{b}"),
-            Value::LightUserData(ud) if ud.0.is_null() => write!(fmt, "null"),
             Value::LightUserData(ud) => write!(fmt, "lightuserdata: {:?}", ud.0),
             Value::Integer(i) => write!(fmt, "{i}"),
             Value::Number(n) => write!(fmt, "{n}"),
@@ -687,6 +694,8 @@ impl fmt::Debug for Value {
 
         match self {
             Value::Nil => write!(fmt, "Nil"),
+            #[cfg(feature = "none-primitive")]
+            Value::None => write!(fmt, "None"),
             Value::Boolean(b) => write!(fmt, "Boolean({b})"),
             Value::LightUserData(ud) => write!(fmt, "{ud:?}"),
             Value::Integer(i) => write!(fmt, "Integer({i})"),
@@ -717,6 +726,8 @@ impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Value::Nil, Value::Nil) => true,
+            #[cfg(feature = "none-primitive")]
+            (Value::None, Value::None) => true,
             (Value::Boolean(a), Value::Boolean(b)) => a == b,
             (Value::LightUserData(a), Value::LightUserData(b)) => a == b,
             (Value::Integer(a), Value::Integer(b)) => *a == *b,
@@ -844,6 +855,8 @@ impl Serialize for SerializableValue<'_> {
     {
         match self.value {
             Value::Nil => serializer.serialize_unit(),
+            #[cfg(feature = "none-primitive")]
+            Value::None => serializer.serialize_none(),
             Value::Boolean(b) => serializer.serialize_bool(*b),
             #[allow(clippy::useless_conversion)]
             Value::Integer(i) => serializer.serialize_i64((*i).into()),
@@ -857,7 +870,6 @@ impl Serialize for SerializableValue<'_> {
                 let visited = self.visited.as_ref().unwrap().clone();
                 SerializableTable::new(t, self.options, visited).serialize(serializer)
             }
-            Value::LightUserData(ud) if ud.0.is_null() => serializer.serialize_none(),
             Value::UserData(ud) if ud.is_serializable() || self.options.deny_unsupported_types => {
                 ud.serialize(serializer)
             }

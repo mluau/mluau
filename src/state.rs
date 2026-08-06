@@ -4,6 +4,7 @@ use crate::chunk::{AsChunk, Chunk};
 use crate::debug::Debug;
 use crate::error::{Error, Result};
 use crate::function::Function;
+use crate::luau::RESTRICTED_FFLAGS;
 use crate::memory::MemoryState;
 use crate::multi::MultiValue;
 use crate::state::util::get_next_spot;
@@ -907,31 +908,18 @@ impl Lua {
     /// Sets Luau feature flag (global setting).
     ///
     /// See https://github.com/luau-lang/luau/blob/master/CONTRIBUTING.md#feature-flags for details.
-
     #[allow(clippy::result_unit_err)]
     pub fn set_fflag(name: &str, enabled: bool) -> StdResult<(), ()> {
-        // treat setting either of them without the `luau-classes` feature as a usage bug
-        #[cfg(not(feature = "luau-classes"))]
-        mlua_debug_assert!(
-            !matches!(
-                name,
-                "DebugLuauUserDefinedClasses" | "DebugLuauUserDefinedClassesRuntime"
-            ),
-            "cannot set Luau classes fastflag \"{}\" because the `luau-classes` feature is not \
-             enabled on the `mluau` crate; enable it to use Luau's (experimental) user-defined classes",
-            name
-        );
-
-        #[cfg(feature = "luau-classes")]
-        {
-            if matches!(name, "DebugLuauUserDefinedClasses" | "DebugLuauUserDefinedClassesRuntime")
-                && !enabled
-            {
-                mlua_debug_assert!(false, "DebugLuauUserDefinedClasses and DebugLuauUserDefinedClassesRuntime cannot be disabled while the luau-classes feature is enabled on mluau");
-                return Err(());
-            } 
+        if RESTRICTED_FFLAGS.contains(&name) {
+            return Err(()) // fflag is restricted and cannot be set for soundness reasons
         }
 
+        Self::set_fflag_inner(name, enabled)
+    }
+
+    #[allow(clippy::result_unit_err)]
+    #[inline(always)]
+    pub(crate) fn set_fflag_inner(name: &str, enabled: bool) -> StdResult<(), ()> {
         if let Ok(cname) = std::ffi::CString::new(name) {
             if unsafe { ffi::luau_setfflag(cname.as_ptr(), enabled as c_int) != 0 } {
                 return Ok(());
