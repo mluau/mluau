@@ -216,8 +216,18 @@ pub trait ObjectLike: Sealed {
                     Err(Error::runtime(err))
                 }
             }?;
-            if safe_nil && (current == Value::Nil || current == Value::None) {
-                break;
+
+            #[cfg(feature = "none-primitive")]
+            {
+                if safe_nil && (current == Value::Nil || current == Value::None) {
+                    break;
+                }
+            }
+            #[cfg(not(feature = "none-primitive"))]
+            {
+                if safe_nil && (current == Value::Nil) {
+                    break;
+                }
             }
         }
 

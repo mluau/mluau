@@ -228,6 +228,7 @@ impl Value {
 
     /// Returns `true` if the value is a [`None`]
     #[inline]
+    #[cfg(any(feature = "none-primitive", doc))]
     pub fn is_none(&self) -> bool {
         self == &Self::None
     }
