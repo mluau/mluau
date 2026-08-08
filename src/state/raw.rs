@@ -442,6 +442,25 @@ impl RawLua {
         Ok(String(self.pop_ref()))
     }
 
+    pub(crate) unsafe fn create_external_string<S: crate::string::ExternalString>(
+        &self,
+        s: S,
+    ) -> Result<String> {
+        let state = self.state();
+        let _sg = StackGuard::new(state);
+        check_stack(state, 3)?;
+
+        let free_cb = if S::is_static(&s) {
+            None
+        } else {
+            Some(S::free_string as ffi::lua_StringFree)
+        };
+        let (ptr, len, userdata) = s.into_ext_parts()?;
+
+        crate::util::push_external_string(state, ptr as *const _, len, userdata, free_cb)?;
+        Ok(String(self.pop_ref()))
+    }
+
     pub(crate) unsafe fn create_buffer_with_capacity(&self, size: usize) -> Result<(*mut u8, crate::Buffer)> {
         let state = self.state();
         let _sg = StackGuard::new(state);

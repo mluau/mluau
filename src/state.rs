@@ -972,6 +972,16 @@ impl Lua {
         unsafe { self.lock().create_string(s.as_ref()) }
     }
 
+    /// Creates and returns an externally managed Luau string.
+    ///
+    /// External strings do not allocate memory inside the Luau VM for their contents.
+    /// Instead, the data is held in an external backing store like `Vec<u8>` or `bytes::Bytes`.
+    /// The string MUST be null-terminated to ensure safety within the Luau VM.
+    #[inline]
+    pub fn create_external_string<S: crate::string::ExternalString>(&self, s: S) -> Result<String> {
+        unsafe { self.lock().create_external_string(s) }
+    }
+
     /// Creates and returns a Luau [buffer] object from a byte slice of data.
     ///
     /// [buffer]: https://luau.org/library#buffer-library

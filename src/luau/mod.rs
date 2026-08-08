@@ -16,6 +16,7 @@ pub static ENABLED_FFLAGS: &[&str] = &[
     "LuauIntegerFastcalls",
     "LuauIntegerLibrary",
     "LuauExternallyManagedBuffers",
+    "LuauExternalString",
     #[cfg(feature = "luau-classes")]
     "DebugLuauUserDefinedClasses",
     #[cfg(feature = "luau-classes")]
@@ -29,6 +30,7 @@ pub static RESTRICTED_FFLAGS: &[&str] = &[
     "LuauIntegerFastcalls",
     "LuauIntegerLibrary",
     "LuauExternallyManagedBuffers",
+    "LuauExternalString",
     // luau-classes
     "DebugLuauUserDefinedClasses",
     "DebugLuauUserDefinedClassesRuntime",

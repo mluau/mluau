@@ -120,6 +120,23 @@ pub(crate) unsafe fn push_external_buffer(
     Ok(buf_data as *mut u8)
 }
 
+#[inline(always)]
+pub(crate) unsafe fn push_external_string(
+    state: *mut ffi::lua_State,
+    s: *const c_char,
+    len: usize,
+    userdata: *mut std::ffi::c_void,
+    free_cb: Option<ffi::lua_StringFree>,
+) -> Result<()> {
+    protect_lua!(state, 0, 1, |state| ffi::lua_pushexternalstring(
+        state,
+        s,
+        len,
+        userdata,
+        free_cb
+    ))
+}
+
 // Uses 3 stack spaces, does not call checkstack.
 #[inline]
 pub(crate) unsafe fn push_table(state: *mut ffi::lua_State, narr: usize, nrec: usize) -> Result<()> {

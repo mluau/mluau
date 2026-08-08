@@ -102,6 +102,10 @@ pub type lua_Destructor = unsafe extern "C" fn(L: *mut lua_State, *mut c_void);
 pub type lua_BufferFree =
     unsafe extern "C" fn(L: *mut lua_State, data: *mut c_void, sz: usize, userdata: *mut c_void);
 
+/// Type for externally managed string destructor functions (no unwinding).
+pub type lua_StringFree =
+    unsafe extern "C" fn(L: *mut lua_State, data: *const c_char, sz: usize, userdata: *mut c_void);
+
 /// Type for memory-allocation functions (no unwinding).
 pub type lua_Alloc =
     unsafe extern "C" fn(ud: *mut c_void, ptr: *mut c_void, osize: usize, nsize: usize) -> *mut c_void;
@@ -192,6 +196,13 @@ unsafe extern "C-unwind" {
     pub fn lua_pushvector(L: *mut lua_State, x: c_float, y: c_float, z: c_float, w: c_float);
     #[link_name = "lua_pushlstring"]
     pub fn lua_pushlstring_(L: *mut lua_State, s: *const c_char, l: usize);
+    pub fn lua_pushexternalstring(
+        L: *mut lua_State,
+        s: *const c_char,
+        l: usize,
+        userdata: *mut c_void,
+        free_cb: Option<lua_StringFree>,
+    );
     #[link_name = "lua_pushstring"]
     pub fn lua_pushstring_(L: *mut lua_State, s: *const c_char);
     // lua_pushvfstring

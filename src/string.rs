@@ -419,6 +419,188 @@ impl LuaType for String {
     const TYPE_ID: c_int = ffi::LUA_TSTRING;
 }
 
+/// A backing store for an externally managed Luau string.
+///
+/// # Safety
+/// The implementor must ensure the memory returned by `into_ext_parts` remains valid
+/// and safe to be read by the Luau VM for the lifetime of this object.
+/// Furthermore, the string MUST be null-terminated, meaning that the byte at 
+/// `ptr.add(len)` must be a valid null byte (`\0`).
+pub unsafe trait ExternalString: 'static {
+    /// Returns whether the string is statically allocated and does not need to be freed.
+    /// Defaults to `false`.
+    #[inline]
+    fn is_static(&self) -> bool {
+        false
+    }
+
+    /// Prepares the string and returns its pointer, length (excluding the null terminator),
+    /// and the userdata pointer to be passed to the free callback.
+    fn into_ext_parts(self) -> Result<(*const u8, usize, *mut c_void)>;
+
+    /// The free callback passed to Luau.
+    unsafe extern "C" fn free_string(
+        state: *mut ffi::lua_State,
+        s: *const std::os::raw::c_char,
+        len: usize,
+        userdata: *mut c_void,
+    );
+}
+
+// SAFETY: `CString` manages a heap allocation that will not move or be deallocated
+// as long as the `CString` itself is alive. The pointer and length returned are valid
+// to safely read from, and `CString` guarantees a null terminator at `len()`.
+unsafe impl ExternalString for std::ffi::CString {
+    fn into_ext_parts(self) -> Result<(*const u8, usize, *mut c_void)> {
+        let len = self.as_bytes().len();
+        let ptr = self.into_raw();
+        Ok((ptr as *const u8, len, ptr as *mut c_void))
+    }
+
+    unsafe extern "C" fn free_string(
+        _state: *mut ffi::lua_State,
+        _s: *const std::os::raw::c_char,
+        _len: usize,
+        userdata: *mut c_void,
+    ) {
+        let _ = std::ffi::CString::from_raw(userdata as *mut std::os::raw::c_char);
+    }
+}
+
+// SAFETY: `&'static CStr` points to statically allocated memory that lives forever.
+// It is naturally null-terminated, and requires no deallocation.
+unsafe impl ExternalString for &'static std::ffi::CStr {
+    #[inline]
+    fn is_static(&self) -> bool {
+        true
+    }
+
+    fn into_ext_parts(self) -> Result<(*const u8, usize, *mut c_void)> {
+        Ok((self.as_ptr() as *const u8, self.to_bytes().len(), std::ptr::null_mut()))
+    }
+
+    unsafe extern "C" fn free_string(
+        _state: *mut ffi::lua_State,
+        _s: *const std::os::raw::c_char,
+        _len: usize,
+        _userdata: *mut c_void,
+    ) {
+        // No-op for statically allocated strings
+    }
+}
+
+// SAFETY: `&'static str` points to statically allocated memory that lives forever.
+// It requires no deallocation. If it is null-terminated, it is safe to use.
+unsafe impl ExternalString for &'static str {
+    #[inline]
+    fn is_static(&self) -> bool {
+        true
+    }
+
+    fn into_ext_parts(self) -> Result<(*const u8, usize, *mut c_void)> {
+        if self.as_bytes().last() == Some(&0) {
+            Ok((self.as_ptr(), self.len() - 1, std::ptr::null_mut()))
+        } else {
+            Err(Error::RuntimeError("statically allocated external string must end in a null byte".into()))
+        }
+    }
+
+    unsafe extern "C" fn free_string(
+        _state: *mut ffi::lua_State,
+        _s: *const std::os::raw::c_char,
+        _len: usize,
+        _userdata: *mut c_void,
+    ) {
+        // No-op for statically allocated strings
+    }
+}
+
+// SAFETY: `StdString` manages a heap allocation. We delegate to the `Vec<u8>` implementation
+// by converting it to bytes, to ensure code reuse.
+unsafe impl ExternalString for StdString {
+    fn into_ext_parts(self) -> Result<(*const u8, usize, *mut c_void)> {
+        self.into_bytes().into_ext_parts()
+    }
+
+    unsafe extern "C" fn free_string(
+        state: *mut ffi::lua_State,
+        s: *const std::os::raw::c_char,
+        len: usize,
+        userdata: *mut c_void,
+    ) {
+        <Vec<u8> as ExternalString>::free_string(state, s, len, userdata)
+    }
+}
+
+// SAFETY: `Vec<u8>` manages a heap allocation. We append a null byte and then heap-allocate
+// the `Vec` struct itself so it can be safely retrieved in the free callback.
+unsafe impl ExternalString for Vec<u8> {
+    fn into_ext_parts(mut self) -> Result<(*const u8, usize, *mut c_void)> {
+        self.push(0);
+        let s_len = self.len() - 1;
+        let bytes_ud = Box::into_raw(Box::new(self));
+        let s_ptr = unsafe { (*bytes_ud).as_ptr() };
+        Ok((s_ptr, s_len, bytes_ud as *mut c_void))
+    }
+
+    unsafe extern "C" fn free_string(
+        _state: *mut ffi::lua_State,
+        _s: *const std::os::raw::c_char,
+        _len: usize,
+        userdata: *mut c_void,
+    ) {
+        let _ = Box::from_raw(userdata as *mut Vec<u8>);
+    }
+}
+
+#[cfg(feature = "bytes")]
+// SAFETY: `bytes::Bytes` is an immutable, reference-counted contiguous byte slice.
+unsafe impl ExternalString for bytes::Bytes {
+    fn into_ext_parts(self) -> Result<(*const u8, usize, *mut c_void)> {
+        if self.as_ref().last() == Some(&0) {
+            let len = self.len() - 1;
+            let ud = Box::into_raw(Box::new(self));
+            let ptr = unsafe { (*ud).as_ptr() };
+            Ok((ptr, len, ud as *mut c_void))
+        } else {
+            Err(Error::RuntimeError("bytes::Bytes external string must end in a null byte".into()))
+        }
+    }
+
+    unsafe extern "C" fn free_string(
+        _state: *mut ffi::lua_State,
+        _s: *const std::os::raw::c_char,
+        _len: usize,
+        userdata: *mut c_void,
+    ) {
+        let _ = Box::from_raw(userdata as *mut bytes::Bytes);
+    }
+}
+
+#[cfg(feature = "bytes")]
+// SAFETY: `bytes::BytesMut` manages a heap allocation. We append a null byte and then heap-allocate
+// the `BytesMut` struct itself so it can be safely retrieved in the free callback.
+unsafe impl ExternalString for bytes::BytesMut {
+    fn into_ext_parts(mut self) -> Result<(*const u8, usize, *mut c_void)> {
+        self.extend_from_slice(b"\0");
+        let s_len = self.len() - 1;
+        let bytes_ud = Box::into_raw(Box::new(self));
+        let s_ptr = unsafe { (*bytes_ud).as_ptr() };
+        Ok((s_ptr, s_len, bytes_ud as *mut c_void))
+    }
+
+    unsafe extern "C" fn free_string(
+        _state: *mut ffi::lua_State,
+        _s: *const std::os::raw::c_char,
+        _len: usize,
+        userdata: *mut c_void,
+    ) {
+        let _ = Box::from_raw(userdata as *mut bytes::BytesMut);
+    }
+}
+
+
+
 #[cfg(test)]
 mod assertions {
     use super::*;

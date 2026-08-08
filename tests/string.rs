@@ -157,3 +157,49 @@ fn test_bytes_into_iter() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_external_string() -> Result<()> {
+    let lua = Lua::new();
+
+    // Statically allocated strings
+    let static_str: &'static str = "hello static external\0";
+    let s = lua.create_external_string(static_str)?;
+    assert_eq!(s.to_str()?, "hello static external");
+
+    // Vec<u8> string
+    let vec_str = b"hello vec external".to_vec();
+    let s = lua.create_external_string(vec_str)?;
+    assert_eq!(s.to_str()?, "hello vec external");
+
+    // Standard string
+    let std_str = "hello std external".to_string();
+    let s = lua.create_external_string(std_str)?;
+    assert_eq!(s.to_str()?, "hello std external");
+    
+    // Validate that Luau code can interact seamlessly with it
+    lua.globals().set("ext_str", s)?;
+    let result: bool = lua.load(r#"
+        local str = ext_str
+        assert(string.len(str) == 18)
+        assert(string.sub(str, 1, 5) == "hello")
+        assert(string.match(str, "std") == "std")
+        return str == "hello std external"
+    "#).eval()?;
+    assert!(result, "Luau code failed to process the external string properly");
+
+    // Bytes strings
+    #[cfg(feature = "bytes")]
+    {
+        let bytes_str = bytes::Bytes::from_static(b"hello bytes external\0");
+        let s = lua.create_external_string(bytes_str)?;
+        assert_eq!(s.to_str()?, "hello bytes external");
+
+        let mut bytes_mut_str = bytes::BytesMut::new();
+        bytes_mut_str.extend_from_slice(b"hello bytes mut external");
+        let s = lua.create_external_string(bytes_mut_str)?;
+        assert_eq!(s.to_str()?, "hello bytes mut external");
+    }
+
+    Ok(())
+}
