@@ -452,6 +452,7 @@ pub unsafe fn lua_isnoneornil(L: *mut lua_State, n: c_int) -> c_int {
 }
 
 #[inline(always)]
+#[cfg(feature = "none-primitive")]
 pub unsafe fn lua_issymnone(L: *mut lua_State, n: c_int) -> c_int {
     (lua_type(L, n) == LUA_TSYMNONE) as c_int
 }
