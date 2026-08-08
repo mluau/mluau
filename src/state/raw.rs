@@ -595,7 +595,7 @@ impl RawLua {
         match value {
             Value::Nil => ffi::lua_pushnil(state),
             #[cfg(feature = "none-primitive")]
-            Value::None => ffi::lua_pushnone(state),
+            Value::None => ffi::lua_pushsymnone(state),
             Value::Boolean(b) => ffi::lua_pushboolean(state, *b as c_int),
             Value::LightUserData(ud) => ffi::lua_pushlightuserdata(state, ud.0),
             Value::Integer(i) => ffi::lua_pushinteger(state, *i),
@@ -650,7 +650,7 @@ impl RawLua {
         match type_hint.unwrap_or_else(|| ffi::lua_type(state, idx)) {
             ffi::LUA_TNIL => Ok(Nil),
             #[cfg(feature = "none-primitive")]
-            ffi::LUA_TNONE => Ok(Value::None),
+            ffi::LUA_TSYMNONE => Ok(Value::None),
 
             ffi::LUA_TBOOLEAN => Ok(Value::Boolean(ffi::lua_toboolean(state, idx) != 0)),
 

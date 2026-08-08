@@ -48,7 +48,7 @@ pub struct lua_State {
 //
 // Basic types
 //
-pub const LUA_TNOVAL: c_int = -1;
+pub const LUA_TNONE: c_int = -1;
 
 pub const LUA_TNIL: c_int = 0;
 pub const LUA_TBOOLEAN: c_int = 1;
@@ -59,7 +59,7 @@ pub const LUA_TINTEGER: c_int = 4;
 pub const LUA_TVECTOR: c_int = 5;
 
 #[cfg(feature = "none-primitive")]
-pub const LUA_TNONE: c_int = 6;
+pub const LUA_TSYMNONE: c_int = 6;
 
 pub const LUA_TSTRING: c_int = 7;
 pub const LUA_TTABLE: c_int = 8;
@@ -180,7 +180,7 @@ unsafe extern "C-unwind" {
     // Push functions (C -> stack)
     //
     pub fn lua_pushnil(L: *mut lua_State);
-    pub fn lua_pushnone(L: *mut lua_State);
+    pub fn lua_pushsymnone(L: *mut lua_State);
     pub fn lua_pushnumber(L: *mut lua_State, n: lua_Number);
     #[link_name = "lua_pushinteger"]
     pub fn lua_pushinteger_(L: *mut lua_State, n: c_int);
@@ -442,13 +442,18 @@ pub unsafe fn lua_isbuffer(L: *mut lua_State, n: c_int) -> c_int {
 }
 
 #[inline(always)]
-pub unsafe fn lua_isnoval(L: *mut lua_State, n: c_int) -> c_int {
-    (lua_type(L, n) == LUA_TNOVAL) as c_int
+pub unsafe fn lua_isnone(L: *mut lua_State, n: c_int) -> c_int {
+    (lua_type(L, n) == LUA_TNONE) as c_int
 }
 
 #[inline(always)]
-pub unsafe fn lua_isnovalornil(L: *mut lua_State, n: c_int) -> c_int {
+pub unsafe fn lua_isnoneornil(L: *mut lua_State, n: c_int) -> c_int {
     (lua_type(L, n) <= LUA_TNIL) as c_int
+}
+
+#[inline(always)]
+pub unsafe fn lua_issymnone(L: *mut lua_State, n: c_int) -> c_int {
+    (lua_type(L, n) == LUA_TSYMNONE) as c_int
 }
 
 #[inline(always)]

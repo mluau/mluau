@@ -245,7 +245,7 @@ pub(crate) unsafe fn get_main_state(state: *mut ffi::lua_State) -> Option<*mut f
 // panicking.
 pub(crate) unsafe fn to_string(state: *mut ffi::lua_State, index: c_int) -> String {
     match ffi::lua_type(state, index) {
-        ffi::LUA_TNOVAL => "<none>".to_string(),
+        ffi::LUA_TNONE => "<none>".to_string(),
         ffi::LUA_TNIL => "<nil>".to_string(),
         ffi::LUA_TBOOLEAN => (ffi::lua_toboolean(state, index) != 1).to_string(),
         ffi::LUA_TLIGHTUSERDATA => {
