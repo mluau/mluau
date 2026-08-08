@@ -515,8 +515,7 @@ unsafe impl ExternalString for &'static str {
     }
 }
 
-// SAFETY: `StdString` manages a heap allocation. We delegate to the `Vec<u8>` implementation
-// by converting it to bytes, to ensure code reuse.
+// SAFETY: `String` just delegates to `Vec<u8>`'s implementation.
 unsafe impl ExternalString for StdString {
     fn into_ext_parts(self) -> Result<(*const u8, usize, *mut c_void)> {
         self.into_bytes().into_ext_parts()
@@ -528,7 +527,23 @@ unsafe impl ExternalString for StdString {
         len: usize,
         userdata: *mut c_void,
     ) {
-        <Vec<u8> as ExternalString>::free_string(state, s, len, userdata)
+        Vec::<u8>::free_string(state, s, len, userdata);
+    }
+}
+
+// SAFETY: `bstr::BString` just delegates to `Vec<u8>`'s implementation.
+unsafe impl ExternalString for bstr::BString {
+    fn into_ext_parts(self) -> Result<(*const u8, usize, *mut c_void)> {
+        Vec::from(self).into_ext_parts()
+    }
+
+    unsafe extern "C" fn free_string(
+        state: *mut ffi::lua_State,
+        s: *const std::os::raw::c_char,
+        len: usize,
+        userdata: *mut c_void,
+    ) {
+        Vec::<u8>::free_string(state, s, len, userdata);
     }
 }
 

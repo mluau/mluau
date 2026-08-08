@@ -176,15 +176,20 @@ fn test_external_string() -> Result<()> {
     let std_str = "hello std external".to_string();
     let s = lua.create_external_string(std_str)?;
     assert_eq!(s.to_str()?, "hello std external");
-    
+
+    // BString
+    let bstr_str = bstr::BString::from("hello bstr external");
+    let s = lua.create_external_string(bstr_str)?;
+    assert_eq!(s.to_str()?, "hello bstr external");
+
     // Validate that Luau code can interact seamlessly with it
     lua.globals().set("ext_str", s)?;
     let result: bool = lua.load(r#"
         local str = ext_str
-        assert(string.len(str) == 18)
+        assert(string.len(str) == 19)
         assert(string.sub(str, 1, 5) == "hello")
-        assert(string.match(str, "std") == "std")
-        return str == "hello std external"
+        assert(string.match(str, "bstr") == "bstr")
+        return str == "hello bstr external"
     "#).eval()?;
     assert!(result, "Luau code failed to process the external string properly");
 
