@@ -54,6 +54,8 @@ operate on the dynamic userdata.
 - Support for getting weak_lua from Threads and other primitives
 - Support for GC interrupts in Luau.
 - Sole focus on Luau (non-luau code removed)
+- Support for a proper `none` type primitive (`Value::None`), distinguishing it from `nil` or lack of value (custom to our fork of Luau).
+- Support for externally managed buffers, enabling zero-copy sharing of memory buffers from Rust to Luau with customizable deallocation callbacks.
 
 As an example of dynamic userdata:
 
