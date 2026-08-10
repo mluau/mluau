@@ -188,7 +188,7 @@ impl Function {
 
             ffi::lua_pushinteger(state, nargs as ffi::lua_Integer);
             for arg in &args {
-                lua.push_value_at(arg, state)?;
+                lua.push_value_at(arg, state);
             }
             protect_lua!(state, nargs + 1, 1, fn(state) {
                 ffi::lua_pushcclosure(state, args_wrapper_impl, ffi::lua_gettop(state));
@@ -416,9 +416,12 @@ impl Function {
         R: IntoLuaMulti,
     {
         WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let state = lua.state();
-            let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
-            func.call(args)?.push_into_specified_stack_multi(lua, state)
+            let wrap = || -> crate::error::Result<c_int> {
+                let state = lua.state();
+                let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
+                func.call(args)?.push_into_specified_stack_multi(lua, state)
+            };
+            wrap().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
         }))
     }
 
@@ -431,10 +434,13 @@ impl Function {
     {
         let func = RefCell::new(func);
         WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let mut func = func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
-            let state = lua.state();
-            let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
-            func.call(args)?.push_into_specified_stack_multi(lua, state)
+            let wrap = || -> crate::error::Result<c_int> {
+                let mut func = func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
+                let state = lua.state();
+                let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
+                func.call(args)?.push_into_specified_stack_multi(lua, state)
+            };
+            wrap().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
         }))
     }
 
@@ -451,9 +457,12 @@ impl Function {
         A: FromLuaMulti,
     {
         WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let state = lua.state();
-            let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
-            func.call(args).push_into_specified_stack_multi(lua, state)
+            let wrap = || -> crate::error::Result<c_int> {
+                let state = lua.state();
+                let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
+                func.call(args).push_into_specified_stack_multi(lua, state)
+            };
+            wrap().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
         }))
     }
 
@@ -470,10 +479,13 @@ impl Function {
     {
         let func = RefCell::new(func);
         WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let mut func = func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
-            let state = lua.state();
-            let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
-            func.call(args).push_into_specified_stack_multi(lua, state)
+            let wrap = || -> crate::error::Result<c_int> {
+                let mut func = func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
+                let state = lua.state();
+                let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
+                func.call(args).push_into_specified_stack_multi(lua, state)
+            };
+            wrap().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
         }))
     }
 }

@@ -15,7 +15,7 @@ where
     F: FnOnce(c_int) -> Result<R>,
 {
     let extra = ExtraData::get(state);
-    callback_error_ext(state, extra, |_, status| f(status))
+    callback_error_ext(state, extra, |extra, status| f(status).map_err(|e| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), e)))
 }
 
 // Pops an error off of the stack and returns it. The specific behavior depends on the type of the
@@ -30,30 +30,6 @@ pub(crate) unsafe fn pop_error(state: *mut ffi::lua_State, err_code: c_int) -> E
         "pop_error called with non-error return code"
     );
 
-    #[cfg(feature = "error-value")]
-    {
-        if err_code == ffi::LUA_ERRMEM {
-            let err_string = to_string(state, -1);
-            ffi::lua_pop(state, 1);
-            return Error::MemoryError(err_string);
-        }
-
-        match ffi::lua_type(state, -1) {
-            ffi::LUA_TSTRING | ffi::LUA_TNUMBER => {}
-            _ => {
-                use crate::state::ExtraData;
-                // Special logic for error values that are not strings or numbers
-                use crate::{FromLua, Value};
-                let ed = ExtraData::get(state);
-                let raw_lua = (*ed).raw_lua();
-                let value = Value::from_specified_stack(-1, raw_lua, state);
-                if let Ok(err) = value {
-                    ffi::lua_pop(state, 1);
-                    return Error::Value((err, "".to_string()));
-                }
-            }
-        }
-    }
 
     let err_string = to_string(state, -1);
     ffi::lua_pop(state, 1);
@@ -226,40 +202,6 @@ pub(crate) unsafe extern "C-unwind" fn error_traceback(state: *mut ffi::lua_Stat
         return 1;
     }
 
-    #[cfg(feature = "error-value")]
-    {
-        match ffi::lua_type(state, -1) {
-            ffi::LUA_TSTRING | ffi::LUA_TNUMBER => {}
-            _ => {
-                use crate::state::ExtraData;
-                use crate::{FromLuaMulti, Value};
-                if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK + 3) != 0 {
-                    ffi::luaL_traceback(state, state, std::ptr::null(), 0);
-
-                    // Now, we should have the traceback at the top of the stack, and the original
-                    // error below it.
-                    let extra_data = ExtraData::get(state);
-                    let raw_lua = (*extra_data).raw_lua();
-                    let result = <(Value, String)>::from_specified_stack_multi(2, raw_lua, state);
-
-                    if let Ok((value, traceback)) = result {
-                        // Push the wrapped error
-                        let cause = Error::Value((value, traceback));
-                        let wrapped_error = WrappedFailure::Error(cause);
-                        ffi::lua_remove(state, -2); // Remove original error and traceback
-                        push_internal_userdata(state, wrapped_error, true).unwrap();
-                        return 1;
-                    } else {
-                        // Remove the traceback we pushed
-                        ffi::lua_pop(state, 1);
-                    }
-
-                    return 1;
-                }
-                return 1; // Return the error directly if we cant make a traceback
-            }
-        }
-    }
 
     let s = ffi::luaL_tolstring(state, -1, ptr::null_mut());
     if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {

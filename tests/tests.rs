@@ -469,7 +469,7 @@ fn test_recursive_mut_callback_error() -> Result<()> {
             println!("value at {:p} is {r}", r as *mut _);
         }
 
-        Ok(())
+        Ok::<_, mluau::Error>(())
     })?;
     lua.globals().set("f", f)?;
     match lua.globals().get::<Function>("f")?.call::<()>(false) {
@@ -500,7 +500,7 @@ fn test_named_registry_value() -> Result<()> {
     lua.set_named_registry_value("test", 42)?;
     let f = lua.create_function(move |lua, ()| {
         assert_eq!(lua.named_registry_value::<i32>("test")?, 42);
-        Ok(())
+        Ok::<_, mluau::Error>(())
     })?;
 
     f.call::<()>(())?;
@@ -526,7 +526,7 @@ fn test_registry_value() -> Result<()> {
         } else {
             panic!();
         }
-        Ok(())
+        Ok::<_, mluau::Error>(())
     })?;
 
     f.call::<()>(())?;
@@ -692,7 +692,7 @@ fn test_application_data() -> Result<()> {
         let data2 = lua.app_data_ref::<Vec<&str>>().unwrap();
         assert_eq!(*data2, vec!["test2", "test3"]);
 
-        Ok(())
+        Ok::<_, mluau::Error>(())
     })?;
     f.call::<()>(())?;
 
@@ -723,7 +723,7 @@ fn test_rust_function() -> Result<()> {
     .exec()?;
 
     let lua_function = globals.get::<Function>("lua_function")?;
-    let rust_function = lua.create_function(|_, ()| Ok("hello"))?;
+    let rust_function = lua.create_function(|_, ()| Ok::<_, mluau::Error>("hello"))?;
 
     globals.set("rust_function", rust_function)?;
     assert_eq!(lua_function.call::<String>(())?, "hello");
@@ -759,7 +759,7 @@ fn test_recursion() -> Result<()> {
         if i < 64 {
             lua.globals().get::<Function>("f")?.call::<()>(i + 1)?;
         }
-        Ok(())
+        Ok::<_, mluau::Error>(())
     })?;
 
     lua.globals().set("f", &f)?;
@@ -814,7 +814,7 @@ fn test_large_args() -> Result<()> {
                 s += i;
                 assert_eq!(i, args[i]);
             }
-            Ok(s)
+            Ok::<_, mluau::Error>(s)
         })?,
     )?;
 
@@ -841,7 +841,7 @@ fn test_large_args_ref() -> Result<()> {
         for i in 0..args.len() {
             assert_eq!(args[i], i.to_string());
         }
-        Ok(())
+        Ok::<_, mluau::Error>(())
     })?;
 
     f.call::<()>((0..100).map(|i| i.to_string()).collect::<Variadic<_>>())?;
@@ -1044,7 +1044,7 @@ fn test_inspect_stack() -> Result<()> {
                 format!("{}:{} {}", source, line, msg)
             })
             .unwrap();
-        Ok(r)
+        Ok::<_, mluau::Error>(r)
     })?;
     lua.globals().set("logline", logline)?;
 
@@ -1068,7 +1068,7 @@ fn test_inspect_stack() -> Result<()> {
 
     let stack_info = lua.create_function(|lua, ()| {
         let stack_info = lua.inspect_stack(1, |debug| debug.stack()).unwrap();
-        Ok(format!("{stack_info:?}"))
+        Ok::<_, mluau::Error>(format!("{stack_info:?}"))
     })?;
     lua.globals().set("stack_info", stack_info)?;
 
@@ -1099,7 +1099,7 @@ fn test_inspect_stack() -> Result<()> {
 
     // Test retrieving currently running function
     let running_function =
-        lua.create_function(|lua, ()| Ok(lua.inspect_stack(1, |debug| debug.function())))?;
+        lua.create_function(|lua, ()| Ok::<_, mluau::Error>(lua.inspect_stack(1, |debug| debug.function())))?;
     lua.globals().set("running_function", running_function)?;
     lua.load(
         r#"
@@ -1214,7 +1214,7 @@ fn test_multi_states() -> Result<()> {
         if let Some(g) = g {
             g.call::<()>(())?;
         }
-        Ok(())
+        Ok::<_, mluau::Error>(())
     })?;
     lua.globals().set("f", f)?;
 
@@ -1335,7 +1335,7 @@ fn test_exec_raw() -> Result<()> {
         for i in args {
             sum += i;
         }
-        Ok(sum)
+        Ok::<_, mluau::Error>(sum)
     })?;
     lua.globals().set("sum", sum)?;
 
@@ -1367,7 +1367,7 @@ fn test_gc_drop_ref_thread() -> Result<()> {
     let t = lua.create_table()?;
     lua.create_function(move |_, ()| {
         _ = &t;
-        Ok(())
+        Ok::<_, mluau::Error>(())
     })?;
 
     for _ in 0..10000 {

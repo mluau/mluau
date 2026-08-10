@@ -191,7 +191,7 @@ fn test_value_to_string() -> Result<()> {
     assert_eq!(thread.type_name(), "thread");
 
     lua.register_userdata_type::<StdString>(|reg| {
-        reg.add_meta_method("__tostring", |_, this, ()| Ok(this.clone()));
+        reg.add_meta_method("__tostring", |_, this, ()| Ok::<_, mluau::Error>(this.clone()));
     })?;
     let ud: Value = Value::UserData(lua.create_any_userdata(String::from("string userdata"))?);
     assert_eq!(ud.to_string()?, "string userdata");
@@ -260,8 +260,8 @@ fn test_value_conversions() -> Result<()> {
     assert_eq!(Value::String(lua.create_string("hello")?).to_string()?, "hello");
     assert!(Value::Table(lua.create_table()?).is_table());
     assert!(Value::Table(lua.create_table()?).as_table().is_some());
-    assert!(Value::Function(lua.create_function(|_, ()| Ok(())).unwrap()).is_function());
-    assert!(Value::Function(lua.create_function(|_, ()| Ok(())).unwrap())
+    assert!(Value::Function(lua.create_function(|_, ()| Ok::<_, mluau::Error>(())).unwrap()).is_function());
+    assert!(Value::Function(lua.create_function(|_, ()| Ok::<_, mluau::Error>(())).unwrap())
         .as_function()
         .is_some());
     assert!(Value::Thread(lua.create_thread(lua.load("function() end").eval()?)?).is_thread());

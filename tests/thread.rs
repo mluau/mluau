@@ -96,7 +96,7 @@ fn test_thread() -> Result<()> {
             matches!(result, Err(Error::CoroutineUnresumable)),
             "unexpected result: {result:?}",
         );
-        Ok(())
+        Ok::<_, mluau::Error>(())
     })?)?;
     let result = thread.resume::<()>(());
     assert!(result.is_ok(), "unexpected result: {result:?}");
@@ -156,8 +156,8 @@ fn test_thread_reset() -> Result<()> {
     // Try reset running thread
     let thread = lua.create_thread(lua.create_function(|lua, ()| {
         let this = lua.current_thread();
-        this.reset(lua.create_function(|_, ()| Ok(()))?)?;
-        Ok(())
+        this.reset(lua.create_function(|_, ()| Ok::<_, mluau::Error>(()))?)?;
+        Ok::<_, mluau::Error>(())
     })?)?;
     let result = thread.resume::<()>(());
     assert!(
@@ -172,7 +172,7 @@ fn test_thread_reset() -> Result<()> {
 fn test_coroutine_from_closure() -> Result<()> {
     let lua = Lua::new();
 
-    let thrd_main = lua.create_function(|_, ()| Ok(()))?;
+    let thrd_main = lua.create_function(|_, ()| Ok::<_, mluau::Error>(()))?;
     lua.globals().set("main", thrd_main)?;
 
     #[cfg(any(
@@ -245,7 +245,7 @@ fn test_thread_resume_bad_arg() -> Result<()> {
         }
     }
 
-    let f = lua.create_thread(lua.create_function(|_, ()| Ok("okay"))?)?;
+    let f = lua.create_thread(lua.create_function(|_, ()| Ok::<_, mluau::Error>("okay"))?)?;
     let res = f.resume::<()>((123, BadArg));
     assert!(matches!(res, Err(Error::RuntimeError(msg)) if msg == "bad arg"));
     let res = f.resume::<String>(()).unwrap();
@@ -306,7 +306,7 @@ fn test_thread_yield_args() -> Result<()> {
             methods.add_method("yield", |lua, this, ()| {
                 println!("yield called");
                 lua.yield_with(this.value)?;
-                Ok("Thread did not yield")
+                Ok::<_, mluau::Error>("Thread did not yield")
             });
         }
     }
@@ -365,7 +365,7 @@ fn test_continuation() {
             |lua, a: u64| lua.yield_with(a),
             |_lua, _status, a: u64| {
                 println!("Reached cont");
-                Ok(a + 39)
+                Ok::<_, mluau::Error>(a + 39)
             },
             Some(c"test"),
         )
@@ -397,7 +397,7 @@ fn test_continuation() {
     let cont_func = lua
         .create_function_with_continuation(
             |lua, _: ()| lua.yield_with(()),
-            |_lua, _status, mv: mluau::MultiValue| Ok(mv.len()),
+            |_lua, _status, mv: mluau::MultiValue| Ok::<_, mluau::Error>(mv.len()),
             Some(c"test2"),
         )
         .expect("Failed to create cont_func");
@@ -426,10 +426,10 @@ fn test_continuation() {
 
     let cont_func = lua
         .create_function_with_continuation(
-            |_lua, a: u64| Ok(a + 1),
+            |_lua, a: u64| Ok::<_, mluau::Error>(a + 1),
             |_lua, _status, a: u64| {
                 println!("Reached cont");
-                Ok(a + 2)
+                Ok::<_, mluau::Error>(a + 2)
             },
             Some(c"test3"),
         )
@@ -460,7 +460,7 @@ fn test_continuation() {
             |lua, a: u64| lua.yield_with(a),
             |_lua, _status, a: u64| {
                 println!("Reached cont");
-                Ok(a + 39)
+                Ok::<_, mluau::Error>(a + 39)
             },
             Some(c"test"),
         )
@@ -522,7 +522,7 @@ fn test_continuation() {
                     } else {
                         assert_eq!(status, mluau::ContinuationStatus::Yielded);
                     }
-                    return Ok(6_i32);
+                    return Ok::<_, mluau::Error>(6_i32);
                 }
 
                 lua.yield_with((args.len() + 1, args))?; // thread state becomes LEN, LEN-1... 1
@@ -577,7 +577,7 @@ fn test_continuation() {
             |_lua, _status, _a: u64| {
                 panic!("Reached continuation which should panic!");
                 #[allow(unreachable_code)]
-                Ok(())
+                Ok::<_, mluau::Error>(())
             },
             Some(c"test"),
         )
@@ -613,18 +613,18 @@ fn test_large_thread_creation() {
     let lua = Lua::new();
     lua.set_memory_limit(100_000_000_000).unwrap();
     let th1 = lua
-        .create_thread(lua.create_function(|_lua, _: ()| Ok(())).unwrap())
+        .create_thread(lua.create_function(|_lua, _: ()| Ok::<_, mluau::Error>(())).unwrap())
         .unwrap();
 
     let mut this = Vec::new();
     for _i in 1..2000000 {
         let th = lua
-            .create_thread(lua.create_function(|_, ()| Ok(())).unwrap())
+            .create_thread(lua.create_function(|_, ()| Ok::<_, mluau::Error>(())).unwrap())
             .expect("Failed to create thread");
         this.push(th);
     }
     let th2 = lua
-        .create_thread(lua.create_function(|_lua, _: ()| Ok(())).unwrap())
+        .create_thread(lua.create_function(|_lua, _: ()| Ok::<_, mluau::Error>(())).unwrap())
         .unwrap();
 
     for rth in this {
@@ -653,10 +653,10 @@ fn test_large_thread_creation() {
     {
         let cont_func = lua
             .create_function_with_continuation(
-                |_lua, a: u64| Ok(a + 1),
+                |_lua, a: u64| Ok::<_, mluau::Error>(a + 1),
                 |_lua, _status, a: u64| {
                     println!("Reached cont");
-                    Ok(a + 2)
+                    Ok::<_, mluau::Error>(a + 2)
                 },
                 Some(c"test"),
             )
@@ -687,7 +687,7 @@ fn test_large_thread_creation() {
                 |lua, a: u64| lua.yield_with(a),
                 |_lua, _status, a: u64| {
                     println!("Reached cont");
-                    Ok(a + 39)
+                    Ok::<_, mluau::Error>(a + 39)
                 },
                 Some(c"test"),
             )
@@ -749,7 +749,7 @@ fn test_large_thread_creation() {
                         } else {
                             assert_eq!(status, mluau::ContinuationStatus::Yielded);
                         }
-                        return Ok(6_i32);
+                        return Ok::<_, mluau::Error>(6_i32);
                     }
 
                     lua.yield_with((args.len() + 1, args))?; // thread state becomes LEN, LEN-1... 1
@@ -804,7 +804,7 @@ fn test_large_thread_creation() {
                 |_lua, _status, _a: u64| {
                     panic!("Reached continuation which should panic!");
                     #[allow(unreachable_code)]
-                    Ok(())
+                    Ok::<_, mluau::Error>(())
                 },
                 Some(c"test"),
             )

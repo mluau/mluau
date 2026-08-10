@@ -44,27 +44,27 @@ unsafe impl Send for LightUserData {}
 unsafe impl Sync for LightUserData {}
 
 #[cfg(feature = "send")]
-type CallbackFn<'a> = dyn Fn(&RawLua, c_int) -> Result<c_int> + Send + 'a;
+type CallbackFn<'a> = dyn Fn(&RawLua, c_int) -> std::result::Result<c_int, crate::Value> + Send + 'a;
 
 #[cfg(not(feature = "send"))]
-type CallbackFn<'a> = dyn Fn(&RawLua, c_int) -> Result<c_int> + 'a;
+type CallbackFn<'a> = dyn Fn(&RawLua, c_int) -> std::result::Result<c_int, crate::Value> + 'a;
 
 pub(crate) type Callback = Box<CallbackFn<'static>>;
 
 #[cfg(feature = "send")]
-pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> Result<c_int> + Send + 'static>;
+pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> std::result::Result<c_int, crate::Value> + Send + 'static>;
 #[cfg(not(feature = "send"))]
-pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> Result<c_int> + 'static>;
+pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> std::result::Result<c_int, crate::Value> + 'static>;
 
 #[cfg(all(feature = "luau", feature = "send"))]
-pub(crate) type NamecallCallback = XRc<dyn Fn(&RawLua, c_int) -> Result<c_int> + Send + 'static>;
+pub(crate) type NamecallCallback = XRc<dyn Fn(&RawLua, c_int) -> std::result::Result<c_int, crate::Value> + Send + 'static>;
 #[cfg(all(feature = "luau", not(feature = "send")))]
-pub(crate) type NamecallCallback = XRc<dyn Fn(&RawLua, c_int) -> Result<c_int> + 'static>;
+pub(crate) type NamecallCallback = XRc<dyn Fn(&RawLua, c_int) -> std::result::Result<c_int, crate::Value> + 'static>;
 
 #[cfg(all(feature = "luau", feature = "send"))]
-pub(crate) type DynamicCallback = XRc<dyn Fn(&RawLua, &str, c_int) -> Result<c_int> + Send + 'static>;
+pub(crate) type DynamicCallback = XRc<dyn Fn(&RawLua, &str, c_int) -> std::result::Result<c_int, crate::Value> + Send + 'static>;
 #[cfg(all(feature = "luau", not(feature = "send")))]
-pub(crate) type DynamicCallback = XRc<dyn Fn(&RawLua, &str, c_int) -> Result<c_int> + 'static>;
+pub(crate) type DynamicCallback = XRc<dyn Fn(&RawLua, &str, c_int) -> std::result::Result<c_int, crate::Value> + 'static>;
 
 pub(crate) struct Upvalue<T> {
     pub(crate) data: T,

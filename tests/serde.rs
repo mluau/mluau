@@ -114,7 +114,7 @@ fn test_serialize_failure() -> Result<(), Box<dyn StdError>> {
         Err(serde_json::Error { .. }) => {}
     }
 
-    let func = lua.create_function(|_, _: ()| Ok(()))?;
+    let func = lua.create_function(|_, _: ()| Ok::<_, mluau::Error>(()))?;
     match serde_json::to_value(&Value::Function(func.clone())) {
         Ok(v) => panic!("expected serialization error, got {}", v),
         Err(serde_json::Error { .. }) => {}
@@ -615,7 +615,7 @@ fn test_from_value_with_options() -> Result<(), Box<dyn StdError>> {
     let lua = Lua::new();
 
     // Deny unsupported types by default
-    let value = Value::Function(lua.create_function(|_, ()| Ok(()))?);
+    let value = Value::Function(lua.create_function(|_, ()| Ok::<_, mluau::Error>(()))?);
     match lua.from_value::<Option<String>>(value) {
         Ok(v) => panic!("expected deserialization error, got {:?}", v),
         Err(Error::DeserializeError(err)) => {
@@ -625,7 +625,7 @@ fn test_from_value_with_options() -> Result<(), Box<dyn StdError>> {
     };
 
     // Allow unsupported types
-    let value = Value::Function(lua.create_function(|_, ()| Ok(()))?);
+    let value = Value::Function(lua.create_function(|_, ()| Ok::<_, mluau::Error>(()))?);
     let options = DeserializeOptions::new().deny_unsupported_types(false);
     assert_eq!(lua.from_value_with::<()>(value, options)?, ());
 

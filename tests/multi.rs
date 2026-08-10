@@ -27,7 +27,7 @@ fn test_multivalue_by_ref() -> Result<()> {
         assert_eq!(i, 3);
         assert_eq!(s.to_str()?, "hello");
         assert_eq!(b, true);
-        Ok(())
+        Ok::<_, mluau::Error>(())
     })?;
     f.call::<()>(&multi)?;
 

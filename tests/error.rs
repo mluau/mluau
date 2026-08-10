@@ -103,7 +103,7 @@ fn test_disable_error_userdata() -> Result<()> {
         if true {
             panic!("This is a test panic")
         } else {
-            Ok(())
+            Ok::<_, mluau::Error>(())
         }
     })?;
     lua.globals().set("func4", func4)?;

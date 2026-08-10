@@ -430,10 +430,10 @@ fn test_classes_instantiate_and_roundtrip_through_rust() -> Result<()> {
 
     let lua = Lua::new();
 
-    let receive_class = lua.create_function(|_, class: mluau::Class| Ok(class))?;
+    let receive_class = lua.create_function(|_, class: mluau::Class| Ok::<_, mluau::Error>(class))?;
     lua.globals().set("receive_class", receive_class)?;
 
-    let receive_object = lua.create_function(|_, object: mluau::Object| Ok(object))?;
+    let receive_object = lua.create_function(|_, object: mluau::Object| Ok::<_, mluau::Error>(object))?;
     lua.globals().set("receive_object", receive_object)?;
 
     let result: bool = lua

@@ -15,10 +15,7 @@ type DynStdError = dyn StdError + Send + Sync;
 #[cfg(not(feature = "error-send"))]
 type DynStdError = dyn StdError;
 
-// It is a compiler error to use both error-send and error-value features
-// unless send feature is enabled
-#[cfg(all(feature = "error-send", feature = "error-value", not(feature = "send")))]
-compile_error!("error-send and error-value features are mutually exclusive unless send feature is enabled");
+
 
 /// Error type returned by `mlua` methods.
 #[derive(Debug, Clone)]
@@ -192,9 +189,6 @@ pub enum Error {
         cause: Arc<Error>,
     },
 
-    #[cfg(feature = "error-value")]
-    /// An error that is not a string/number error.
-    Value((crate::Value, String)),
 }
 
 /// A specialized `Result` type used by `mlua`'s API.
@@ -283,10 +277,7 @@ impl fmt::Display for Error {
                 writeln!(fmt, "{context}")?;
                 write!(fmt, "{cause}")
             },
-            #[cfg(feature = "error-value")]
-            Error::Value(val) => {
-                write!(fmt, "{val:?}")
-            }
+
         }
     }
 }

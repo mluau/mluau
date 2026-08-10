@@ -207,7 +207,7 @@ impl Table {
     /// table2.set(2, "value")?;
     ///
     /// let always_equals_mt = lua.create_table()?;
-    /// always_equals_mt.set("__eq", lua.create_function(|_, (_t1, _t2): (Table, Table)| Ok(true))?)?;
+    /// always_equals_mt.set("__eq", lua.create_function(|_, (_t1, _t2): (Table, Table)| Ok::<_, mluau::Error>(true))?)?;
     /// table2.set_metatable(Some(always_equals_mt))?;
     ///
     /// assert!(table1.equals(&table1.clone())?);
@@ -1137,7 +1137,7 @@ where
                 check_stack(state, 5)?;
 
                 lua.push_ref_at(&self.table.0, state);
-                lua.push_value_at(&prev_key, state)?;
+                lua.push_value_at(&prev_key, state);
 
                 // It must be safe to call `lua_next` unprotected as deleting a key from a table is
                 // a permitted operation.
@@ -1197,7 +1197,7 @@ where
                 check_stack(state, 5)?;
 
                 lua.push_ref_at(&self.table.0, state);
-                lua.push_value_at(&prev_key, state)?;
+                lua.push_value_at(&prev_key, state);
 
                 // It must be safe to call `lua_next` unprotected as deleting a key from a table is
                 // a permitted operation.

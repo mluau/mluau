@@ -10,6 +10,12 @@ use crate::types::MaybeSend;
 use crate::util::{check_stack, parse_lookup_path, short_type_name};
 use crate::value::Value;
 
+/// Trait for types convertible to a Lua error value.
+pub trait IntoLuaErr: Sized {
+    /// Performs the conversion.
+    fn into_lua_err(self, lua: &Lua) -> Result<Value>;
+}
+
 /// Trait for types convertible to [`Value`].
 pub trait IntoLua: Sized {
     /// Performs the conversion.
@@ -22,7 +28,8 @@ pub trait IntoLua: Sized {
     #[doc(hidden)]
     #[inline]
     unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
-        lua.push_value_at(&self.into_lua(lua.lua())?, state)
+        lua.push_value_at(&self.into_lua(lua.lua())?, state);
+        Ok(())
     }
 }
 
@@ -95,7 +102,7 @@ pub trait IntoLuaMulti: Sized {
         unsafe {
             check_stack(state, len + 1)?;
             for val in &values {
-                lua.push_value_at(val, state)?;
+                lua.push_value_at(val, state);
             }
         }
         Ok(len)

@@ -578,7 +578,7 @@ impl RawLua {
     /// Pushes a `Value` (by reference) onto the specified Lua stack.
     ///
     /// Uses 3 stack spaces, does not call `checkstack`.
-    pub unsafe fn push_value_at(&self, value: &Value, state: *mut ffi::lua_State) -> Result<()> {
+    pub unsafe fn push_value_at(&self, value: &Value, state: *mut ffi::lua_State) {
         match value {
             Value::Nil => ffi::lua_pushnil(state),
             #[cfg(feature = "none-primitive")]
@@ -610,7 +610,6 @@ impl RawLua {
             Value::Object(o) => self.push_ref_at(&o.0, state),
             Value::Other(vref) => self.push_ref_at(vref, state),
         }
-        Ok(())
     }
 
     pub unsafe fn pop_value_at(&self, state: *mut ffi::lua_State) -> Result<Value> {
@@ -1181,7 +1180,7 @@ impl RawLua {
                     let rawlua = (*extra).raw_lua();
                     match (*upvalue).data {
                         Some(ref func) => func(rawlua, nargs),
-                        None => Err(Error::CallbackDestructed),
+                        None => Err(crate::state::util::map_err_to_value(rawlua.lua(), Error::CallbackDestructed)),
                     }
                 },
                 false,
@@ -1226,7 +1225,7 @@ impl RawLua {
                         let rawlua = (*extra).raw_lua();
                         match (*upvalue).data {
                             Some(ref func) => func(rawlua, nargs),
-                            None => Err(Error::CallbackDestructed),
+                            None => Err(crate::state::util::map_err_to_value(rawlua.lua(), Error::CallbackDestructed)),
                         }
                     },
                     false,
@@ -1267,7 +1266,7 @@ impl RawLua {
                     let rawlua = (*extra).raw_lua();
                     match (*upvalue).data {
                         Some(ref func) => func(rawlua, nargs),
-                        None => Err(Error::CallbackDestructed),
+                        None => Err(crate::state::util::map_err_to_value(rawlua.lua(), Error::CallbackDestructed)),
                     }
                 },
                 false,
@@ -1302,22 +1301,22 @@ impl RawLua {
                     let method = unsafe {
                         let name = ffi::lua_namecallatom(state, std::ptr::null_mut());
                         if name.is_null() {
-                            return Err(Error::runtime("Namecall method is not set"));
+                            return Err(crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::runtime("Namecall method is not set")));
                         }
 
                         let name = CStr::from_ptr(name);
                         let name = name
                             .to_str()
-                            .map_err(|_| Error::runtime("Invalid namecall method"))?;
+                            .map_err(|_| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::runtime("Invalid namecall method")))?;
                         if name.is_empty() {
-                            return Err(Error::runtime("Namecall method is empty"));
+                            return Err(crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::runtime("Namecall method is empty")));
                         }
 
                         name
                     };
 
                     let Some(ref data) = (*upvalue).data else {
-                        return Err(Error::CallbackDestructed);
+                        return Err(crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::CallbackDestructed));
                     };
 
                     if let Some(func) = data.map.get(method) {
@@ -1331,7 +1330,7 @@ impl RawLua {
                         let rawlua = (*extra).raw_lua();
                         (dynamic_method)(rawlua, method, nargs)
                     } else {
-                        Err(Error::runtime(format!("Method `{}` not found", method)))
+                        Err(crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::runtime(format!("Method `{}` not found", method))))
                     }
                 },
                 false,
@@ -1378,8 +1377,8 @@ impl RawLua {
                     // executed
                     let rawlua = (*extra).raw_lua();
                     match (*upvalue).data {
-                        Some(ref func) => (func.0)(rawlua, nargs),
-                        None => Err(Error::CallbackDestructed),
+                        Some(ref cont) => (cont.0)(rawlua, nargs),
+                        None => Err(crate::state::util::map_err_to_value(rawlua.lua(), Error::CallbackDestructed)),
                     }
                 },
                 true,
@@ -1397,8 +1396,8 @@ impl RawLua {
                     // executed
                     let rawlua = (*extra).raw_lua();
                     match (*upvalue).data {
-                        Some(ref func) => (func.1)(rawlua, nargs, status),
-                        None => Err(Error::CallbackDestructed),
+                        Some(ref cont) => (cont.1)(rawlua, nargs, status),
+                        None => Err(crate::state::util::map_err_to_value(rawlua.lua(), Error::CallbackDestructed)),
                     }
                 },
                 true,

@@ -44,10 +44,10 @@ fn test_methods() -> Result<()> {
 
     impl UserData for MyUserData {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_method("get_value", |_, data, ()| Ok(data.0));
+            methods.add_method("get_value", |_, data, ()| Ok::<_, mluau::Error>(data.0));
             methods.add_method_mut("set_value", |_, data, args| {
                 data.0 = args;
-                Ok(())
+                Ok::<_, mluau::Error>(())
             });
         }
     }
@@ -94,10 +94,10 @@ fn test_method_variadic() -> Result<()> {
 
     impl UserData for MyUserData {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_method("get", |_, data, ()| Ok(data.0));
+            methods.add_method("get", |_, data, ()| Ok::<_, mluau::Error>(data.0));
             methods.add_method_mut("add", |_, data, vals: Variadic<i64>| {
                 data.0 += vals.into_iter().sum::<i64>();
-                Ok(())
+                Ok::<_, mluau::Error>(())
             });
         }
     }
@@ -119,18 +119,18 @@ fn test_metamethods() -> Result<()> {
 
     impl UserData for MyUserData {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_method("get", |_, data, ()| Ok(data.0));
+            methods.add_method("get", |_, data, ()| Ok::<_, mluau::Error>(data.0));
             methods.add_meta_function(
                 MetaMethod::Add,
-                |_, (lhs, rhs): (UserDataRef<Self>, UserDataRef<Self>)| Ok(MyUserData(lhs.0 + rhs.0)),
+                |_, (lhs, rhs): (UserDataRef<Self>, UserDataRef<Self>)| Ok::<_, mluau::Error>(MyUserData(lhs.0 + rhs.0)),
             );
             methods.add_meta_function(
                 MetaMethod::Sub,
-                |_, (lhs, rhs): (UserDataRef<Self>, UserDataRef<Self>)| Ok(MyUserData(lhs.0 - rhs.0)),
+                |_, (lhs, rhs): (UserDataRef<Self>, UserDataRef<Self>)| Ok::<_, mluau::Error>(MyUserData(lhs.0 - rhs.0)),
             );
             methods.add_meta_function(
                 MetaMethod::Eq,
-                |_, (lhs, rhs): (UserDataRef<Self>, UserDataRef<Self>)| Ok(lhs.0 == rhs.0),
+                |_, (lhs, rhs): (UserDataRef<Self>, UserDataRef<Self>)| Ok::<_, mluau::Error>(lhs.0 == rhs.0),
             );
             methods.add_meta_method(MetaMethod::Index, |_, data, index: String| {
                 if index.to_str()? == "inner" {
@@ -266,7 +266,7 @@ fn test_gc_userdata() -> Result<()> {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
             methods.add_method("access", |_, this, ()| {
                 assert_eq!(this.id, 123);
-                Ok(())
+                Ok::<_, mluau::Error>(())
             });
         }
     }
@@ -303,7 +303,7 @@ fn test_userdata_take() -> Result<()> {
 
     impl UserData for MyUserdata {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_method("num", |_, this, ()| Ok(*this.0))
+            methods.add_method("num", |_, this, ()| Ok::<_, mluau::Error>(*this.0))
         }
     }
 
@@ -385,7 +385,7 @@ fn test_userdata_destroy() -> Result<()> {
                     Err(Error::UserDataBorrowMutError) => {}
                     r => panic!("expected `UserDataBorrowMutError` error, got {:?}", r),
                 }
-                Ok(())
+                Ok::<_, mluau::Error>(())
             });
         }
     }
@@ -432,7 +432,7 @@ fn test_userdata_method_once() -> Result<()> {
 
     impl UserData for MyUserdata {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_method_once("take_value", |_, this, ()| Ok(*this.0));
+            methods.add_method_once("take_value", |_, this, ()| Ok::<_, mluau::Error>(*this.0));
         }
     }
 
@@ -497,15 +497,15 @@ fn test_functions() -> Result<()> {
     impl UserData for MyUserData {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
             methods.add_function("get_value_fn", |_, ud: AnyUserData| {
-                Ok(ud.borrow::<MyUserData>()?.0)
+                Ok::<_, mluau::Error>(ud.borrow::<MyUserData>()?.0)
             });
             methods.add_function_mut("set_value_fn", |_, (ud, value): (AnyUserData, i64)| {
                 ud.borrow_mut::<MyUserData>()?.0 = value;
-                Ok(())
+                Ok::<_, mluau::Error>(())
             });
-            methods.add_function("get_constant", |_, ()| Ok(7));
+            methods.add_function("get_constant", |_, ()| Ok::<_, mluau::Error>(7));
             methods.add_function("not_me", |_, ud: AnyUserData| {
-                Ok(ud.borrow::<MyUserData>().is_err())
+                Ok::<_, mluau::Error>(ud.borrow::<MyUserData>().is_err())
             });
         }
     }
@@ -606,15 +606,15 @@ fn test_fields() -> Result<()> {
     impl UserData for MyUserData {
         fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
             fields.add_field("static", "constant");
-            fields.add_field_method_get("val", |_, data| Ok(data.0));
+            fields.add_field_method_get("val", |_, data| Ok::<_, mluau::Error>(data.0));
             fields.add_field_method_set("val", |_, data, val| {
                 data.0 = val;
-                Ok(())
+                Ok::<_, mluau::Error>(())
             });
 
             // Field that emulates method
             fields.add_field_function_get("val_fget", |lua, ud| {
-                lua.create_function(move |_, ()| Ok(ud.borrow::<MyUserData>()?.0))
+                lua.create_function(move |_, ()| Ok::<_, mluau::Error>(ud.borrow::<MyUserData>()?.0))
             });
 
             // Use userdata "uservalue" storage
@@ -625,13 +625,13 @@ fn test_fields() -> Result<()> {
             fields.add_meta_field_with(MetaMethod::NewIndex, |lua| {
                 lua.create_function(|lua, (_, field, val): (AnyUserData, String, Value)| {
                     lua.globals().set(field, val)?;
-                    Ok(())
+                    Ok::<_, mluau::Error>(())
                 })
             })
         }
 
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_method("dummy", |_, _, ()| Ok(()));
+            methods.add_method("dummy", |_, _, ()| Ok::<_, mluau::Error>(()));
         }
     }
 
@@ -662,13 +662,13 @@ fn test_fields() -> Result<()> {
     impl UserData for MyUserData2 {
         fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
             fields.add_field("z", 0);
-            fields.add_field_method_get("x", |_, data| Ok(data.0));
+            fields.add_field_method_get("x", |_, data| Ok::<_, mluau::Error>(data.0));
         }
 
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
             methods.add_meta_method(MetaMethod::Index, |_, _, name: StdString| match &*name {
-                "y" => Ok(Some(-1)),
-                _ => Ok(None),
+                "y" => Ok::<_, mluau::Error>(Some(-1)),
+                _ => Ok::<_, mluau::Error>(None),
             });
         }
     }
@@ -733,7 +733,7 @@ fn test_metatable() -> Result<()> {
 
     impl UserData for MyUserData2 {
         fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
-            fields.add_meta_field_with("__index", |_| Ok(1));
+            fields.add_meta_field_with("__index", |_| Ok::<_, mluau::Error>(1));
         }
     }
 
@@ -748,7 +748,7 @@ fn test_metatable() -> Result<()> {
 
     impl UserData for MyUserData3 {
         fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
-            fields.add_meta_field_with(MetaMethod::Type, |_| Ok("CustomName"));
+            fields.add_meta_field_with(MetaMethod::Type, |_| Ok::<_, mluau::Error>("CustomName"));
         }
     }
 
@@ -776,13 +776,13 @@ fn test_userdata_proxy() -> Result<()> {
     impl UserData for MyUserData {
         fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
             fields.add_field("static_field", 123);
-            fields.add_field_method_get("n", |_, this| Ok(this.0));
+            fields.add_field_method_get("n", |_, this| Ok::<_, mluau::Error>(this.0));
         }
 
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_function("new", |_, n| Ok(Self(n)));
+            methods.add_function("new", |_, n| Ok::<_, mluau::Error>(Self(n)));
 
-            methods.add_method("plus", |_, this, n: i64| Ok(this.0 + n));
+            methods.add_method("plus", |_, this, n: i64| Ok::<_, mluau::Error>(this.0 + n));
         }
     }
 
@@ -815,10 +815,10 @@ fn test_any_userdata() -> Result<()> {
     let lua = Lua::new();
 
     lua.register_userdata_type::<StdString>(|reg| {
-        reg.add_method("get", |_, this, ()| Ok(this.clone()));
+        reg.add_method("get", |_, this, ()| Ok::<_, mluau::Error>(this.clone()));
         reg.add_method_mut("concat", |_, this, s: String| {
             this.push_str(&s.to_string_lossy());
-            Ok(())
+            Ok::<_, mluau::Error>(())
         });
     })?;
 
@@ -844,7 +844,7 @@ fn test_any_userdata_wrap() -> Result<()> {
     let lua = Lua::new();
 
     lua.register_userdata_type::<StdString>(|reg| {
-        reg.add_method("get", |_, this, ()| Ok(this.clone()));
+        reg.add_method("get", |_, this, ()| Ok::<_, mluau::Error>(this.clone()));
     })?;
 
     lua.globals().set("s", AnyUserData::wrap("hello".to_string()))?;
@@ -868,18 +868,18 @@ fn test_userdata_object_like() -> Result<()> {
 
     impl UserData for MyUserData {
         fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
-            fields.add_field_method_get("n", |_, this| Ok(this.0));
+            fields.add_field_method_get("n", |_, this| Ok::<_, mluau::Error>(this.0));
             fields.add_field_method_set("n", |_, this, val| {
                 this.0 = val;
-                Ok(())
+                Ok::<_, mluau::Error>(())
             });
         }
 
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_meta_method(MetaMethod::Call, |_, _this, ()| Ok("called"));
+            methods.add_meta_method(MetaMethod::Call, |_, _this, ()| Ok::<_, mluau::Error>("called"));
             methods.add_method_mut("add", |_, this, x: u32| {
                 this.0 += x;
-                Ok(())
+                Ok::<_, mluau::Error>(())
             });
         }
     }
@@ -918,7 +918,7 @@ fn test_userdata_method_errors() -> Result<()> {
 
     impl UserData for MyUserData {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_method("get_value", |_, data, ()| Ok(data.0));
+            methods.add_method("get_value", |_, data, ()| Ok::<_, mluau::Error>(data.0));
         }
     }
 
@@ -1403,7 +1403,7 @@ fn test_userdata_fields() -> Result<()> {
         }
 
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_method("foo", |_, _this, ()| Ok(()));
+            methods.add_method("foo", |_, _this, ()| Ok::<_, mluau::Error>(()));
         }
 
         fn register(registry: &mut mluau::UserDataRegistry<Self>) {
@@ -1475,7 +1475,7 @@ fn test_userdata_dynamic() -> Result<()> {
         "bar",
         lua.create_function(|_lua, ud: AnyUserData| {
             let dt = ud.dynamic_data::<MyDynamicData>()?;
-            Ok(dt.dropped_ref.load(std::sync::atomic::Ordering::Acquire))
+            Ok::<_, mluau::Error>(dt.dropped_ref.load(std::sync::atomic::Ordering::Acquire))
         })?,
     )?;
     mt1.set("__index", index_tab)?;

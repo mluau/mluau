@@ -259,9 +259,10 @@ pub trait UserDataMethods<T> {
     ///
     /// If `add_meta_method` is used to set the `__index` metamethod, the `__index` metamethod will
     /// be used as a fall-back if no regular method is found.
-    fn add_method<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
+    fn add_method<M, A, R, E>(&mut self, name: impl Into<StdString>, method: M)
     where
-        M: Fn(&Lua, &T, A) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        M: Fn(&Lua, &T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
@@ -273,13 +274,14 @@ pub trait UserDataMethods<T> {
     ///
     /// [`add_method`]: UserDataMethods::add_method
 
-    fn add_method_with_debug<M, A, R>(
+    fn add_method_with_debug<M, A, R, E>(
         &mut self,
         name: impl Into<StdString>,
         debugname: &'static CStr,
         method: M,
     ) where
-        M: Fn(&Lua, &T, A) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        M: Fn(&Lua, &T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
@@ -288,9 +290,10 @@ pub trait UserDataMethods<T> {
     /// Refer to [`add_method`] for more information about the implementation.
     ///
     /// [`add_method`]: UserDataMethods::add_method
-    fn add_method_mut<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
+    fn add_method_mut<M, A, R, E>(&mut self, name: impl Into<StdString>, method: M)
     where
-        M: FnMut(&Lua, &mut T, A) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        M: FnMut(&Lua, &mut T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
@@ -302,13 +305,14 @@ pub trait UserDataMethods<T> {
     ///
     /// [`add_method_mut`]: UserDataMethods::add_method_mut
 
-    fn add_method_mut_with_debug<M, A, R>(
+    fn add_method_mut_with_debug<M, A, R, E>(
         &mut self,
         name: impl Into<StdString>,
         debugname: &'static CStr,
         method: M,
     ) where
-        M: FnMut(&Lua, &mut T, A) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        M: FnMut(&Lua, &mut T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
@@ -320,18 +324,33 @@ pub trait UserDataMethods<T> {
     /// The method can be called only once per userdata instance, subsequent calls will result in a
     /// [`Error::UserDataDestructed`] error.
     #[doc(hidden)]
-    fn add_method_once<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
+    fn add_method_once<M, A, R, E>(&mut self, name: impl Into<StdString>, method: M)
     where
         T: 'static,
-        M: Fn(&Lua, T, A) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        M: Fn(&Lua, T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti,
     {
         let name = name.into();
         let method_name = format!("{}.{name}", short_type_name::<T>());
+        
+        enum Err<E> {
+            Core(Error),
+            User(E),
+        }
+        impl<E: crate::traits::IntoLuaErr> crate::traits::IntoLuaErr for Err<E> {
+            fn into_lua_err(self, lua: &Lua) -> crate::error::Result<crate::Value> {
+                match self {
+                    Err::Core(e) => e.into_lua_err(lua),
+                    Err::User(e) => e.into_lua_err(lua),
+                }
+            }
+        }
+        
         self.add_function(name, move |lua, (ud, args): (AnyUserData, A)| {
-            let this = (ud.take()).map_err(|err| Error::bad_self_argument(&method_name, err))?;
-            method(lua, this, args)
+            let this = (ud.take()).map_err(|err| Err::Core(Error::bad_self_argument(&method_name, err)))?;
+            method(lua, this, args).map_err(Err::User)
         });
     }
 
@@ -340,9 +359,10 @@ pub trait UserDataMethods<T> {
     /// The first argument will be a [`AnyUserData`] of type `T` if the method is called with Lua
     /// method syntax: `my_userdata:my_method(arg1, arg2)`, or it is passed in as the first
     /// argument: `my_userdata.my_method(my_userdata, arg1, arg2)`.
-    fn add_function<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
+    fn add_function<F, A, R, E>(&mut self, name: impl Into<StdString>, function: F)
     where
-        F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        F: Fn(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
@@ -352,13 +372,14 @@ pub trait UserDataMethods<T> {
     ///
     /// [`add_function`]: UserDataMethods::add_function
 
-    fn add_function_with_debug<F, A, R>(
+    fn add_function_with_debug<F, A, R, E>(
         &mut self,
         name: impl Into<StdString>,
         debugname: &'static CStr,
         function: F,
     ) where
-        F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        F: Fn(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
@@ -367,9 +388,10 @@ pub trait UserDataMethods<T> {
     /// This is a version of [`add_function`] that accepts a `FnMut` argument.
     ///
     /// [`add_function`]: UserDataMethods::add_function
-    fn add_function_mut<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
+    fn add_function_mut<F, A, R, E>(&mut self, name: impl Into<StdString>, function: F)
     where
-        F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        F: FnMut(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
@@ -380,13 +402,14 @@ pub trait UserDataMethods<T> {
     ///
     /// [`add_function`]: UserDataMethods::add_function
 
-    fn add_function_mut_with_debug<F, A, R>(
+    fn add_function_mut_with_debug<F, A, R, E>(
         &mut self,
         name: impl Into<StdString>,
         debugname: &'static CStr,
         function: F,
     ) where
-        F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        F: FnMut(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
@@ -398,9 +421,10 @@ pub trait UserDataMethods<T> {
     /// side has a metatable. To prevent this, use [`add_meta_function`].
     ///
     /// [`add_meta_function`]: UserDataMethods::add_meta_function
-    fn add_meta_method<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
+    fn add_meta_method<M, A, R, E>(&mut self, name: impl Into<StdString>, method: M)
     where
-        M: Fn(&Lua, &T, A) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        M: Fn(&Lua, &T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
@@ -412,9 +436,10 @@ pub trait UserDataMethods<T> {
     /// side has a metatable. To prevent this, use [`add_meta_function`].
     ///
     /// [`add_meta_function`]: UserDataMethods::add_meta_function
-    fn add_meta_method_mut<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
+    fn add_meta_method_mut<M, A, R, E>(&mut self, name: impl Into<StdString>, method: M)
     where
-        M: FnMut(&Lua, &mut T, A) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        M: FnMut(&Lua, &mut T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
@@ -423,9 +448,10 @@ pub trait UserDataMethods<T> {
     /// Metamethods for binary operators can be triggered if either the left or right argument to
     /// the binary operator has a metatable, so the first argument here is not necessarily a
     /// userdata of type `T`.
-    fn add_meta_function<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
+    fn add_meta_function<F, A, R, E>(&mut self, name: impl Into<StdString>, function: F)
     where
-        F: Fn(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        F: Fn(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;
 
@@ -434,9 +460,10 @@ pub trait UserDataMethods<T> {
     /// This is a version of [`add_meta_function`] that accepts a `FnMut` argument.
     ///
     /// [`add_meta_function`]: UserDataMethods::add_meta_function
-    fn add_meta_function_mut<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
+    fn add_meta_function_mut<F, A, R, E>(&mut self, name: impl Into<StdString>, function: F)
     where
-        F: FnMut(&Lua, A) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        F: FnMut(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti;
 }
@@ -463,9 +490,10 @@ pub trait UserDataFields<T> {
     ///
     /// If `add_meta_method` is used to set the `__index` metamethod, the `__index` metamethod will
     /// be used as a fall-back if no regular field or method are found.
-    fn add_field_method_get<M, R>(&mut self, name: impl Into<StdString>, method: M)
+    fn add_field_method_get<M, R, E>(&mut self, name: impl Into<StdString>, method: M)
     where
-        M: Fn(&Lua, &T) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        M: Fn(&Lua, &T) -> std::result::Result<R, E> + MaybeSend + 'static,
         R: IntoLua;
 
     /// Add a regular field setter as a method which accepts a `&mut T` as the first parameter.
@@ -476,23 +504,26 @@ pub trait UserDataFields<T> {
     ///
     /// If `add_meta_method` is used to set the `__newindex` metamethod, the `__newindex` metamethod
     /// will be used as a fall-back if no regular field is found.
-    fn add_field_method_set<M, A>(&mut self, name: impl Into<StdString>, method: M)
+    fn add_field_method_set<M, A, E>(&mut self, name: impl Into<StdString>, method: M)
     where
-        M: FnMut(&Lua, &mut T, A) -> Result<()> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        M: FnMut(&Lua, &mut T, A) -> std::result::Result<(), E> + MaybeSend + 'static,
         A: FromLua;
 
     /// Add a regular field getter as a function which accepts a generic [`AnyUserData`] of type `T`
     /// argument.
-    fn add_field_function_get<F, R>(&mut self, name: impl Into<StdString>, function: F)
+    fn add_field_function_get<F, R, E>(&mut self, name: impl Into<StdString>, function: F)
     where
-        F: Fn(&Lua, AnyUserData) -> Result<R> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        F: Fn(&Lua, AnyUserData) -> std::result::Result<R, E> + MaybeSend + 'static,
         R: IntoLua;
 
     /// Add a regular field setter as a function which accepts a generic [`AnyUserData`] of type `T`
     /// first argument.
-    fn add_field_function_set<F, A>(&mut self, name: impl Into<StdString>, function: F)
+    fn add_field_function_set<F, A, E>(&mut self, name: impl Into<StdString>, function: F)
     where
-        F: FnMut(&Lua, AnyUserData, A) -> Result<()> + MaybeSend + 'static,
+        E: crate::traits::IntoLuaErr,
+        F: FnMut(&Lua, AnyUserData, A) -> std::result::Result<(), E> + MaybeSend + 'static,
         A: FromLua;
 
     /// Add a metatable field.
@@ -515,9 +546,10 @@ pub trait UserDataFields<T> {
     ///
     /// `mlua` will trigger an error on an attempt to define a protected metamethod,
     /// like `__gc` or `__metatable`.
-    fn add_meta_field_with<F, R>(&mut self, name: impl Into<StdString>, f: F)
+    fn add_meta_field_with<F, R, E>(&mut self, name: impl Into<StdString>, f: F)
     where
-        F: FnOnce(&Lua) -> Result<R> + 'static,
+        E: crate::traits::IntoLuaErr,
+        F: FnOnce(&Lua) -> std::result::Result<R, E> + 'static,
         R: IntoLua;
 }
 
@@ -558,17 +590,17 @@ pub trait UserDataFields<T> {
 ///
 /// impl UserData for MyUserData {
 ///     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
-///         fields.add_field_method_get("val", |_, this| Ok(this.0));
+///         fields.add_field_method_get("val", |_, this| Ok::<_, mluau::Error>(this.0));
 ///     }
 ///
 ///     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
 ///         methods.add_method_mut("add", |_, mut this, value: i32| {
 ///             this.0 += value;
-///             Ok(())
+///             Ok::<_, mluau::Error>(())
 ///         });
 ///
 ///         methods.add_meta_method(MetaMethod::Add, |_, this, value: i32| {
-///             Ok(this.0 + value)
+///             Ok::<_, mluau::Error>(this.0 + value)
 ///         });
 ///     }
 /// }

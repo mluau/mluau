@@ -37,7 +37,8 @@ impl IntoLua for &Value {
 
     #[inline]
     unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
-        lua.push_value_at(self, state)
+        lua.push_value_at(self, state);
+        Ok(())
     }
 }
 
@@ -548,12 +549,16 @@ impl FromLua for crate::Object {
 impl IntoLua for StdString {
     #[inline]
     fn into_lua(self, lua: &Lua) -> Result<Value> {
-        Ok(Value::String(lua.create_string(self)?))
+        Ok(Value::String(lua.create_external_string(self)?))
     }
 
     #[inline]
-    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
-        push_bytes_into_stack(self, lua, state)
+    unsafe fn push_into_specified_stack(self, _lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
+        use crate::string::ExternalString;
+        let (ptr, len, userdata) = self.into_ext_parts()?;
+        let free_cb = Some(StdString::free_string as ffi::lua_StringFree);
+        crate::util::push_external_string(state, ptr as *const _, len, userdata, free_cb)?;
+        Ok(())
     }
 }
 
@@ -875,7 +880,8 @@ unsafe fn push_bytes_into_stack<T>(this: T, lua: &RawLua, state: *mut ffi::lua_S
 where
     T: IntoLua + AsRef<[u8]>,
 {
-    lua.push_value_at(&T::into_lua(this, lua.lua())?, state)
+    lua.push_value_at(&T::into_lua(this, lua.lua())?, state);
+    Ok(())
 }
 
 macro_rules! lua_convert_int {
@@ -1288,3 +1294,27 @@ impl<L: FromLua, R: FromLua> FromLua for Either<L, R> {
         }
     }
 }
+
+use crate::traits::IntoLuaErr;
+
+impl IntoLuaErr for StdString {
+    #[inline]
+    fn into_lua_err(self, lua: &Lua) -> Result<Value> {
+        self.into_lua(lua)
+    }
+}
+
+impl IntoLuaErr for Box<dyn std::error::Error + Send + Sync> {
+    #[inline]
+    fn into_lua_err(self, lua: &Lua) -> Result<Value> {
+        self.to_string().into_lua_err(lua)
+    }
+}
+
+impl IntoLuaErr for crate::error::Error {
+    #[inline]
+    fn into_lua_err(self, lua: &Lua) -> Result<Value> {
+        self.to_string().into_lua_err(lua)
+    }
+}
+

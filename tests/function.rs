@@ -80,7 +80,7 @@ fn test_function_environment() -> Result<()> {
     let globals = lua.globals();
 
     // We must not get or set environment for C functions
-    let rust_func = lua.create_function(|_, ()| Ok("hello"))?;
+    let rust_func = lua.create_function(|_, ()| Ok::<_, mluau::Error>("hello"))?;
     assert_eq!(rust_func.environment(), None);
     assert_eq!(rust_func.set_environment(globals.clone()).ok(), Some(false));
 
@@ -159,7 +159,7 @@ fn test_function_info() -> Result<()> {
 
     let function1 = globals.get::<Function>("function1")?;
     let function2 = function1.call::<Function>(())?;
-    let function3 = lua.create_function(|_, ()| Ok(()))?;
+    let function3 = lua.create_function(|_, ()| Ok::<_, mluau::Error>(()))?;
 
     let function1_info = function1.info();
 
@@ -317,7 +317,7 @@ fn test_function_deep_clone() -> Result<()> {
     assert_eq!(func2.call::<i32>(())?, 3);
 
     // Check that for Rust functions deep_clone is just a clone
-    let rust_func = lua.create_function(|_, ()| Ok(42))?;
+    let rust_func = lua.create_function(|_, ()| Ok::<_, mluau::Error>(42))?;
     let rust_func2 = rust_func.deep_clone()?;
     assert_eq!(rust_func.to_pointer(), rust_func2.to_pointer());
 

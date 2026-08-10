@@ -103,6 +103,16 @@ impl Lua {
     }
 
     pub(crate) unsafe fn configure_luau(&self) -> Result<()> {
+        // init needed fflags
+        {
+            static INIT_FFLAGS: std::sync::Once = std::sync::Once::new();
+            INIT_FFLAGS.call_once(|| {
+                for fflag in ENABLED_FFLAGS {
+                    mlua_expect!(Self::set_fflag_inner(fflag, true), "base fflag {fflag} not set",)
+                }
+            });
+        }
+        
         let globals = self.globals();
 
         globals.raw_set("collectgarbage", self.create_c_function(lua_collectgarbage)?)?;
@@ -117,16 +127,6 @@ impl Lua {
         // Enable default `require` implementation
         let require = self.create_require_function(require::TextRequirer::new())?;
         self.globals().raw_set("require", require)?;
-
-        // init needed fflags
-        {
-            static INIT_FFLAGS: std::sync::Once = std::sync::Once::new();
-            INIT_FFLAGS.call_once(|| {
-                for fflag in ENABLED_FFLAGS {
-                    mlua_expect!(Self::set_fflag_inner(fflag, true), "base fflag {fflag} not set",)
-                }
-            });
-        }
 
         // Register the `class` global table when the user-defined-classes runtime fastflag is
         // enabled, mirroring what Luau's own `luaL_openlibs` does internally when that flag is on.
@@ -188,21 +188,24 @@ unsafe extern "C-unwind" fn lua_collectgarbage(state: *mut ffi::lua_State) -> c_
 
 unsafe extern "C-unwind" fn lua_loadstring(state: *mut ffi::lua_State) -> c_int {
     callback_error_ext(state, ptr::null_mut(), move |extra, nargs| {
-        let rawlua = (*extra).raw_lua();
-        let (chunk, chunk_name) = <(String, Option<String>)>::from_specified_stack_args(
-            nargs,
-            1,
-            Some("loadstring"),
-            rawlua,
-            state,
-        )?;
-        let chunk_name = chunk_name.as_deref().unwrap_or("=(loadstring)");
-        (rawlua.lua())
-            .load(chunk)
-            .set_name(chunk_name)
-            .into_function()?
-            .push_into_specified_stack(rawlua, state)?;
-        Ok(1)
+        let wrap = || -> crate::error::Result<c_int> {
+            let rawlua = (*extra).raw_lua();
+            let (chunk, chunk_name) = <(String, Option<String>)>::from_specified_stack_args(
+                nargs,
+                1,
+                Some("loadstring"),
+                rawlua,
+                state,
+            )?;
+            let chunk_name = chunk_name.as_deref().unwrap_or("=(loadstring)");
+            (rawlua.lua())
+                .load(chunk)
+                .set_name(chunk_name)
+                .into_function()?
+                .push_into_specified_stack(rawlua, state)?;
+            Ok(1)
+        };
+        wrap().map_err(|e| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), e))
     })
 }
 

@@ -3,7 +3,6 @@ use std::mem::take;
 use std::os::raw::c_int;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use crate::error::Result;
 use crate::state::extra::{RefThread, REF_STACK_RESERVE};
 use crate::state::{ExtraData, RawLua};
 use crate::util::check_stack;
@@ -23,17 +22,12 @@ impl Drop for StateGuard<'_> {
     }
 }
 
-pub(crate) unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s: String) {
-    use crate::string::ExternalString;
-
+pub(crate) unsafe fn push_error_value(state: *mut ffi::lua_State, extra: *mut ExtraData, err: crate::Value) {
+    let raw_lua = (*extra).raw_lua();
     let res = protect_lua!(state, 0, 1, |state| {
         let _ = check_stack(state, 1);
-        let free_cb = Some(String::free_string as ffi::lua_StringFree);
-        // Note that this is unfailable and could technically be a unwrap_unchecked
-        let (ptr, len, userdata) = s.into_ext_parts().unwrap();
-
         crate::memory::MemoryState::relax_limit_with(state, || {
-            ffi::lua_pushexternalstring(state, ptr as *const std::os::raw::c_char, len, userdata, free_cb);
+            raw_lua.push_value_at(&err, state);
         });
     });
 
@@ -44,6 +38,17 @@ pub(crate) unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut E
         let ref_thread = (*extra).ref_thread_internal.ref_thread;
         ffi::lua_pushvalue(ref_thread, ExtraData::MEMORY_ERROR_IDX);
         ffi::lua_xmove(ref_thread, state, 1);
+    }
+}
+
+#[inline(always)]
+pub(crate) fn map_err_to_value<E: crate::traits::IntoLuaErr>(lua: &crate::Lua, err: E) -> crate::Value {
+    use crate::traits::IntoLuaErr;
+    match err.into_lua_err(lua) {
+        Ok(v) => v,
+        Err(e) => {
+            e.to_string().into_lua_err(lua).unwrap_or(crate::Value::Nil)
+        }
     }
 }
 
@@ -76,7 +81,7 @@ pub(crate) unsafe fn callback_error_ext<F, R>(
     f: F,
 ) -> R
 where
-    F: FnOnce(*mut ExtraData, c_int) -> Result<R>,
+    F: FnOnce(*mut ExtraData, c_int) -> std::result::Result<R, crate::Value>,
 {
     if extra.is_null() {
         extra = ExtraData::get(state);
@@ -93,18 +98,13 @@ where
             r
         }
         Ok(Err(err)) => {
-            // TODO: Fix this to handle error values
-            {
-                let err_string = err.to_string();
-                push_error_string(state, extra, err_string);
-                drop(err);
-            }
+            push_error_value(state, extra, err);
             ffi::lua_error(state);
         }
         Err(p) => {
             // Push the error message directly onto the stack
             let err_msg = extract_panic_str(p);
-            push_error_string(state, extra, err_msg);
+            push_error_value(state, extra, map_err_to_value((*extra).raw_lua().lua(), err_msg));
             ffi::lua_error(state);
         }
     }
@@ -121,7 +121,7 @@ pub(crate) unsafe fn callback_error_ext_yieldable<F>(
     #[allow(unused_variables)] in_callback_with_continuation: bool,
 ) -> c_int
 where
-    F: FnOnce(*mut ExtraData, c_int) -> Result<c_int>,
+    F: FnOnce(*mut ExtraData, c_int) -> std::result::Result<c_int, crate::Value>,
 {
     if extra.is_null() {
         extra = ExtraData::get(state);
@@ -159,12 +159,7 @@ where
                             return ffi::lua_yield(state, nargs);
                         }
                         Err(err) => {
-                            // TODO: Fix this to handle error values
-                            {
-                                let err_string = err.to_string();
-                                push_error_string(state, extra, err_string);
-                                drop(err);
-                            }
+                            push_error_value(state, extra, map_err_to_value(raw.lua(), err));
                             ffi::lua_error(state);
                         }
                     }
@@ -174,18 +169,13 @@ where
             r
         }
         Ok(Err(err)) => {
-            // TODO: Fix this to handle error values
-            {
-                let err_string = err.to_string();
-                push_error_string(state, extra, err_string);
-                drop(err);
-            }
+            push_error_value(state, extra, err);
             ffi::lua_error(state);
         }
         Err(p) => {
             // Push the error message directly onto the stack
             let err_msg = extract_panic_str(p);
-            push_error_string(state, extra, err_msg);
+            push_error_value(state, extra, map_err_to_value((*extra).raw_lua().lua(), err_msg));
             ffi::lua_error(state);
         }
     }
