@@ -119,3 +119,54 @@ fn test_disable_error_userdata() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_custom_error_value() -> Result<()> {
+    let lua = Lua::new();
+
+    struct MyTableError {
+        a: String,
+        b: i32,
+    }
+
+    impl mluau::IntoLuaErr for MyTableError {
+        fn into_lua_err(self, lua: &Lua) -> Result<mluau::Value> {
+            let table = lua.create_table()?;
+            table.set("a", self.a)?;
+            table.set("b", self.b)?;
+            Ok(mluau::Value::Table(table))
+        }
+    }
+
+    struct MyResult;
+    
+    impl mluau::IntoLuaResultMulti for MyResult {
+        type Item = ();
+        type Error = MyTableError;
+
+        fn into_result(self) -> std::result::Result<Self::Item, Self::Error> {
+            Err(MyTableError {
+                a: "hello".to_string(),
+                b: 42,
+            })
+        }
+    }
+
+    let func = lua.create_function(|_, ()| {
+        MyResult
+    })?;
+    lua.globals().set("func", func)?;
+
+    let res = lua.load(r#"
+        local ok, err = pcall(func)
+        assert(not ok, "function should have failed")
+        assert(type(err) == "table", "error should be a table")
+        assert(err.a == "hello", "err.a mismatch")
+        assert(err.b == 42, "err.b mismatch")
+        return true
+    "#).eval::<bool>()?;
+
+    assert!(res);
+
+    Ok(())
+}
