@@ -174,7 +174,6 @@ impl<'de> serde::Deserializer<'de> for Deserializer {
     {
         match self.value {
             Value::Nil => visitor.visit_unit(),
-            Value::None => visitor.visit_none(),
             Value::Boolean(b) => visitor.visit_bool(b),
             #[allow(clippy::useless_conversion)]
             Value::Integer(i) => visitor.visit_i64(i.into()),
@@ -195,6 +194,7 @@ impl<'de> serde::Deserializer<'de> for Deserializer {
                     self.deserialize_map(visitor)
                 }
             }
+            Value::LightUserData(ud) if ud.0.is_null() => visitor.visit_none(),
             Value::UserData(ud) if ud.is_serializable() => {
                 serde_userdata(ud, |value| value.deserialize_any(visitor))
             }
@@ -235,7 +235,7 @@ impl<'de> serde::Deserializer<'de> for Deserializer {
     {
         match self.value {
             Value::Nil => visitor.visit_none(),
-            Value::None => visitor.visit_none(),
+            Value::LightUserData(ud) if ud.0.is_null() => visitor.visit_none(),
             _ => visitor.visit_some(self),
         }
     }
@@ -420,7 +420,7 @@ impl<'de> serde::Deserializer<'de> for Deserializer {
         V: de::Visitor<'de>,
     {
         match self.value {
-            Value::None => visitor.visit_unit(),
+            Value::LightUserData(ud) if ud.0.is_null() => visitor.visit_unit(),
             _ => self.deserialize_any(visitor),
         }
     }
@@ -431,7 +431,7 @@ impl<'de> serde::Deserializer<'de> for Deserializer {
         V: de::Visitor<'de>,
     {
         match self.value {
-            Value::None => visitor.visit_unit(),
+            Value::LightUserData(ud) if ud.0.is_null() => visitor.visit_unit(),
             _ => self.deserialize_any(visitor),
         }
     }

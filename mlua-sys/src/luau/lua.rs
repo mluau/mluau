@@ -58,9 +58,6 @@ pub const LUA_TNUMBER: c_int = 3;
 pub const LUA_TINTEGER: c_int = 4;
 pub const LUA_TVECTOR: c_int = 5;
 
-#[cfg(feature = "none-primitive")]
-pub const LUA_TSYMNONE: c_int = 6;
-
 pub const LUA_TSTRING: c_int = 7;
 pub const LUA_TTABLE: c_int = 8;
 pub const LUA_TFUNCTION: c_int = 9;
@@ -68,9 +65,9 @@ pub const LUA_TUSERDATA: c_int = 10;
 pub const LUA_TTHREAD: c_int = 11;
 pub const LUA_TBUFFER: c_int = 12;
 #[cfg(feature = "luau-classes")]
-pub const LUA_TCLASS: c_int = 13;
+pub const LUA_TCLASS: c_int = 12;
 #[cfg(feature = "luau-classes")]
-pub const LUA_TOBJECT: c_int = 14;
+pub const LUA_TOBJECT: c_int = 13;
 
 pub const LUA_BLUAU: c_int = 0;
 pub const LUA_BHOST_IMMUTABLE: c_int = 1;
@@ -184,7 +181,7 @@ unsafe extern "C-unwind" {
     // Push functions (C -> stack)
     //
     pub fn lua_pushnil(L: *mut lua_State);
-    pub fn lua_pushsymnone(L: *mut lua_State);
+
     pub fn lua_pushnumber(L: *mut lua_State, n: lua_Number);
     #[link_name = "lua_pushinteger"]
     pub fn lua_pushinteger_(L: *mut lua_State, n: c_int);

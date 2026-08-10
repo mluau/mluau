@@ -21,8 +21,6 @@ pub static ENABLED_FFLAGS: &[&str] = &[
     "DebugLuauUserDefinedClasses",
     #[cfg(feature = "luau-classes")]
     "DebugLuauUserDefinedClassesRuntime",
-    #[cfg(feature = "none-primitive")]
-    "LuauNonePrimitive",
 ];
 
 pub static RESTRICTED_FFLAGS: &[&str] = &[
@@ -34,10 +32,7 @@ pub static RESTRICTED_FFLAGS: &[&str] = &[
     // luau-classes
     "DebugLuauUserDefinedClasses",
     "DebugLuauUserDefinedClassesRuntime",
-    // none primitive
-    "LuauNonePrimitive",
 ];
-
 // Since Luau has some missing standard functions, we re-implement them here
 
 impl Lua {
@@ -115,7 +110,8 @@ impl Lua {
         let require = self.create_require_function(require::TextRequirer::new())?;
         self.globals().raw_set("require", require)?;
 
-        // init needed fflags
+        // Unconditionally enable integer+extern buffers fflags to ensure safety on Luau
+        // TODO: Remove later
         {
             static INIT_FFLAGS: std::sync::Once = std::sync::Once::new();
             INIT_FFLAGS.call_once(|| {

@@ -905,9 +905,6 @@ impl Lua {
         unsafe { (*lua.extra.get()).enable_jit = enable };
     }
 
-    /// Sets Luau feature flag (global setting).
-    ///
-    /// See https://github.com/luau-lang/luau/blob/master/CONTRIBUTING.md#feature-flags for details.
     #[allow(clippy::result_unit_err)]
     pub fn set_fflag(name: &str, enabled: bool) -> StdResult<(), ()> {
         if RESTRICTED_FFLAGS.contains(&name) {
@@ -917,8 +914,10 @@ impl Lua {
         Self::set_fflag_inner(name, enabled)
     }
 
+    /// Sets Luau feature flag (global setting).
+    ///
+    /// See https://github.com/luau-lang/luau/blob/master/CONTRIBUTING.md#feature-flags for details.
     #[allow(clippy::result_unit_err)]
-    #[inline(always)]
     pub(crate) fn set_fflag_inner(name: &str, enabled: bool) -> StdResult<(), ()> {
         if let Ok(cname) = std::ffi::CString::new(name) {
             if unsafe { ffi::luau_setfflag(cname.as_ptr(), enabled as c_int) != 0 } {

@@ -31,8 +31,7 @@ fn test_value_eq() -> Result<()> {
     "#,
     )
     .exec()?;
-    #[cfg(feature = "none-primitive")]
-    globals.set("null", Value::None)?;
+    globals.set("null", Value::NULL)?;
 
     let table1: Value = globals.get("table1")?;
     let table2: Value = globals.get("table2")?;
@@ -46,7 +45,6 @@ fn test_value_eq() -> Result<()> {
     let func3: Value = globals.get("func3")?;
     let thread1: Value = globals.get("thread1")?;
     let thread2: Value = globals.get("thread2")?;
-    #[cfg(feature = "none-primitive")]
     let null: Value = globals.get("null")?;
 
     assert!(table1 != table2);
@@ -61,9 +59,7 @@ fn test_value_eq() -> Result<()> {
     assert!(!func1.equals(&func3)?);
     assert!(thread1 == thread2);
     assert!(thread1.equals(&thread2)?);
-
-    #[cfg(feature = "none-primitive")]
-    assert!(null == Value::None);
+    assert!(null == Value::NULL);
 
     assert!(!table1.to_pointer().is_null());
     assert!(!ptr::eq(table1.to_pointer(), table2.to_pointer()));
@@ -107,16 +103,13 @@ fn test_value_to_pointer() -> Result<()> {
     "#,
     )
     .exec()?;
-
-    #[cfg(feature = "none-primitive")]
-    globals.set("null", Value::None)?;
+    globals.set("null", Value::NULL)?;
 
     let table: Value = globals.get("table")?;
     let string: Value = globals.get("string")?;
     let num: Value = globals.get("num")?;
     let func: Value = globals.get("func")?;
     let thread: Value = globals.get("thread")?;
-    #[cfg(feature = "none-primitive")]
     let null: Value = globals.get("null")?;
     let ud: Value = Value::UserData(lua.create_any_userdata(())?);
 
@@ -125,7 +118,6 @@ fn test_value_to_pointer() -> Result<()> {
     assert!(num.to_pointer().is_null());
     assert!(!func.to_pointer().is_null());
     assert!(!thread.to_pointer().is_null());
-    #[cfg(feature = "none-primitive")]
     assert!(null.to_pointer().is_null());
     assert!(!ud.to_pointer().is_null());
 
@@ -140,10 +132,8 @@ fn test_value_to_string() -> Result<()> {
     assert_eq!(Value::Nil.type_name(), "nil");
     assert_eq!(Value::Boolean(true).to_string()?, "true");
     assert_eq!(Value::Boolean(true).type_name(), "boolean");
-    #[cfg(feature = "none-primitive")]
-    assert_eq!(Value::None.to_string()?, "none");
-    #[cfg(feature = "none-primitive")]
-    assert_eq!(Value::None.type_name(), "none");
+    assert_eq!(Value::NULL.to_string()?, "null");
+    assert_eq!(Value::NULL.type_name(), "lightuserdata");
     assert_eq!(
         Value::LightUserData(LightUserData(0x1 as *const c_void as *mut _)).to_string()?,
         "lightuserdata: 0x1"
@@ -238,10 +228,10 @@ fn test_value_conversions() -> Result<()> {
     let lua = Lua::new();
 
     assert!(Value::Nil.is_nil());
-    #[cfg(feature = "none-primitive")]
-    assert!(!Value::None.is_nil());
-    #[cfg(feature = "none-primitive")]
-    assert!(Value::None.is_none());
+    assert!(!Value::NULL.is_nil());
+    assert!(Value::NULL.is_null());
+    assert!(Value::NULL.is_light_userdata());
+    assert!(Value::NULL.as_light_userdata() == Some(LightUserData(ptr::null_mut())));
     assert!(Value::Boolean(true).is_boolean());
     assert_eq!(Value::Boolean(false).as_boolean(), Some(false));
     assert!(Value::Integer(1).is_integer());
@@ -250,6 +240,11 @@ fn test_value_conversions() -> Result<()> {
     assert_eq!(Value::Integer(1).as_u32(), Some(1u32));
     assert_eq!(Value::Integer(1).as_i64(), Some(1i64));
     assert_eq!(Value::Integer(1).as_u64(), Some(1u64));
+    #[cfg(any(feature = "lua54", feature = "lua53"))]
+    {
+        assert_eq!(Value::Integer(mluau::Integer::MAX).as_i32(), None);
+        assert_eq!(Value::Integer(mluau::Integer::MAX).as_u32(), None);
+    }
     assert_eq!(Value::Integer(1).as_isize(), Some(1isize));
     assert_eq!(Value::Integer(1).as_usize(), Some(1usize));
     assert!(Value::Number(1.23).is_number());
@@ -298,8 +293,6 @@ fn test_value_conversions() -> Result<()> {
 fn test_value_exhaustive_match() {
     match Value::Nil {
         Value::Nil => {}
-        #[cfg(feature = "none-primitive")]
-        Value::None => {}
         Value::Boolean(_) => {}
         Value::LightUserData(_) => {}
         Value::Integer(_) => {}
