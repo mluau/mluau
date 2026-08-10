@@ -424,7 +424,7 @@ impl LuaType for String {
 /// # Safety
 /// The implementor must ensure the memory returned by `into_ext_parts` remains valid
 /// and safe to be read by the Luau VM for the lifetime of this object.
-/// Furthermore, the string MUST be null-terminated, meaning that the byte at 
+/// Furthermore, the string MUST be null-terminated, meaning that the byte at
 /// `ptr.add(len)` must be a valid null byte (`\0`).
 pub unsafe trait ExternalString: 'static {
     /// Returns whether the string is statically allocated and does not need to be freed.
@@ -476,7 +476,11 @@ unsafe impl ExternalString for &'static std::ffi::CStr {
     }
 
     fn into_ext_parts(self) -> Result<(*const u8, usize, *mut c_void)> {
-        Ok((self.as_ptr() as *const u8, self.to_bytes().len(), std::ptr::null_mut()))
+        Ok((
+            self.as_ptr() as *const u8,
+            self.to_bytes().len(),
+            std::ptr::null_mut(),
+        ))
     }
 
     unsafe extern "C" fn free_string(
@@ -501,7 +505,9 @@ unsafe impl ExternalString for &'static str {
         if self.as_bytes().last() == Some(&0) {
             Ok((self.as_ptr(), self.len() - 1, std::ptr::null_mut()))
         } else {
-            Err(Error::RuntimeError("statically allocated external string must end in a null byte".into()))
+            Err(Error::RuntimeError(
+                "statically allocated external string must end in a null byte".into(),
+            ))
         }
     }
 
@@ -578,7 +584,9 @@ unsafe impl ExternalString for bytes::Bytes {
             let ptr = unsafe { (*ud).as_ptr() };
             Ok((ptr, len, ud as *mut c_void))
         } else {
-            Err(Error::RuntimeError("bytes::Bytes external string must end in a null byte".into()))
+            Err(Error::RuntimeError(
+                "bytes::Bytes external string must end in a null byte".into(),
+            ))
         }
     }
 
@@ -613,8 +621,6 @@ unsafe impl ExternalString for bytes::BytesMut {
         let _ = Box::from_raw(userdata as *mut bytes::BytesMut);
     }
 }
-
-
 
 #[cfg(test)]
 mod assertions {

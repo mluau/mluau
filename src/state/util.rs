@@ -1,5 +1,4 @@
 use crate::IntoLuaMulti;
-use std::ffi::c_char;
 use std::mem::take;
 use std::os::raw::c_int;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -9,7 +8,7 @@ use std::sync::Arc;
 use crate::error::{Error, Result};
 use crate::state::extra::{RefThread, REF_STACK_RESERVE};
 use crate::state::{ExtraData, RawLua};
-use crate::util::{self, check_stack, get_internal_metatable, push_string, WrappedFailure};
+use crate::util::{self, check_stack, get_internal_metatable, WrappedFailure};
 
 struct StateGuard<'a>(&'a RawLua, *mut ffi::lua_State);
 
@@ -85,25 +84,67 @@ impl PreallocatedFailure {
     }
 }
 
-unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s: String) {
-    unsafe fn push_error_string_errorable(
-        state: *mut ffi::lua_State,
-        _extra: *mut ExtraData,
-        s: String,
-    ) -> Result<()> {
-        check_stack(state, 3)?;
-        push_string(state, s.as_ref())?;
-        Ok(())
-    }
+pub(crate) unsafe fn push_error_string(state: *mut ffi::lua_State, extra: *mut ExtraData, s: String) {
+    use crate::string::ExternalString;
 
-    if push_error_string_errorable(state, extra, s).is_err() {
+    let res = protect_lua!(state, 0, 1, |state| {
         let _ = check_stack(state, 1);
-        // If we cannot push the error string, we need to fallback to error userdata
-        let s = "memory error".to_string();
-        let s_bytes = s.as_bytes();
-        ffi::lua_pushlstring(state, s_bytes.as_ptr() as *const c_char, s_bytes.len());
-        drop(s); // Lua copies the string, so we can drop it now
+        let free_cb = Some(String::free_string as ffi::lua_StringFree);
+        // Note that this is unfailable and could technically be a unwrap_unchecked
+        let (ptr, len, userdata) = s.into_ext_parts().unwrap();
+
+        crate::memory::MemoryState::relax_limit_with(state, || {
+            ffi::lua_pushexternalstring(state, ptr as *const std::os::raw::c_char, len, userdata, free_cb);
+        });
+    });
+
+    if res.is_err() {
+        // Fallback case: we have no space to even copy the traceback as a external string so we have to
+        // push the fallback memory error
+        let _ = check_stack(state, 1);
+        let ref_thread = (*extra).ref_thread_internal.ref_thread;
+        ffi::lua_pushvalue(ref_thread, ExtraData::MEMORY_ERROR_IDX);
+        ffi::lua_xmove(ref_thread, state, 1);
     }
+}
+
+#[inline(always)]
+pub(crate) fn extract_panic_str(p: Box<dyn std::any::Any + Send + 'static>) -> String {
+    // Push the error message directly onto the stack
+    let err_msg = {
+        // If downcastable to String, use it
+        if let Some(s) = p.downcast_ref::<String>() {
+            s.clone()
+        } else if let Some(s) = p.downcast_ref::<&str>() {
+            s.to_string()
+        } else {
+            // Otherwise, use the debug representation
+            format!("Panic occurred in callback: {:?}", p)
+        }
+    };
+
+    // WARNING: It is a logic error for the payload in p to itself panic
+    std::mem::forget(catch_unwind(AssertUnwindSafe(move || drop(p))));
+
+    err_msg
+}
+
+#[inline(always)]
+pub(crate) fn extract_panic_str_ref(p: &Box<dyn std::any::Any + Send + 'static>) -> String {
+    // Push the error message directly onto the stack
+    let err_msg = {
+        // If downcastable to String, use it
+        if let Some(s) = p.downcast_ref::<String>() {
+            s.clone()
+        } else if let Some(s) = p.downcast_ref::<&str>() {
+            s.to_string()
+        } else {
+            // Otherwise, use the debug representation
+            format!("Panic occurred in callback: {:?}", p)
+        }
+    };
+
+    err_msg
 }
 
 // An optimized version of `callback_error` that does not allocate `WrappedFailure` userdata
@@ -177,24 +218,9 @@ where
         }
         Err(p) => {
             if (*extra).disable_error_userdata {
-                {
-                    // Push the error message directly onto the stack
-                    let err_msg = {
-                        // If downcastable to String, use it
-                        if let Some(s) = p.downcast_ref::<String>() {
-                            s.clone()
-                        } else if let Some(s) = p.downcast_ref::<&str>() {
-                            s.to_string()
-                        } else {
-                            // Otherwise, use the debug representation
-                            format!("Panic occurred in callback: {:?}", p)
-                        }
-                    };
-
-                    std::mem::forget(catch_unwind(AssertUnwindSafe(move || drop(p))));
-
-                    push_error_string(state, extra, err_msg);
-                }
+                // Push the error message directly onto the stack
+                let err_msg = extract_panic_str(p);
+                push_error_string(state, extra, err_msg);
                 ffi::lua_error(state);
             }
 
@@ -331,21 +357,7 @@ where
         Err(p) => {
             if (*extra).disable_error_userdata {
                 // Push the error message directly onto the stack
-                let err_msg = {
-                    // If downcastable to String, use it
-                    if let Some(s) = p.downcast_ref::<String>() {
-                        s.clone()
-                    } else if let Some(s) = p.downcast_ref::<&str>() {
-                        s.to_string()
-                    } else {
-                        // Otherwise, use the debug representation
-                        format!("Panic occurred in callback: {:?}", p)
-                    }
-                };
-
-                // WARNING: It is a logic error for the payload in p to itself panic
-                std::mem::forget(catch_unwind(AssertUnwindSafe(move || drop(p))));
-
+                let err_msg = extract_panic_str(p);
                 push_error_string(state, extra, err_msg);
                 ffi::lua_error(state);
             }

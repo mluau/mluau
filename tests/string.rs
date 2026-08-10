@@ -184,13 +184,17 @@ fn test_external_string() -> Result<()> {
 
     // Validate that Luau code can interact seamlessly with it
     lua.globals().set("ext_str", s)?;
-    let result: bool = lua.load(r#"
+    let result: bool = lua
+        .load(
+            r#"
         local str = ext_str
         assert(string.len(str) == 19)
         assert(string.sub(str, 1, 5) == "hello")
         assert(string.match(str, "bstr") == "bstr")
         return str == "hello bstr external"
-    "#).eval()?;
+    "#,
+        )
+        .eval()?;
     assert!(result, "Luau code failed to process the external string properly");
 
     // Bytes strings

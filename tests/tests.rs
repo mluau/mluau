@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::{error, f32, f64, fmt};
 
 use mluau::{
-    ffi, ChunkSource, Error, ExternalError, Function, Lua, LuaOptions, Nil, Result, StdLib,
-    String, Table, UserData, Value, Variadic,
+    ffi, ChunkSource, Error, ExternalError, Function, Lua, LuaOptions, Nil, Result, StdLib, String, Table,
+    UserData, Value, Variadic,
 };
 
 #[test]
@@ -440,13 +440,8 @@ fn test_panic() -> Result<()> {
         };
 
         assert!(lua.globals().get::<Value>("err")? == Value::Nil);
-        match lua.load("tostring(err)").exec() {
-            Ok(_) => panic!("no error was detected"),
-            Err(Error::CallbackError { ref cause, .. }) => match cause.as_ref() {
-                Error::PreviouslyResumedPanic => {}
-                e => panic!("expected PreviouslyResumedPanic, got {:?}", e),
-            },
-            Err(e) => panic!("expected CallbackError, got {:?}", e),
+        if let Err(_) = lua.load("tostring(err)").exec() {
+            panic!("tostring(err) should be infailable");
         }
     }
 

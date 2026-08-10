@@ -22,7 +22,7 @@ pub static ENABLED_FFLAGS: &[&str] = &[
     #[cfg(feature = "luau-classes")]
     "DebugLuauUserDefinedClassesRuntime",
     #[cfg(feature = "none-primitive")]
-    "LuauNonePrimitive"
+    "LuauNonePrimitive",
 ];
 
 pub static RESTRICTED_FFLAGS: &[&str] = &[
@@ -35,7 +35,7 @@ pub static RESTRICTED_FFLAGS: &[&str] = &[
     "DebugLuauUserDefinedClasses",
     "DebugLuauUserDefinedClassesRuntime",
     // none primitive
-    "LuauNonePrimitive"
+    "LuauNonePrimitive",
 ];
 
 // Since Luau has some missing standard functions, we re-implement them here
@@ -120,10 +120,7 @@ impl Lua {
             static INIT_FFLAGS: std::sync::Once = std::sync::Once::new();
             INIT_FFLAGS.call_once(|| {
                 for fflag in ENABLED_FFLAGS {
-                    mlua_expect!(
-                        Self::set_fflag_inner(fflag, true),
-                        "base fflag {fflag} not set",
-                    )
+                    mlua_expect!(Self::set_fflag_inner(fflag, true), "base fflag {fflag} not set",)
                 }
             });
         }

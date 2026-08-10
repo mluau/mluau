@@ -57,6 +57,13 @@ impl RefThread {
             assert_eq!(ffi::lua_gettop(ref_thread), ExtraData::ERROR_TRACEBACK_IDX);
         }
 
+        // Store fallback memory error string on the ref stack
+        {
+            let s = "memory error";
+            ffi::lua_pushlstring(ref_thread, s.as_ptr() as *const std::os::raw::c_char, s.len());
+            assert_eq!(ffi::lua_gettop(ref_thread), ExtraData::MEMORY_ERROR_IDX);
+        }
+
         RefThread {
             ref_thread,
             // We need some reserved stack space to move values in and out of the ref stack.
@@ -174,6 +181,7 @@ impl TypeKey for XRc<UnsafeCell<ExtraData>> {
 impl ExtraData {
     // Index of `error_traceback` function in auxiliary thread stack
     pub(crate) const ERROR_TRACEBACK_IDX: c_int = 1;
+    pub(crate) const MEMORY_ERROR_IDX: c_int = 2;
 
     pub(super) unsafe fn init(state: *mut ffi::lua_State, owned: bool) -> XRc<UnsafeCell<Self>> {
         let wrapped_failure_mt_ptr = {

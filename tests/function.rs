@@ -1,6 +1,6 @@
-use mluau::{Error, Function, Lua, Result, String, Table, Variadic};
 #[cfg(not(feature = "luau"))]
 use mluau::ChunkSource;
+use mluau::{Error, Function, Lua, Result, String, Table, Variadic};
 
 #[test]
 fn test_function_call() -> Result<()> {

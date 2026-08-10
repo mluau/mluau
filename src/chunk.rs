@@ -750,7 +750,9 @@ impl Chunk<'_> {
 
     fn to_expression(&self) -> Result<Function> {
         if matches!(self.mode, ChunkMode::Binary) {
-            return Err(Error::RuntimeError(String::from("Expression should be a chunk of source code, not compiled bytecode")));
+            return Err(Error::RuntimeError(String::from(
+                "Expression should be a chunk of source code, not compiled bytecode",
+            )));
         }
 
         // We assume that mode is Text
@@ -758,11 +760,7 @@ impl Chunk<'_> {
         let source = source.map_err(Error::runtime)?;
         let source = Self::expression_source(source);
         // We don't need to compile source if no compiler options set
-        let compiled = self
-            .compiler
-            .as_ref()
-            .map(|c| c.compile(&source))
-            .transpose()?;
+        let compiled = self.compiler.as_ref().map(|c| c.compile(&source)).transpose()?;
 
         let trusted_binary = compiled.is_some();
         let source = compiled.unwrap_or(source);

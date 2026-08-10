@@ -129,11 +129,7 @@ pub(crate) unsafe fn push_external_string(
     free_cb: Option<ffi::lua_StringFree>,
 ) -> Result<()> {
     protect_lua!(state, 0, 1, |state| ffi::lua_pushexternalstring(
-        state,
-        s,
-        len,
-        userdata,
-        free_cb
+        state, s, len, userdata, free_cb
     ))
 }
 

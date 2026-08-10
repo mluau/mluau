@@ -911,7 +911,7 @@ impl Lua {
     #[allow(clippy::result_unit_err)]
     pub fn set_fflag(name: &str, enabled: bool) -> StdResult<(), ()> {
         if RESTRICTED_FFLAGS.contains(&name) {
-            return Err(()) // fflag is restricted and cannot be set for soundness reasons
+            return Err(()); // fflag is restricted and cannot be set for soundness reasons
         }
 
         Self::set_fflag_inner(name, enabled)
@@ -929,10 +929,11 @@ impl Lua {
     }
 
     /// Returns Luau source code as a `Chunk` builder type.
-    /// 
+    ///
     /// `chunk` should be created via [`ChunkSource`] to prevent ambiguity of whether
     /// the passed chunk is Luau sourcecode or Luau bytecode.
-    /// Passing a String or similar utf-8 content (obviously source code) as `chunk` is also allowed.
+    /// Passing a String or similar utf-8 content (obviously source code) as `chunk` is also
+    /// allowed.
     ///
     /// In order to actually compile or run the resulting code, you must call [`Chunk::exec`] or
     /// similar on the returned builder. Code is not even parsed until one of these methods is

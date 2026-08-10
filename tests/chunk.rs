@@ -40,7 +40,9 @@ fn test_chunk_path() -> Result<()> {
     )?;
     let module_path = temp_dir.path().join("module.lua");
     let source = fs::read_to_string(&module_path)?;
-    let i: i32 = lua.load(ChunkSource::src(source).path(module_path.display())).eval()?;
+    let i: i32 = lua
+        .load(ChunkSource::src(source).path(module_path.display()))
+        .eval()?;
     assert_eq!(i, 321);
 
     match fs::read_to_string(temp_dir.path().join("module2.lua")) {
@@ -65,7 +67,11 @@ fn test_chunk_impls() -> Result<()> {
     // ChunkSource::bytecode
     let bytecode = mluau::Compiler::new().compile("return 4")?;
     // SAFETY: bytecode was just produced by `Compiler::compile` above
-    assert_eq!(lua.load(unsafe { ChunkSource::bytecode(bytecode) }).eval::<i32>()?, 4);
+    assert_eq!(
+        lua.load(unsafe { ChunkSource::bytecode(bytecode) })
+            .eval::<i32>()?,
+        4
+    );
 
     Ok(())
 }
