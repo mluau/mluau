@@ -16,6 +16,31 @@ pub trait IntoLuaErr: Sized {
     fn into_lua_err(self, lua: &Lua) -> Result<Value>;
 }
 
+pub trait IntoLuaResultMulti {
+    type Item: IntoLuaMulti;
+    type Error: crate::traits::IntoLuaErr;
+    fn into_result(self) -> std::result::Result<Self::Item, Self::Error>;
+}
+
+// For backwards compat, we only impl IntoLuaResult for Result<T, mluau::Error>
+impl<T: IntoLuaMulti> IntoLuaResultMulti for std::result::Result<T, crate::Error> {
+    type Item = T;
+    type Error = crate::Error;
+    fn into_result(self) -> std::result::Result<Self::Item, Self::Error> { self }
+}
+
+pub trait IntoLuaResult {
+    type Item: IntoLua;
+    type Error: crate::traits::IntoLuaErr;
+    fn into_result(self) -> std::result::Result<Self::Item, Self::Error>;
+}
+
+impl<T: IntoLua> IntoLuaResult for std::result::Result<T, crate::Error> {
+    type Item = T;
+    type Error = crate::Error;
+    fn into_result(self) -> std::result::Result<Self::Item, Self::Error> { self }
+}
+
 /// Trait for types convertible to [`Value`].
 pub trait IntoLua: Sized {
     /// Performs the conversion.

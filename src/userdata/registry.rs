@@ -11,7 +11,7 @@ use std::string::String as StdString;
 
 use crate::error::{Error, Result};
 use crate::state::{Lua, LuaGuard};
-use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaMulti};
+use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, IntoLuaResult, IntoLuaResultMulti};
 use crate::types::{Callback, MaybeSend};
 use crate::userdata::{
     borrow_userdata_scoped, borrow_userdata_scoped_mut, AnyUserData, MetaMethod, TypeIdHints, UserData,
@@ -130,312 +130,6 @@ impl<T> UserDataRegistry<T> {
         }
     }
 
-    fn box_method<M, A, R, E>(&self, name: &str, method: M) -> Callback
-    where
-        E: crate::traits::IntoLuaErr,
-        M: Fn(&Lua, &T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        let name = get_function_name::<T>(name);
-        macro_rules! try_self_arg {
-            ($rawlua:expr, $res:expr) => {
-                $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&name, err)))?
-            };
-        }
-
-        let target_type = self.r#type;
-        Box::new(move |rawlua, nargs| unsafe {
-            if nargs == 0 {
-                let err = Error::from_lua_conversion("missing argument", "userdata", None);
-                try_self_arg!(rawlua, Err(err));
-            }
-            let state = rawlua.state();
-            // Find absolute "self" index before processing args
-            let self_index = ffi::lua_absindex(state, -nargs);
-            // Self was at position 1, so we pass 2 here
-            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
-
-            match target_type {
-                #[rustfmt::skip]
-                UserDataType::Shared(type_hints) => {
-                    let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
-                    try_self_arg!(rawlua, borrow_userdata_scoped(state, self_index, type_id, type_hints, |ud| {
-                        method(rawlua.lua(), ud, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
-                    }))
-                }
-            }
-        })
-    }
-
-    fn box_method_namecall<M, A, R, E>(&self, name: &str, method: M) -> NamecallCallback
-    where
-        E: crate::traits::IntoLuaErr,
-        M: Fn(&Lua, &T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        let name = get_function_name::<T>(name);
-        macro_rules! try_self_arg {
-            ($rawlua:expr, $res:expr) => {
-                $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&name, err)))?
-            };
-        }
-
-        let target_type = self.r#type;
-        XRc::new(move |rawlua, nargs| unsafe {
-            if nargs == 0 {
-                let err = Error::from_lua_conversion("missing argument", "userdata", None);
-                try_self_arg!(rawlua, Err(err));
-            }
-
-            let state = rawlua.state();
-
-            // Find absolute "self" index before processing args
-            let self_index = ffi::lua_absindex(state, -nargs);
-            // Self was at position 1, so we pass 2 here
-            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
-
-            match target_type {
-                #[rustfmt::skip]
-                UserDataType::Shared(type_hints) => {
-                    let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
-                    try_self_arg!(rawlua, borrow_userdata_scoped(state, self_index, type_id, type_hints, |ud| {
-                        method(rawlua.lua(), ud, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
-                    }))
-                }
-            }
-        })
-    }
-
-    fn box_method_mut<M, A, R, E>(&self, name: &str, method: M) -> Callback
-    where
-        E: crate::traits::IntoLuaErr,
-        M: FnMut(&Lua, &mut T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        let name = get_function_name::<T>(name);
-        macro_rules! try_self_arg {
-            ($rawlua:expr, $res:expr) => {
-                $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&name, err)))?
-            };
-        }
-
-        let method = RefCell::new(method);
-        let target_type = self.r#type;
-        Box::new(move |rawlua, nargs| unsafe {
-            let mut method = method.try_borrow_mut().map_err(|_| crate::state::util::map_err_to_value(rawlua.lua(), Error::RecursiveMutCallback))?;
-            if nargs == 0 {
-                let err = Error::from_lua_conversion("missing argument", "userdata", None);
-                try_self_arg!(rawlua, Err(err));
-            }
-            let state = rawlua.state();
-            // Find absolute "self" index before processing args
-            let self_index = ffi::lua_absindex(state, -nargs);
-            // Self was at position 1, so we pass 2 here
-            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
-
-            match target_type {
-                #[rustfmt::skip]
-                UserDataType::Shared(type_hints) => {
-                    let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
-                    try_self_arg!(rawlua, borrow_userdata_scoped_mut(state, self_index, type_id, type_hints, |ud| {
-                        method(rawlua.lua(), ud, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
-                    }))
-                }
-            }
-        })
-    }
-
-    fn box_method_mut_namecall<M, A, R, E>(&self, name: &str, method: M) -> NamecallCallback
-    where
-        E: crate::traits::IntoLuaErr,
-        M: FnMut(&Lua, &mut T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        let name = get_function_name::<T>(name);
-        macro_rules! try_self_arg {
-            ($rawlua:expr, $res:expr) => {
-                $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&name, err)))?
-            };
-        }
-
-        let method = RefCell::new(method);
-        let target_type = self.r#type;
-        XRc::new(move |rawlua, nargs| unsafe {
-            let mut method = method.try_borrow_mut().map_err(|_| crate::state::util::map_err_to_value(rawlua.lua(), Error::RecursiveMutCallback))?;
-            if nargs == 0 {
-                let err = Error::from_lua_conversion("missing argument", "userdata", None);
-                try_self_arg!(rawlua, Err(err));
-            }
-            let state = rawlua.state();
-            // Find absolute "self" index before processing args
-            let self_index = ffi::lua_absindex(state, -nargs);
-            // Self was at position 1, so we pass 2 here
-            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
-
-            match target_type {
-                #[rustfmt::skip]
-                UserDataType::Shared(type_hints) => {
-                    let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
-                    try_self_arg!(rawlua, borrow_userdata_scoped_mut(state, self_index, type_id, type_hints, |ud| {
-                        method(rawlua.lua(), ud, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
-                    }))
-                }
-            }
-        })
-    }
-
-    fn box_dynamic_method<M, A, R, E>(&self, method: M) -> DynamicCallback
-    where
-        E: crate::traits::IntoLuaErr,
-        M: Fn(&Lua, &T, &str, A) -> std::result::Result<R, E> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        let target_type = self.r#type;
-        XRc::new(move |rawlua, name, nargs| unsafe {
-            let name_ref = name;
-            macro_rules! try_self_arg {
-                ($rawlua:expr, $res:expr) => {
-                    $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&name_ref, err)))?
-                };
-            }
-
-            if nargs == 0 {
-                let err = Error::from_lua_conversion("missing argument", "userdata", None);
-                try_self_arg!(rawlua, Err(err));
-            }
-
-            let state = rawlua.state();
-            // Find absolute "self" index before processing args
-            let self_index = ffi::lua_absindex(state, -nargs);
-            // Self was at position 1, so we pass 2 here
-            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
-
-            match target_type {
-                #[rustfmt::skip]
-                UserDataType::Shared(type_hints) => {
-                    let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
-                    try_self_arg!(rawlua, borrow_userdata_scoped(state, self_index, type_id, type_hints, |ud| {
-                        method(rawlua.lua(), ud, name, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
-                    }))
-                }
-            }
-        })
-    }
-
-    fn box_dynamic_method_mut<M, A, R, E>(&self, method: M) -> DynamicCallback
-    where
-        E: crate::traits::IntoLuaErr,
-        M: FnMut(&Lua, &mut T, &str, A) -> std::result::Result<R, E> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        let method = RefCell::new(method);
-        let target_type = self.r#type;
-        XRc::new(move |rawlua, name, nargs| unsafe {
-            let name_ref = name;
-            macro_rules! try_self_arg {
-                ($rawlua:expr, $res:expr) => {
-                    $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&name_ref, err)))?
-                };
-            }
-
-            let mut method = method.try_borrow_mut().map_err(|_| crate::state::util::map_err_to_value(rawlua.lua(), Error::RecursiveMutCallback))?;
-            if nargs == 0 {
-                let err = Error::from_lua_conversion("missing argument", "userdata", None);
-                try_self_arg!(rawlua, Err(err));
-            }
-
-            let state = rawlua.state();
-            // Find absolute "self" index before processing args
-            let self_index = ffi::lua_absindex(state, -nargs);
-            // Self was at position 1, so we pass 2 here
-            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
-
-            match target_type {
-                #[rustfmt::skip]
-                UserDataType::Shared(type_hints) => {
-                    let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
-                    try_self_arg!(rawlua, borrow_userdata_scoped_mut(state, self_index, type_id, type_hints, |ud| {
-                        method(rawlua.lua(), ud, name, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
-                    }))
-                }
-            }
-        })
-    }
-
-    fn box_function<F, A, R, E>(&self, name: &str, function: F) -> Callback
-    where
-        E: crate::traits::IntoLuaErr,
-        F: Fn(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        let name = get_function_name::<T>(name);
-        Box::new(move |lua, nargs| unsafe {
-            let state = lua.state();
-            let args = A::from_specified_stack_args(nargs, 1, Some(&name), lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?;
-            function(lua.lua(), args).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?.push_into_specified_stack_multi(lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
-        })
-    }
-
-    fn box_function_namecall<F, A, R, E>(&self, name: &str, function: F) -> NamecallCallback
-    where
-        E: crate::traits::IntoLuaErr,
-        F: Fn(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        let name = get_function_name::<T>(name);
-        XRc::new(move |lua, nargs| unsafe {
-            let state = lua.state();
-            let args = A::from_specified_stack_args(nargs, 1, Some(&name), lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?;
-            function(lua.lua(), args).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?.push_into_specified_stack_multi(lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
-        })
-    }
-
-    fn box_function_mut<F, A, R, E>(&self, name: &str, function: F) -> Callback
-    where
-        E: crate::traits::IntoLuaErr,
-        F: FnMut(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        let name = get_function_name::<T>(name);
-        let function = RefCell::new(function);
-        Box::new(move |lua, nargs| unsafe {
-            let function = &mut *function
-                .try_borrow_mut()
-                .map_err(|_| crate::state::util::map_err_to_value(lua.lua(), Error::RecursiveMutCallback))?;
-            let state = lua.state();
-            let args = A::from_specified_stack_args(nargs, 1, Some(&name), lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?;
-            function(lua.lua(), args).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?.push_into_specified_stack_multi(lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
-        })
-    }
-
-    fn box_function_namecall_mut<F, A, R, E>(&self, name: &str, function: F) -> NamecallCallback
-    where
-        E: crate::traits::IntoLuaErr,
-        F: FnMut(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        let name = get_function_name::<T>(name);
-        let function = RefCell::new(function);
-        XRc::new(move |lua, nargs| unsafe {
-            let function = &mut *function
-                .try_borrow_mut()
-                .map_err(|_| crate::state::util::map_err_to_value(lua.lua(), Error::RecursiveMutCallback))?;
-            let state = lua.state();
-            let args = A::from_specified_stack_args(nargs, 1, Some(&name), lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?;
-            function(lua.lua(), args).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?.push_into_specified_stack_multi(lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
-        })
-    }
-
     pub(crate) fn check_meta_field(lua: &Lua, name: &str, value: impl IntoLua) -> Result<Value> {
         let value = value.into_lua(lua)?;
         if name == MetaMethod::Index || name == MetaMethod::NewIndex {
@@ -469,14 +163,39 @@ impl<T> UserDataRegistry<T> {
     /// For best user-experience, you should also define a Index metamethod for the userdata type,
     /// which will allow the user to call the method with `data.method(data, ...)` syntax.
 
-    pub fn set_dynamic_method<F, A, R, E>(&mut self, method: F)
+    pub fn set_dynamic_method<F, A, R>(&mut self, method: F)
     where
-        E: crate::traits::IntoLuaErr,
-        F: Fn(&Lua, &T, &str, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        F: Fn(&Lua, &T, &str, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
-        let callback = self.box_dynamic_method(method);
+        let target_type = self.r#type;
+        let callback: DynamicCallback = XRc::new(move |rawlua, name, nargs| unsafe {
+            let name_ref = name;
+            macro_rules! try_self_arg {
+                ($rawlua:expr, $res:expr) => {
+                    $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&name_ref, err)))?
+                };
+            }
+
+            if nargs == 0 {
+                let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                try_self_arg!(rawlua, Err(err));
+            }
+            let state = rawlua.state();
+            let self_index = ffi::lua_absindex(state, -nargs);
+            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
+
+            match target_type {
+                #[rustfmt::skip]
+                UserDataType::Shared(type_hints) => {
+                    let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
+                    try_self_arg!(rawlua, borrow_userdata_scoped(state, self_index, type_id, type_hints, |ud| {
+                        method(rawlua.lua(), ud, name, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).into_result().map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
+                    }))
+                }
+            }
+        });
         self.raw.dynamic_method = Some(callback);
     }
 
@@ -491,14 +210,41 @@ impl<T> UserDataRegistry<T> {
     /// For best user-experience, you should also define a Index metamethod for the userdata type,
     /// which will allow the user to call the method with `data.method(data, ...)` syntax.
 
-    pub fn set_dynamic_method_mut<F, A, R, E>(&mut self, method: F)
+    pub fn set_dynamic_method_mut<F, A, R>(&mut self, method: F)
     where
-        E: crate::traits::IntoLuaErr,
-        F: FnMut(&Lua, &mut T, &str, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        F: FnMut(&Lua, &mut T, &str, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
-        let callback = self.box_dynamic_method_mut(method);
+        let method = RefCell::new(method);
+        let target_type = self.r#type;
+        let callback: DynamicCallback = XRc::new(move |rawlua, name, nargs| unsafe {
+            let name_ref = name;
+            macro_rules! try_self_arg {
+                ($rawlua:expr, $res:expr) => {
+                    $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&name_ref, err)))?
+                };
+            }
+
+            let mut method = method.try_borrow_mut().map_err(|_| crate::state::util::map_err_to_value(rawlua.lua(), Error::RecursiveMutCallback))?;
+            if nargs == 0 {
+                let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                try_self_arg!(rawlua, Err(err));
+            }
+            let state = rawlua.state();
+            let self_index = ffi::lua_absindex(state, -nargs);
+            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&name), rawlua, state);
+
+            match target_type {
+                #[rustfmt::skip]
+                UserDataType::Shared(type_hints) => {
+                    let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
+                    try_self_arg!(rawlua, borrow_userdata_scoped_mut(state, self_index, type_id, type_hints, |ud| {
+                        method(rawlua.lua(), ud, name, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).into_result().map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
+                    }))
+                }
+            }
+        });
         self.raw.dynamic_method = Some(callback);
     }
 
@@ -590,47 +336,115 @@ impl<T> UserDataFields<T> for UserDataRegistry<T> {
         self.raw.fields.push((name, value.into_lua(self.lua.lua())));
     }
 
-    fn add_field_method_get<M, R, E>(&mut self, name: impl Into<StdString>, method: M)
+    fn add_field_method_get<M, R>(&mut self, name: impl Into<StdString>, method: M)
     where
-        E: crate::traits::IntoLuaErr,
-        M: Fn(&Lua, &T) -> std::result::Result<R, E> + MaybeSend + 'static,
-        R: IntoLua,
+        M: Fn(&Lua, &T) -> R + MaybeSend + 'static,
+        R: IntoLuaResult,
     {
         let name = name.into();
-        let callback = self.box_method(&name, move |lua, data, ()| method(lua, data));
+        let function_name = get_function_name::<T>(&name);
+        macro_rules! try_self_arg {
+            ($rawlua:expr, $res:expr) => {
+                $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&function_name, err)))?
+            };
+        }
+        let target_type = self.r#type;
+        let callback: Callback = Box::new(move |rawlua, nargs| unsafe {
+            if nargs == 0 {
+                let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                try_self_arg!(rawlua, Err(err));
+            }
+            let state = rawlua.state();
+            let self_index = ffi::lua_absindex(state, -nargs);
+            let args = <()>::from_specified_stack_args(nargs - 1, 2, Some(&function_name), rawlua, state);
+            match target_type {
+                #[rustfmt::skip]
+                UserDataType::Shared(type_hints) => {
+                    let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
+                    try_self_arg!(rawlua, borrow_userdata_scoped(state, self_index, type_id, type_hints, |ud| {
+                        let _ = args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
+                        method(rawlua.lua(), ud).into_result().map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
+                    }))
+                }
+            }
+        });
         self.raw.field_getters.push((name, callback));
     }
 
-    fn add_field_method_set<M, A, E>(&mut self, name: impl Into<StdString>, method: M)
+    fn add_field_method_set<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
     where
-        E: crate::traits::IntoLuaErr,
-        M: FnMut(&Lua, &mut T, A) -> std::result::Result<(), E> + MaybeSend + 'static,
+        M: FnMut(&Lua, &mut T, A) -> R + MaybeSend + 'static,
         A: FromLua,
+        R: IntoLuaResultMulti,
     {
         let name = name.into();
-        let callback = self.box_method_mut(&name, method);
+        let function_name = get_function_name::<T>(&name);
+        macro_rules! try_self_arg {
+            ($rawlua:expr, $res:expr) => {
+                $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&function_name, err)))?
+            };
+        }
+        let method = RefCell::new(method);
+        let target_type = self.r#type;
+        let callback: Callback = Box::new(move |rawlua, nargs| unsafe {
+            let mut method = method.try_borrow_mut().map_err(|_| crate::state::util::map_err_to_value(rawlua.lua(), Error::RecursiveMutCallback))?;
+            if nargs == 0 {
+                let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                try_self_arg!(rawlua, Err(err));
+            }
+            let state = rawlua.state();
+            let self_index = ffi::lua_absindex(state, -nargs);
+            let args = <(A,)>::from_specified_stack_args(nargs - 1, 2, Some(&function_name), rawlua, state);
+            match target_type {
+                #[rustfmt::skip]
+                UserDataType::Shared(type_hints) => {
+                    let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
+                    try_self_arg!(rawlua, borrow_userdata_scoped_mut(state, self_index, type_id, type_hints, |ud| {
+                        let (val,) = args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
+                        method(rawlua.lua(), ud, val).into_result().map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
+                    }))
+                }
+            }
+        });
         self.raw.field_setters.push((name, callback));
     }
 
-    fn add_field_function_get<F, R, E>(&mut self, name: impl Into<StdString>, function: F)
+    fn add_field_function_get<F, R>(&mut self, name: impl Into<StdString>, function: F)
     where
-        E: crate::traits::IntoLuaErr,
-        F: Fn(&Lua, AnyUserData) -> std::result::Result<R, E> + MaybeSend + 'static,
-        R: IntoLua,
+        F: Fn(&Lua, AnyUserData) -> R + MaybeSend + 'static,
+        R: IntoLuaResult,
     {
         let name = name.into();
-        let callback = self.box_function(&name, function);
+        let function_name = get_function_name::<T>(&name);
+        
+        let callback: Callback = Box::new(move |lua, nargs| unsafe {
+            let state = lua.state();
+            let args = <(AnyUserData,)>::from_specified_stack_args(nargs, 1, Some(&function_name), lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?;
+            let (ud,) = args;
+            function(lua.lua(), ud).into_result().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?.push_into_specified_stack_multi(lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
+        });
         self.raw.field_getters.push((name, callback));
     }
 
-    fn add_field_function_set<F, A, E>(&mut self, name: impl Into<StdString>, mut function: F)
+    fn add_field_function_set<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
     where
-        E: crate::traits::IntoLuaErr,
-        F: FnMut(&Lua, AnyUserData, A) -> std::result::Result<(), E> + MaybeSend + 'static,
+        F: FnMut(&Lua, AnyUserData, A) -> R + MaybeSend + 'static,
         A: FromLua,
+        R: IntoLuaResultMulti,
     {
         let name = name.into();
-        let callback = self.box_function_mut(&name, move |lua, (data, val)| function(lua, data, val));
+        let function_name = get_function_name::<T>(&name);
+        let function = RefCell::new(function);
+        
+        let callback: Callback = Box::new(move |lua, nargs| unsafe {
+            let function = &mut *function
+                .try_borrow_mut()
+                .map_err(|_| crate::state::util::map_err_to_value(lua.lua(), Error::RecursiveMutCallback))?;
+            let state = lua.state();
+            let args = <(AnyUserData, A)>::from_specified_stack_args(nargs, 1, Some(&function_name), lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?;
+            let (ud, val) = args;
+            function(lua.lua(), ud, val).into_result().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?.push_into_specified_stack_multi(lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
+        });
         self.raw.field_setters.push((name, callback));
     }
 
@@ -644,240 +458,394 @@ impl<T> UserDataFields<T> for UserDataRegistry<T> {
         self.raw.meta_fields.push((name, field));
     }
 
-    fn add_meta_field_with<F, R, E>(&mut self, name: impl Into<StdString>, f: F)
+    fn add_meta_field_with<F, R>(&mut self, name: impl Into<StdString>, f: F)
     where
-        E: crate::traits::IntoLuaErr,
-        F: FnOnce(&Lua) -> std::result::Result<R, E> + 'static,
-        R: IntoLua,
+        F: FnOnce(&Lua) -> R + 'static,
+        R: IntoLuaResult,
     {
         let lua = self.lua.lua();
         let name = name.into();
-        let field = f(lua).map_err(|_| Error::RuntimeError("error in meta field computation".into())).and_then(|v| Self::check_meta_field(lua, &name, v).and_then(|v| v.into_lua(lua)));
+        let field = f(lua).into_result().map_err(|_| Error::RuntimeError("error in meta field computation".into())).and_then(|v| Self::check_meta_field(lua, &name, v).and_then(|v| v.into_lua(lua)));
         self.raw.meta_fields.push((name, field));
     }
 }
 
 impl<T> UserDataMethods<T> for UserDataRegistry<T> {
-    fn add_method<M, A, R, E>(&mut self, name: impl Into<StdString>, method: M)
+    fn add_method<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
     where
-        E: crate::traits::IntoLuaErr,
-        M: Fn(&Lua, &T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        M: Fn(&Lua, &T, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
         let name = name.into();
-
+        let name_str = name.clone();
+        
         {
-            let callback = self.box_method_namecall(&name, method);
-            self.raw.methods.push((name.clone(), callback.clone(), None));
-            self.raw.namecalls.insert(name, callback);
-        }
-
-        #[cfg(not(feature = "luau"))]
-        {
-            let callback = self.box_method(&name, method);
-            self.raw.methods.push((name, callback));
+            let function_name = get_function_name::<T>(&name_str);
+            macro_rules! try_self_arg {
+                ($rawlua:expr, $res:expr) => {
+                    $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&function_name, err)))?
+                };
+            }
+            let target_type = self.r#type;
+            let callback: NamecallCallback = XRc::new(move |rawlua, nargs| unsafe {
+                if nargs == 0 {
+                    let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                    try_self_arg!(rawlua, Err(err));
+                }
+                let state = rawlua.state();
+                let self_index = ffi::lua_absindex(state, -nargs);
+                let args = A::from_specified_stack_args(nargs - 1, 2, Some(&function_name), rawlua, state);
+                match target_type {
+                    #[rustfmt::skip]
+                    UserDataType::Shared(type_hints) => {
+                        let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
+                        try_self_arg!(rawlua, borrow_userdata_scoped(state, self_index, type_id, type_hints, |ud| {
+                            method(rawlua.lua(), ud, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).into_result().map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
+                        }))
+                    }
+                }
+            });
+            self.raw.namecalls.insert(name.clone(), callback.clone());
+            self.raw.methods.push((name.clone(), callback, None));
         }
     }
 
-    fn add_method_with_debug<M, A, R, E>(
+    fn add_method_with_debug<M, A, R>(
         &mut self,
         name: impl Into<StdString>,
         debugname: &'static CStr,
         method: M,
     ) where
-        E: crate::traits::IntoLuaErr,
-        M: Fn(&Lua, &T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        M: Fn(&Lua, &T, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
         let name = name.into();
-
-        let callback = self.box_method_namecall(&name, method);
-        self.raw
-            .methods
-            .push((name.clone(), callback.clone(), Some(debugname)));
-        self.raw.namecalls.insert(name, callback);
-        self.raw.disable_namecall_optimization = true;
+        let name_str = name.clone();
+        
+        {
+            let function_name = get_function_name::<T>(&name_str);
+            macro_rules! try_self_arg {
+                ($rawlua:expr, $res:expr) => {
+                    $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&function_name, err)))?
+                };
+            }
+            let target_type = self.r#type;
+            let callback: NamecallCallback = XRc::new(move |rawlua, nargs| unsafe {
+                if nargs == 0 {
+                    let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                    try_self_arg!(rawlua, Err(err));
+                }
+                let state = rawlua.state();
+                let self_index = ffi::lua_absindex(state, -nargs);
+                let args = A::from_specified_stack_args(nargs - 1, 2, Some(&function_name), rawlua, state);
+                match target_type {
+                    #[rustfmt::skip]
+                    UserDataType::Shared(type_hints) => {
+                        let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
+                        try_self_arg!(rawlua, borrow_userdata_scoped(state, self_index, type_id, type_hints, |ud| {
+                            method(rawlua.lua(), ud, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).into_result().map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
+                        }))
+                    }
+                }
+            });
+            self.raw.namecalls.insert(name.clone(), callback.clone());
+            self.raw.methods.push((name.clone(), callback, Some(debugname)));
+            self.raw.disable_namecall_optimization = true;
+        }
     }
 
-    fn add_method_mut<M, A, R, E>(&mut self, name: impl Into<StdString>, method: M)
+    fn add_method_mut<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
     where
-        E: crate::traits::IntoLuaErr,
-        M: FnMut(&Lua, &mut T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        M: FnMut(&Lua, &mut T, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
         let name = name.into();
-
+        let name_str = name.clone();
+        
         {
-            let callback = self.box_method_mut_namecall(&name, method);
-            self.raw.methods.push((name.clone(), callback.clone(), None));
-            self.raw.namecalls.insert(name, callback);
-        }
-
-        #[cfg(not(feature = "luau"))]
-        {
-            let callback = self.box_method_mut(&name, method);
-            self.raw.methods.push((name, callback));
+            let function_name = get_function_name::<T>(&name_str);
+            macro_rules! try_self_arg {
+                ($rawlua:expr, $res:expr) => {
+                    $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&function_name, err)))?
+                };
+            }
+            let method = RefCell::new(method);
+            let target_type = self.r#type;
+            let callback: NamecallCallback = XRc::new(move |rawlua, nargs| unsafe {
+                let mut method = method.try_borrow_mut().map_err(|_| crate::state::util::map_err_to_value(rawlua.lua(), Error::RecursiveMutCallback))?;
+                if nargs == 0 {
+                    let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                    try_self_arg!(rawlua, Err(err));
+                }
+                let state = rawlua.state();
+                let self_index = ffi::lua_absindex(state, -nargs);
+                let args = A::from_specified_stack_args(nargs - 1, 2, Some(&function_name), rawlua, state);
+                match target_type {
+                    #[rustfmt::skip]
+                    UserDataType::Shared(type_hints) => {
+                        let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
+                        try_self_arg!(rawlua, borrow_userdata_scoped_mut(state, self_index, type_id, type_hints, |ud| {
+                            method(rawlua.lua(), ud, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).into_result().map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
+                        }))
+                    }
+                }
+            });
+            self.raw.namecalls.insert(name.clone(), callback.clone());
+            self.raw.methods.push((name.clone(), callback, None));
         }
     }
 
-    fn add_method_mut_with_debug<M, A, R, E>(
+    fn add_method_mut_with_debug<M, A, R>(
         &mut self,
         name: impl Into<StdString>,
         debugname: &'static CStr,
         method: M,
     ) where
-        E: crate::traits::IntoLuaErr,
-        M: FnMut(&Lua, &mut T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        M: FnMut(&Lua, &mut T, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
         let name = name.into();
-
-        let callback = self.box_method_mut_namecall(&name, method);
-        self.raw
-            .methods
-            .push((name.clone(), callback.clone(), Some(debugname)));
-        self.raw.namecalls.insert(name, callback);
-        self.raw.disable_namecall_optimization = true;
+        let name_str = name.clone();
+        
+        {
+            let function_name = get_function_name::<T>(&name_str);
+            macro_rules! try_self_arg {
+                ($rawlua:expr, $res:expr) => {
+                    $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&function_name, err)))?
+                };
+            }
+            let method = RefCell::new(method);
+            let target_type = self.r#type;
+            let callback: NamecallCallback = XRc::new(move |rawlua, nargs| unsafe {
+                let mut method = method.try_borrow_mut().map_err(|_| crate::state::util::map_err_to_value(rawlua.lua(), Error::RecursiveMutCallback))?;
+                if nargs == 0 {
+                    let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                    try_self_arg!(rawlua, Err(err));
+                }
+                let state = rawlua.state();
+                let self_index = ffi::lua_absindex(state, -nargs);
+                let args = A::from_specified_stack_args(nargs - 1, 2, Some(&function_name), rawlua, state);
+                match target_type {
+                    #[rustfmt::skip]
+                    UserDataType::Shared(type_hints) => {
+                        let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
+                        try_self_arg!(rawlua, borrow_userdata_scoped_mut(state, self_index, type_id, type_hints, |ud| {
+                            method(rawlua.lua(), ud, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).into_result().map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
+                        }))
+                    }
+                }
+            });
+            self.raw.namecalls.insert(name.clone(), callback.clone());
+            self.raw.methods.push((name.clone(), callback, Some(debugname)));
+            self.raw.disable_namecall_optimization = true;
+        }
     }
 
-    fn add_function<F, A, R, E>(&mut self, name: impl Into<StdString>, function: F)
+    fn add_function<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
     where
-        E: crate::traits::IntoLuaErr,
-        F: Fn(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
-        {
-            let name = name.into();
-            let callback = self.box_function_namecall(&name, function);
-            self.raw.functions.push((name.clone(), callback.clone(), None));
-            self.raw.namecalls.insert(name, callback);
-        }
-        #[cfg(not(feature = "luau"))]
-        {
-            let name = name.into();
-            let callback = self.box_function(&name, function);
-            self.raw.functions.push((name, callback));
-        }
+        let name = name.into();
+        let function_name = get_function_name::<T>(&name);
+        
+        let callback: NamecallCallback = XRc::new(move |lua, nargs| unsafe {
+            let state = lua.state();
+            let args = A::from_specified_stack_args(nargs, 1, Some(&function_name), lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?;
+            function(lua.lua(), args).into_result().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?.push_into_specified_stack_multi(lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
+        });
+        
+        self.raw.namecalls.insert(name.clone(), callback.clone());
+        self.raw.functions.push((name.clone(), callback, None));
     }
 
-    fn add_function_with_debug<F, A, R, E>(
+    fn add_function_with_debug<F, A, R>(
         &mut self,
         name: impl Into<StdString>,
         debugname: &'static CStr,
         function: F,
     ) where
-        E: crate::traits::IntoLuaErr,
-        F: Fn(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
         let name = name.into();
-        let callback = self.box_function_namecall(&name, function);
-        self.raw
-            .functions
-            .push((name.clone(), callback.clone(), Some(debugname)));
-        self.raw.namecalls.insert(name, callback);
+        let function_name = get_function_name::<T>(&name);
+        
+        let callback: NamecallCallback = XRc::new(move |lua, nargs| unsafe {
+            let state = lua.state();
+            let args = A::from_specified_stack_args(nargs, 1, Some(&function_name), lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?;
+            function(lua.lua(), args).into_result().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?.push_into_specified_stack_multi(lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
+        });
+        
+        self.raw.namecalls.insert(name.clone(), callback.clone());
+        self.raw.functions.push((name.clone(), callback, Some(debugname)));
         self.raw.disable_namecall_optimization = true;
     }
 
-    fn add_function_mut<F, A, R, E>(&mut self, name: impl Into<StdString>, function: F)
+    fn add_function_mut<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
     where
-        E: crate::traits::IntoLuaErr,
-        F: FnMut(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        F: FnMut(&Lua, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
-        {
-            let name = name.into();
-            let callback = self.box_function_namecall_mut(&name, function);
-            self.raw.functions.push((name.clone(), callback.clone(), None));
-            self.raw.namecalls.insert(name, callback);
-        }
-        #[cfg(not(feature = "luau"))]
-        {
-            let name = name.into();
-            let callback = self.box_function_mut(&name, function);
-            self.raw.functions.push((name, callback));
-        }
+        let name = name.into();
+        let function_name = get_function_name::<T>(&name);
+        let function = RefCell::new(function);
+        
+        let callback: NamecallCallback = XRc::new(move |lua, nargs| unsafe {
+            let function = &mut *function
+                .try_borrow_mut()
+                .map_err(|_| crate::state::util::map_err_to_value(lua.lua(), Error::RecursiveMutCallback))?;
+            let state = lua.state();
+            let args = A::from_specified_stack_args(nargs, 1, Some(&function_name), lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?;
+            function(lua.lua(), args).into_result().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?.push_into_specified_stack_multi(lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
+        });
+        
+        self.raw.namecalls.insert(name.clone(), callback.clone());
+        self.raw.functions.push((name.clone(), callback, None));
     }
 
-    fn add_function_mut_with_debug<F, A, R, E>(
+    fn add_function_mut_with_debug<F, A, R>(
         &mut self,
         name: impl Into<StdString>,
         debugname: &'static CStr,
         function: F,
     ) where
-        E: crate::traits::IntoLuaErr,
-        F: FnMut(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        F: FnMut(&Lua, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
-        {
-            let name = name.into();
-            let callback = self.box_function_namecall_mut(&name, function);
-            self.raw
-                .functions
-                .push((name.clone(), callback.clone(), Some(debugname)));
-            self.raw.namecalls.insert(name, callback);
+        let name = name.into();
+        let function_name = get_function_name::<T>(&name);
+        let function = RefCell::new(function);
+        
+        let callback: NamecallCallback = XRc::new(move |lua, nargs| unsafe {
+            let function = &mut *function
+                .try_borrow_mut()
+                .map_err(|_| crate::state::util::map_err_to_value(lua.lua(), Error::RecursiveMutCallback))?;
+            let state = lua.state();
+            let args = A::from_specified_stack_args(nargs, 1, Some(&function_name), lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?;
+            function(lua.lua(), args).into_result().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?.push_into_specified_stack_multi(lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
+        });
+        
+        self.raw.namecalls.insert(name.clone(), callback.clone());
+        self.raw.functions.push((name.clone(), callback, Some(debugname)));
+        self.raw.disable_namecall_optimization = true;
+    }
+
+    fn add_meta_method<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
+    where
+        M: Fn(&Lua, &T, A) -> R + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaResultMulti,
+    {
+        let name = name.into();
+        let function_name = get_function_name::<T>(&name);
+        macro_rules! try_self_arg {
+            ($rawlua:expr, $res:expr) => {
+                $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&function_name, err)))?
+            };
         }
-        #[cfg(not(feature = "luau"))]
-        {
-            let name = name.into();
-            let callback = self.box_function_mut(&name, function);
-            self.raw.functions.push((name, callback));
+        let target_type = self.r#type;
+        let callback: Callback = Box::new(move |rawlua, nargs| unsafe {
+            if nargs == 0 {
+                let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                try_self_arg!(rawlua, Err(err));
+            }
+            let state = rawlua.state();
+            let self_index = ffi::lua_absindex(state, -nargs);
+            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&function_name), rawlua, state);
+            match target_type {
+                #[rustfmt::skip]
+                UserDataType::Shared(type_hints) => {
+                    let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
+                    try_self_arg!(rawlua, borrow_userdata_scoped(state, self_index, type_id, type_hints, |ud| {
+                        method(rawlua.lua(), ud, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).into_result().map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
+                    }))
+                }
+            }
+        });
+        self.raw.meta_methods.push((name, callback));
+    }
+
+    fn add_meta_method_mut<M, A, R>(&mut self, name: impl Into<StdString>, method: M)
+    where
+        M: FnMut(&Lua, &mut T, A) -> R + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaResultMulti,
+    {
+        let name = name.into();
+        let function_name = get_function_name::<T>(&name);
+        macro_rules! try_self_arg {
+            ($rawlua:expr, $res:expr) => {
+                $res.map_err(|err| crate::state::util::map_err_to_value($rawlua.lua(), Error::bad_self_argument(&function_name, err)))?
+            };
         }
-    }
-
-    fn add_meta_method<M, A, R, E>(&mut self, name: impl Into<StdString>, method: M)
-    where
-        E: crate::traits::IntoLuaErr,
-        M: Fn(&Lua, &T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        let name = name.into();
-        let callback = self.box_method(&name, method);
+        let method = RefCell::new(method);
+        let target_type = self.r#type;
+        let callback: Callback = Box::new(move |rawlua, nargs| unsafe {
+            let mut method = method.try_borrow_mut().map_err(|_| crate::state::util::map_err_to_value(rawlua.lua(), Error::RecursiveMutCallback))?;
+            if nargs == 0 {
+                let err = Error::from_lua_conversion("missing argument", "userdata", None);
+                try_self_arg!(rawlua, Err(err));
+            }
+            let state = rawlua.state();
+            let self_index = ffi::lua_absindex(state, -nargs);
+            let args = A::from_specified_stack_args(nargs - 1, 2, Some(&function_name), rawlua, state);
+            match target_type {
+                #[rustfmt::skip]
+                UserDataType::Shared(type_hints) => {
+                    let type_id = try_self_arg!(rawlua, rawlua.get_userdata_type_id::<T>(state, self_index));
+                    try_self_arg!(rawlua, borrow_userdata_scoped_mut(state, self_index, type_id, type_hints, |ud| {
+                        method(rawlua.lua(), ud, args.map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?).into_result().map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?.push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
+                    }))
+                }
+            }
+        });
         self.raw.meta_methods.push((name, callback));
     }
 
-    fn add_meta_method_mut<M, A, R, E>(&mut self, name: impl Into<StdString>, method: M)
+    fn add_meta_function<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
     where
-        E: crate::traits::IntoLuaErr,
-        M: FnMut(&Lua, &mut T, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
         let name = name.into();
-        let callback = self.box_method_mut(&name, method);
+        let function_name = get_function_name::<T>(&name);
+        
+        let callback: Callback = Box::new(move |lua, nargs| unsafe {
+            let state = lua.state();
+            let args = A::from_specified_stack_args(nargs, 1, Some(&function_name), lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?;
+            function(lua.lua(), args).into_result().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?.push_into_specified_stack_multi(lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
+        });
         self.raw.meta_methods.push((name, callback));
     }
 
-    fn add_meta_function<F, A, R, E>(&mut self, name: impl Into<StdString>, function: F)
+    fn add_meta_function_mut<F, A, R>(&mut self, name: impl Into<StdString>, function: F)
     where
-        E: crate::traits::IntoLuaErr,
-        F: Fn(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        F: FnMut(&Lua, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
         let name = name.into();
-        let callback = self.box_function(&name, function);
-        self.raw.meta_methods.push((name, callback));
-    }
-
-    fn add_meta_function_mut<F, A, R, E>(&mut self, name: impl Into<StdString>, function: F)
-    where
-        E: crate::traits::IntoLuaErr,
-        F: FnMut(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        let name = name.into();
-        let callback = self.box_function_mut(&name, function);
+        let function_name = get_function_name::<T>(&name);
+        let function = RefCell::new(function);
+        
+        let callback: Callback = Box::new(move |lua, nargs| unsafe {
+            let function = &mut *function
+                .try_borrow_mut()
+                .map_err(|_| crate::state::util::map_err_to_value(lua.lua(), Error::RecursiveMutCallback))?;
+            let state = lua.state();
+            let args = A::from_specified_stack_args(nargs, 1, Some(&function_name), lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?;
+            function(lua.lua(), args).into_result().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))?.push_into_specified_stack_multi(lua, state).map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
+        });
         self.raw.meta_methods.push((name, callback));
     }
 }

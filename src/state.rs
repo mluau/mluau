@@ -25,7 +25,7 @@ use std::{fmt, mem, ptr};
 
 use crate::thread::ContinuationStatus;
 
-use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaMulti};
+use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaResultMulti, IntoLuaMulti};
 use crate::types::{
     AppDataRef, AppDataRefMut, ArcReentrantMutexGuard, Integer, LuaType, MaybeSend, MaybeSync, Number,
     ReentrantMutex, ReentrantMutexGuard, RegistryKey, VmState, XRc, XWeak,
@@ -1070,17 +1070,17 @@ impl Lua {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn create_function<F, A, R, E>(&self, func: F) -> Result<Function>
+    pub fn create_function<F, A, R>(&self, func: F) -> Result<Function>
     where
-        E: crate::traits::IntoLuaErr,
-        F: Fn(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
         (self.lock()).create_callback(Box::new(move |rawlua, nargs| unsafe {
             let state = rawlua.state();
             let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
             func(rawlua.lua(), args)
+                .into_result()
                 .map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?
                 .push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
         }))
@@ -1097,27 +1097,26 @@ impl Lua {
     /// Returning a value from a continuation without setting yield
     /// arguments will then be returned as the final return value of the Lua function call.
     /// Values returned in a function in which there is also yielding will be ignored
-    pub fn create_function_with_continuation<F, FC, A, AC, R, RC, E, EC>(
+    pub fn create_function_with_continuation<F, FC, A, AC, R, RC>(
         &self,
         func: F,
         cont: FC,
         debugname: Option<&'static CStr>,
     ) -> Result<Function>
     where
-        E: crate::traits::IntoLuaErr,
-        EC: crate::traits::IntoLuaErr,
-        F: Fn(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
-        FC: Fn(&Lua, ContinuationStatus, AC) -> std::result::Result<RC, EC> + MaybeSend + 'static,
+        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
+        FC: Fn(&Lua, ContinuationStatus, AC) -> RC + MaybeSend + 'static,
         A: FromLuaMulti,
         AC: FromLuaMulti,
-        R: IntoLuaMulti,
-        RC: IntoLuaMulti,
+        R: IntoLuaResultMulti,
+        RC: IntoLuaResultMulti,
     {
         (self.lock()).create_callback_with_continuation(
             Box::new(move |rawlua, nargs| unsafe {
                 let state = rawlua.state();
                 let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
                 func(rawlua.lua(), args)
+                    .into_result()
                     .map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?
                     .push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
             }),
@@ -1126,6 +1125,7 @@ impl Lua {
                 let args = AC::from_specified_stack_args(nargs, 1, None, rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
                 let status = ContinuationStatus::from_status(status);
                 cont(rawlua.lua(), status, args)
+                    .into_result()
                     .map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?
                     .push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
             }),
@@ -1139,18 +1139,18 @@ impl Lua {
     /// Wraps a Rust mutable closure, creating a callable Lua function handle to it.
     ///
     /// This is a version of [`Lua::create_function`] that accepts a `FnMut` argument.
-    pub fn create_function_mut<F, A, R, E>(&self, func: F) -> Result<Function>
+    pub fn create_function_mut<F, A, R>(&self, func: F) -> Result<Function>
     where
-        E: crate::traits::IntoLuaErr,
-        F: FnMut(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        F: FnMut(&Lua, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
         let func = RefCell::new(func);
         (self.lock()).create_callback(Box::new(move |rawlua, nargs| unsafe {
             let state = rawlua.state();
             let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
             (*func.try_borrow_mut().map_err(|_| crate::state::util::map_err_to_value(rawlua.lua(), Error::RecursiveMutCallback))?)(rawlua.lua(), args)
+                .into_result()
                 .map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?
                 .push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
         }))
@@ -1158,22 +1158,22 @@ impl Lua {
 
     /// Same as ``create_function`` but with an added ``debugname``
 
-    pub fn create_function_with_debug<F, A, R, E>(
+    pub fn create_function_with_debug<F, A, R>(
         &self,
         func: F,
         debugname: Option<&'static CStr>,
     ) -> Result<Function>
     where
-        E: crate::traits::IntoLuaErr,
-        F: Fn(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
         (self.lock()).create_callback_with_debug(
             Box::new(move |rawlua, nargs| unsafe {
                 let state = rawlua.state();
                 let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
                 func(rawlua.lua(), args)
+                    .into_result()
                     .map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?
                     .push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
             }),
@@ -1183,16 +1183,15 @@ impl Lua {
 
     /// Same as ``create_function_mut`` but with an added ``debugname``
 
-    pub fn create_function_mut_with_debug<F, A, R, E>(
+    pub fn create_function_mut_with_debug<F, A, R>(
         &self,
         func: F,
         debugname: Option<&'static CStr>,
     ) -> Result<Function>
     where
-        E: crate::traits::IntoLuaErr,
-        F: FnMut(&Lua, A) -> std::result::Result<R, E> + MaybeSend + 'static,
+        F: FnMut(&Lua, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
-        R: IntoLuaMulti,
+        R: IntoLuaResultMulti,
     {
         let func = RefCell::new(func);
         (self.lock()).create_callback_with_debug(
@@ -1200,6 +1199,7 @@ impl Lua {
                 let state = rawlua.state();
                 let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
                 (*func.try_borrow_mut().map_err(|_| crate::state::util::map_err_to_value(rawlua.lua(), Error::RecursiveMutCallback))?)(rawlua.lua(), args)
+                    .into_result()
                     .map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?
                     .push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
             }),

@@ -1318,3 +1318,9 @@ impl IntoLuaErr for crate::error::Error {
     }
 }
 
+impl IntoLuaErr for () {
+    #[inline]
+    fn into_lua_err(self, _lua: &Lua) -> Result<Value> {
+        Ok(Value::Nil)
+    }
+}

@@ -197,7 +197,7 @@ fn test_table_clear() -> Result<()> {
 fn test_table_sequence_from() -> Result<()> {
     let lua = Lua::new();
 
-    let get_table = lua.create_function(|_, t: Table| Ok::<_, mluau::Error>(t))?;
+    let get_table = lua.create_function(|_, t: Table| Ok(t))?;
 
     assert_eq!(get_table.call::<Table>(vec![1, 2, 3])?, [1, 2, 3]);
     assert_eq!(get_table.call::<Table>([4, 5, 6])?, [4, 5, 6]);
@@ -323,7 +323,7 @@ fn test_metatable() -> Result<()> {
 
     let table = lua.create_table()?;
     let metatable = lua.create_table()?;
-    metatable.set("__index", lua.create_function(|_, ()| Ok::<_, mluau::Error>("index_value"))?)?;
+    metatable.set("__index", lua.create_function(|_, ()| Ok("index_value"))?)?;
     table.set_metatable(Some(metatable))?;
     assert_eq!(table.get::<String>("any_key")?, "index_value");
     assert_eq!(table.raw_get::<Value>("any_key")?, Value::Nil);

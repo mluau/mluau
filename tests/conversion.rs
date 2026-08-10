@@ -49,7 +49,7 @@ fn test_string_from_lua() -> Result<()> {
     let lua = Lua::new();
 
     // From stack
-    let f = lua.create_function(|_, s: mluau::String| Ok::<_, mluau::Error>(s))?;
+    let f = lua.create_function(|_, s: mluau::String| Ok(s))?;
     let s = f.call::<String>("hello, world!")?;
     assert_eq!(s, "hello, world!");
 
@@ -83,7 +83,7 @@ fn test_borrowedstr_from_lua() -> Result<()> {
     let lua = Lua::new();
 
     // From stack
-    let f = lua.create_function(|_, s: BorrowedStr| Ok::<_, mluau::Error>(s))?;
+    let f = lua.create_function(|_, s: BorrowedStr| Ok(s))?;
     let s = f.call::<String>("hello, world!")?;
     assert_eq!(s, "hello, world!");
 
@@ -113,7 +113,7 @@ fn test_borrowedbytes_from_lua() -> Result<()> {
     let lua = Lua::new();
 
     // From stack
-    let f = lua.create_function(|_, s: BorrowedBytes| Ok::<_, mluau::Error>(s))?;
+    let f = lua.create_function(|_, s: BorrowedBytes| Ok(s))?;
     let s = f.call::<String>("hello, world!")?;
     assert_eq!(s, "hello, world!");
 
@@ -309,7 +309,7 @@ fn test_integer_from_lua() -> Result<()> {
     let lua = Lua::new();
 
     // From stack
-    let f = lua.create_function(|_, i: i32| Ok::<_, mluau::Error>(i))?;
+    let f = lua.create_function(|_, i: i32| Ok(i))?;
     assert_eq!(f.call::<i32>(42)?, 42);
 
     // Out of range
@@ -331,7 +331,7 @@ fn test_float_from_lua() -> Result<()> {
     let lua = Lua::new();
 
     // From stack
-    let f = lua.create_function(|_, f: f32| Ok::<_, mluau::Error>(f))?;
+    let f = lua.create_function(|_, f: f32| Ok(f))?;
     assert_eq!(f.call::<f32>(42.0)?, 42.0);
 
     // Out of range (but never fails)
@@ -493,7 +493,7 @@ fn test_bstring_from_lua() -> Result<()> {
     assert_eq!(bstr, "-123.55");
 
     // Test from stack
-    let f = lua.create_function(|_, bstr: BString| Ok::<_, mluau::Error>(bstr))?;
+    let f = lua.create_function(|_, bstr: BString| Ok(bstr))?;
     let bstr = f.call::<BString>("hello, world")?;
     assert_eq!(bstr, "hello, world");
 
@@ -512,7 +512,7 @@ fn test_bstring_from_lua_buffer() -> Result<()> {
     assert_eq!(bstr, "hello, world");
 
     // Test from stack
-    let f = lua.create_function(|_, bstr: BString| Ok::<_, mluau::Error>(bstr))?;
+    let f = lua.create_function(|_, bstr: BString| Ok(bstr))?;
     let buf = lua.create_buffer("hello, world")?;
     let bstr = f.call::<BString>(buf)?;
     assert_eq!(bstr, "hello, world");
@@ -579,7 +579,7 @@ fn test_option_into_from_lua() -> Result<()> {
     assert_eq!(v, v2.as_i32());
 
     // Push into stack / get from stack
-    let f = lua.create_function(|_, v: Option<i32>| Ok::<_, mluau::Error>(v))?;
+    let f = lua.create_function(|_, v: Option<i32>| Ok(v))?;
     assert_eq!(f.call::<Option<i32>>(Some(42))?, Some(42));
     assert_eq!(f.call::<Option<i32>>(Option::<i32>::None)?, None);
     assert_eq!(f.call::<Option<i32>>(())?, None);
@@ -629,7 +629,7 @@ fn test_either_into_lua() -> Result<()> {
     f.call::<()>(either)?;
     assert_eq!(t.get::<String>("hello")?, "world");
 
-    let f = lua.create_function(|_, either: Either<i32, Table>| Ok::<_, mluau::Error>(either.left().unwrap() + 1))?;
+    let f = lua.create_function(|_, either: Either<i32, Table>| Ok(either.left().unwrap() + 1))?;
     either = Either::Left(42);
     assert_eq!(f.call::<i32>(either)?, 43);
 
@@ -654,7 +654,7 @@ fn test_either_from_lua() -> Result<()> {
     }
 
     // From stack
-    let f = lua.create_function(|_, either: Either<i32, Table>| Ok::<_, mluau::Error>(either))?;
+    let f = lua.create_function(|_, either: Either<i32, Table>| Ok(either))?;
     let either = f.call::<Either<i32, Table>>(42)?;
     assert!(either.is_left());
     assert_eq!(*either.as_ref().left().unwrap(), 42);
