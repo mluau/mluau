@@ -372,37 +372,12 @@ fn test_fflags() {
     assert!(Lua::set_fflag("UnknownFlag", true).is_err());
 }
 
-// Regression test: enabling Luau's (experimental) user-defined-classes fastflags used
-// to panic during `Lua::new()`. The compiler bumps its bytecode version once
-// `DebugLuauUserDefinedClasses` is on, and mluau's own bootstrap chunk (loaded during
-// `configure_luau`) got misclassified as text by a byte-sniffing heuristic that assumed
-// bytecode version numbers would never collide with common leading whitespace bytes.
-#[cfg(feature = "luau-classes")]
-#[test]
-fn test_classes_fflag_does_not_panic() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
-    // This used to panic with:
-    // "Error configuring Luau (this is a bug, please file an issue):
-    //  SyntaxError { message: \"attempt to load a text chunk (mode is 'b')\" ... }"
-    let lua = Lua::new();
-
-    let result: i64 = lua.load("return 1 + 1").eval()?;
-    assert_eq!(result, 2);
-
-    Ok(())
-}
-
 // With the `luau-classes` feature enabled and the runtime fastflag on, mluau should
 // register Luau's `class` global table (mirroring what Luau's own `luaL_openlibs` does
 // internally), so `class.isinstance`/`class.classof` are available to scripts.
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_lib_registered_when_fflag_enabled() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     let lua = Lua::new();
 
     let has_class: bool = lua.load("return class ~= nil").eval()?;
@@ -425,9 +400,6 @@ fn test_classes_lib_registered_when_fflag_enabled() -> Result<()> {
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_instantiate_and_roundtrip_through_rust() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     let lua = Lua::new();
 
     let receive_class = lua.create_function(|_, class: mluau::Class| Ok(class))?;
@@ -475,9 +447,6 @@ fn test_classes_instantiate_and_roundtrip_through_rust() -> Result<()> {
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_value_enum_roundtrip() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     let lua = Lua::new();
 
     let seen_class: Arc<std::sync::Mutex<Option<Value>>> = Arc::new(std::sync::Mutex::new(None));
@@ -548,9 +517,6 @@ fn test_classes_value_enum_roundtrip() -> Result<()> {
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_get_set_object_field_from_rust() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     let lua = Lua::new();
 
     let bump_score = lua.create_function(|_, object: mluau::Object| {

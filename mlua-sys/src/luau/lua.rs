@@ -65,9 +65,9 @@ pub const LUA_TUSERDATA: c_int = 10;
 pub const LUA_TTHREAD: c_int = 11;
 pub const LUA_TBUFFER: c_int = 12;
 #[cfg(feature = "luau-classes")]
-pub const LUA_TCLASS: c_int = 12;
+pub const LUA_TCLASS: c_int = 13;
 #[cfg(feature = "luau-classes")]
-pub const LUA_TOBJECT: c_int = 13;
+pub const LUA_TOBJECT: c_int = 14;
 
 pub const LUA_BLUAU: c_int = 0;
 pub const LUA_BHOST_IMMUTABLE: c_int = 1;
