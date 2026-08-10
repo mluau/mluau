@@ -326,31 +326,6 @@ impl<T: UserData + MaybeSend + MaybeSync + 'static> IntoLua for T {
     }
 }
 
-impl IntoLua for Error {
-    #[inline]
-    fn into_lua(self, _: &Lua) -> Result<Value> {
-        Ok(Value::Error(Box::new(self)))
-    }
-}
-
-impl FromLua for Error {
-    #[inline]
-    fn from_lua(value: Value, _: &Lua) -> Result<Error> {
-        match value {
-            Value::Error(err) => Ok(*err),
-            val => Ok(Error::runtime(val.to_string()?)),
-        }
-    }
-}
-
-#[cfg(feature = "anyhow")]
-impl IntoLua for anyhow::Error {
-    #[inline]
-    fn into_lua(self, _: &Lua) -> Result<Value> {
-        Ok(Value::Error(Box::new(Error::from(self))))
-    }
-}
-
 impl IntoLua for RegistryKey {
     #[inline]
     fn into_lua(self, lua: &Lua) -> Result<Value> {

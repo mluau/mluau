@@ -63,80 +63,9 @@ pub struct WeakLua(XWeak<ReentrantMutex<RawLua>>);
 pub(crate) struct LuaGuard(ArcReentrantMutexGuard<RawLua>);
 
 /// Mode of the Lua garbage collector (GC).
-///
-/// In Lua 5.4 GC can work in two modes: incremental and generational.
-/// Previous Lua versions support only incremental GC.
-///
-/// More information can be found in the Lua [documentation].
-///
-/// [documentation]: https://www.lua.org/manual/5.4/manual.html#2.5
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GCMode {
     Incremental,
-    #[cfg(feature = "lua54")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "lua54")))]
-    Generational,
-}
-
-/// Controls Lua interpreter behavior such as Rust panics handling.
-#[derive(Clone, Debug)]
-#[non_exhaustive]
-pub struct LuaOptions {
-    /// Catch Rust panics when using [`pcall`]/[`xpcall`].
-    ///
-    /// If disabled, wraps these functions and automatically resumes panic if found.
-    /// Also in Lua 5.1 adds ability to provide arguments to [`xpcall`] similar to Lua >= 5.2.
-    ///
-    /// If enabled, keeps [`pcall`]/[`xpcall`] unmodified.
-    /// Panics are still automatically resumed if returned to the Rust side.
-    ///
-    /// Default: **true**
-    ///
-    /// [`pcall`]: https://www.lua.org/manual/5.4/manual.html#pdf-pcall
-    /// [`xpcall`]: https://www.lua.org/manual/5.4/manual.html#pdf-xpcall
-    pub catch_rust_panics: bool,
-
-    /// Disables use of the ``Error`` userdata in lua_error calls.
-    ///
-    /// This also disables rich error typings being returned to Rust-side code
-    /// as all errors will be stringified when passed to Lua.
-    ///
-    /// Overrides ``catch_rust_panics`` option if set to ``false``.
-    pub disable_error_userdata: bool,
-}
-
-impl Default for LuaOptions {
-    fn default() -> Self {
-        const { LuaOptions::new() }
-    }
-}
-
-impl LuaOptions {
-    /// Returns a new instance of `LuaOptions` with default parameters.
-    pub const fn new() -> Self {
-        LuaOptions {
-            catch_rust_panics: true,
-            disable_error_userdata: false,
-        }
-    }
-
-    /// Sets [`catch_rust_panics`] option.
-    ///
-    /// [`catch_rust_panics`]: #structfield.catch_rust_panics
-    #[must_use]
-    pub const fn catch_rust_panics(mut self, enabled: bool) -> Self {
-        self.catch_rust_panics = enabled;
-        self
-    }
-
-    /// Sets [`disable_error_userdata`] option.
-    ///
-    ///  [`disable_error_userdata`]: #structfield.disable_error_userdata
-    #[must_use]
-    pub const fn disable_error_userdata(mut self, enabled: bool) -> Self {
-        self.disable_error_userdata = enabled;
-        self
-    }
 }
 
 impl Drop for Lua {
@@ -180,7 +109,7 @@ impl Lua {
     /// See [`StdLib`] documentation for a list of unsafe modules that cannot be loaded.
     pub fn new() -> Lua {
         mlua_expect!(
-            Self::new_with(StdLib::ALL_SAFE, LuaOptions::default()),
+            Self::new_with(StdLib::ALL_SAFE),
             "Cannot create a Lua state"
         )
     }
@@ -190,7 +119,7 @@ impl Lua {
     /// # Safety
     /// The created Lua state will not have safety guarantees and will allow to load C modules.
     pub unsafe fn unsafe_new() -> Lua {
-        Self::unsafe_new_with(StdLib::ALL, LuaOptions::default())
+        Self::unsafe_new_with(StdLib::ALL)
     }
 
     /// Creates a new Lua state and loads the specified safe subset of the standard libraries.
@@ -202,8 +131,8 @@ impl Lua {
     /// standard libraries or C modules.
     ///
     /// See [`StdLib`] documentation for a list of unsafe modules that cannot be loaded.
-    pub fn new_with(libs: StdLib, options: LuaOptions) -> Result<Lua> {
-        let lua = unsafe { Self::inner_new(libs, options) };
+    pub fn new_with(libs: StdLib) -> Result<Lua> {
+        let lua = unsafe { Self::inner_new(libs) };
 
         lua.lock().mark_safe();
 
@@ -216,19 +145,19 @@ impl Lua {
     ///
     /// # Safety
     /// The created Lua state will not have safety guarantees and allow to load C modules.
-    pub unsafe fn unsafe_new_with(libs: StdLib, options: LuaOptions) -> Lua {
+    pub unsafe fn unsafe_new_with(libs: StdLib) -> Lua {
         // Workaround to avoid stripping a few unused Lua symbols that could be imported
         // by C modules in unsafe mode
         let mut _symbols: Vec<*const extern "C-unwind" fn()> =
             vec![ffi::lua_isuserdata as _, ffi::lua_tocfunction as _];
 
-        Self::inner_new(libs, options)
+        Self::inner_new(libs)
     }
 
     /// Creates a new Lua state with required `libs` and `options`
-    unsafe fn inner_new(libs: StdLib, options: LuaOptions) -> Lua {
+    unsafe fn inner_new(libs: StdLib) -> Lua {
         let lua = Lua {
-            raw: RawLua::new(libs, &options),
+            raw: RawLua::new(libs),
             collect_garbage: true,
         };
 
@@ -358,7 +287,7 @@ impl Lua {
         // Make sure that Lua is initialized
         let _ = Self::get_or_init_from_ptr(state);
 
-        callback_error_ext(state, ptr::null_mut(), true, move |extra, nargs| {
+        callback_error_ext(state, ptr::null_mut(), move |extra, nargs| {
             let rawlua = (*extra).raw_lua();
             let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state)?;
             func(rawlua.lua(), args)?.push_into_specified_stack(rawlua, state)?;
@@ -503,7 +432,7 @@ impl Lua {
                 }
                 return;
             }
-            let result = callback_error_ext(state, ptr::null_mut(), false, move |extra, _| {
+            let result = callback_error_ext(state, ptr::null_mut(), move |extra, _| {
                 let interrupt_cb = (*extra).interrupt_callback.clone();
                 let interrupt_cb = mlua_expect!(interrupt_cb, "no interrupt callback set in interrupt_proc");
                 if XRc::strong_count(&interrupt_cb) > 2 {
@@ -624,7 +553,7 @@ impl Lua {
                 ffi::lua_replace((*extra).raw_lua().ref_thread(aux_thread), index);
             }
             let value = Thread((*extra).raw_lua().new_value_ref(aux_thread, index), child);
-            callback_error_ext(parent, extra, false, move |extra, _| {
+            callback_error_ext(parent, extra, move |extra, _| {
                 callback((*extra).lua(), value)
             })
         } else {

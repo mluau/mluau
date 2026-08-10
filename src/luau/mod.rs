@@ -23,6 +23,7 @@ pub static ENABLED_FFLAGS: &[&str] = &[
     "DebugLuauUserDefinedClassesRuntime",
     #[cfg(feature = "none-primitive")]
     "LuauNonePrimitive",
+    "LuauAutoStack" // lets mluau avoid calls to lua_checkstack (avoids ffi calls)
 ];
 
 pub static RESTRICTED_FFLAGS: &[&str] = &[
@@ -36,6 +37,8 @@ pub static RESTRICTED_FFLAGS: &[&str] = &[
     "DebugLuauUserDefinedClassesRuntime",
     // none primitive
     "LuauNonePrimitive",
+    // internally needed
+    "LuauAutoStack"
 ];
 
 // Since Luau has some missing standard functions, we re-implement them here
@@ -184,7 +187,7 @@ unsafe extern "C-unwind" fn lua_collectgarbage(state: *mut ffi::lua_State) -> c_
 }
 
 unsafe extern "C-unwind" fn lua_loadstring(state: *mut ffi::lua_State) -> c_int {
-    callback_error_ext(state, ptr::null_mut(), false, move |extra, nargs| {
+    callback_error_ext(state, ptr::null_mut(), move |extra, nargs| {
         let rawlua = (*extra).raw_lua();
         let (chunk, chunk_name) = <(String, Option<String>)>::from_specified_stack_args(
             nargs,

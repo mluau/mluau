@@ -5,7 +5,6 @@ use std::cell::{Cell, UnsafeCell};
 use std::ffi::CStr;
 use std::mem;
 use std::os::raw::{c_char, c_int, c_void};
-use std::panic::resume_unwind;
 use std::ptr::{self, NonNull};
 use std::string::String as StdString;
 use std::sync::Arc;
@@ -39,21 +38,15 @@ use crate::userdata::{
     UserDataStorage,
 };
 use crate::util::{
-    assert_stack, check_stack, get_destructed_userdata_metatable, get_internal_userdata, get_main_state,
-    get_metatable_ptr, get_userdata, init_error_registry, init_internal_metatable, pop_error,
-    push_internal_userdata, push_string, push_table, push_userdata, rawset_field, safe_pcall, safe_xpcall,
-    short_type_name, to_string, StackGuard, WrappedFailure,
+    assert_stack, check_stack, get_destructed_userdata_metatable, get_main_state,
+    get_metatable_ptr, get_userdata, init_destructed_userdata_registry, init_internal_metatable, pop_error,
+    push_internal_userdata, push_string, push_table, push_userdata, rawset_field,
+    short_type_name, to_string, StackGuard,
 };
 use crate::value::{Nil, Value};
 
 use super::extra::ExtraData;
-use super::{Lua, LuaOptions, WeakLua};
-
-#[cfg(not(feature = "luau"))]
-use crate::{
-    debug::Debug,
-    types::{HookCallback, HookKind, VmState},
-};
+use super::{Lua, WeakLua};
 
 /// An inner Lua struct which holds a raw Lua state.
 pub struct RawLua {
@@ -146,13 +139,12 @@ impl RawLua {
         self.extra.get()
     }
 
-    pub(super) unsafe fn new(libs: StdLib, options: &LuaOptions) -> XRc<ReentrantMutex<Self>> {
-        Self::new_ext(libs, options, true)
+    pub(super) unsafe fn new(libs: StdLib) -> XRc<ReentrantMutex<Self>> {
+        Self::new_ext(libs, true)
     }
 
     pub(super) unsafe fn new_ext(
         libs: StdLib,
-        options: &LuaOptions,
         owned: bool,
     ) -> XRc<ReentrantMutex<Self>> {
         let mem_state: *mut MemoryState = Box::into_raw(Box::default());
@@ -182,30 +174,6 @@ impl RawLua {
         );
         (*extra).libs |= libs;
 
-        if !options.catch_rust_panics && !options.disable_error_userdata {
-            mlua_expect!(
-                (|| -> Result<()> {
-                    let _sg = StackGuard::new(state);
-
-                    #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-                    ffi::lua_rawgeti(state, ffi::LUA_REGISTRYINDEX, ffi::LUA_RIDX_GLOBALS);
-                    #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
-                    ffi::lua_pushvalue(state, ffi::LUA_GLOBALSINDEX);
-
-                    ffi::lua_pushcfunction(state, safe_pcall);
-                    rawset_field(state, -2, "pcall")?;
-
-                    ffi::lua_pushcfunction(state, safe_xpcall);
-                    rawset_field(state, -2, "xpcall")?;
-
-                    Ok(())
-                })(),
-                "Error during applying option `catch_rust_panics`"
-            )
-        }
-
-        (*extra).disable_error_userdata = options.disable_error_userdata;
-
         rawlua
     }
 
@@ -220,7 +188,7 @@ impl RawLua {
 
         mlua_expect!(
             (|state| {
-                init_error_registry(state)?;
+                init_destructed_userdata_registry(state)?;
 
                 // Create the internal metatables and store them in the registry
                 // to prevent from being garbage collected.
@@ -640,14 +608,6 @@ impl RawLua {
             Value::Class(c) => self.push_ref_at(&c.0, state),
             #[cfg(any(feature = "luau-classes", doc))]
             Value::Object(o) => self.push_ref_at(&o.0, state),
-            Value::Error(err) => {
-                //let ed = &*self.extra.get();
-                //if ed.disable_error_userdata {
-                //
-                //}
-
-                push_internal_userdata(state, WrappedFailure::Error(*err.clone()), true)?;
-            }
             Value::Other(vref) => self.push_ref_at(vref, state),
         }
         Ok(())
@@ -733,28 +693,14 @@ impl RawLua {
                 Ok(Value::Function(Function(self.new_value_ref(aux_thread, idxs))))
             }
             ffi::LUA_TUSERDATA => {
-                // If the userdata is `WrappedFailure`, process it as an error or panic.
-                let failure_mt_ptr = (*self.extra.get()).wrapped_failure_mt_ptr;
-                match get_internal_userdata::<WrappedFailure>(state, idx, failure_mt_ptr).as_mut() {
-                    Some(WrappedFailure::Error(err)) => Ok(Value::Error(Box::new(err.clone()))),
-                    Some(WrappedFailure::Panic(panic)) => {
-                        if let Some(panic) = panic.take() {
-                            resume_unwind(panic);
-                        }
-                        // Previously resumed panic?
-                        Ok(Value::Nil)
-                    }
-                    _ => {
-                        let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                        let ref_thread = self.ref_thread(aux_thread);
-                        ffi::lua_xpush(state, ref_thread, idx);
-                        if replace {
-                            ffi::lua_replace(ref_thread, idxs);
-                        }
-
-                        Ok(Value::UserData(AnyUserData(self.new_value_ref(aux_thread, idxs))))
-                    }
+                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
+                let ref_thread = self.ref_thread(aux_thread);
+                ffi::lua_xpush(state, ref_thread, idx);
+                if replace {
+                    ffi::lua_replace(ref_thread, idxs);
                 }
+
+                Ok(Value::UserData(AnyUserData(self.new_value_ref(aux_thread, idxs))))
             }
 
             ffi::LUA_TTHREAD => {
@@ -1229,7 +1175,6 @@ impl RawLua {
             callback_error_ext_yieldable(
                 state,
                 (*upvalue).extra.get(),
-                true,
                 |extra, nargs| {
                     // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
                     // The lock must be already held as the callback is executed
@@ -1274,7 +1219,6 @@ impl RawLua {
                 callback_error_ext_yieldable(
                     state,
                     (*upvalue).extra.get(),
-                    true,
                     |extra, nargs| {
                         // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
                         // arguments) The lock must be already held as the callback is
@@ -1317,7 +1261,6 @@ impl RawLua {
             callback_error_ext_yieldable(
                 state,
                 (*upvalue).extra.get(),
-                true,
                 |extra, nargs| {
                     // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
                     // The lock must be already held as the callback is executed
@@ -1354,7 +1297,6 @@ impl RawLua {
             callback_error_ext_yieldable(
                 state,
                 (*upvalue).extra.get(),
-                true,
                 |extra, nargs| {
                     // Get namecall method name
                     let method = unsafe {
@@ -1430,7 +1372,6 @@ impl RawLua {
             callback_error_ext_yieldable(
                 state,
                 (*upvalue).extra.get(),
-                true,
                 |extra, nargs| {
                     // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
                     // arguments) The lock must be already held as the callback is
@@ -1450,7 +1391,6 @@ impl RawLua {
             callback_error_ext_yieldable(
                 state,
                 (*upvalue).extra.get(),
-                true,
                 |extra, nargs| {
                     // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
                     // arguments) The lock must be already held as the callback is

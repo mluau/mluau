@@ -45,12 +45,6 @@ pub enum Error {
     /// The Lua VM returns this error when the allocator does not return the requested memory, aka
     /// it is an out-of-memory error.
     MemoryError(StdString),
-    /// Lua garbage collector error, aka `LUA_ERRGCMM`.
-    ///
-    /// The Lua VM returns this error when there is an error running a `__gc` metamethod.
-    #[cfg(any(feature = "lua53", feature = "lua52", doc))]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "lua53", feature = "lua52"))))]
-    GarbageCollectorError(StdString),
     /// Potentially unsafe action in safe mode.
     SafetyError(StdString),
     /// Memory control is not available.
@@ -173,18 +167,7 @@ pub enum Error {
     ///
     /// [`RegistryKey`]: crate::RegistryKey
     MismatchedRegistryKey,
-    /// A Rust callback returned `Err`, raising the contained `Error` as a Lua error.
-    CallbackError {
-        /// Lua call stack backtrace.
-        traceback: StdString,
-        /// Original error returned by the Rust code.
-        cause: Arc<Error>,
-    },
-    /// A Rust panic that was previously resumed, returned again.
-    ///
-    /// This error can occur only when a Rust panic resumed previously was recovered
-    /// and returned again.
-    PreviouslyResumedPanic,
+
     /// Serialization error.
     #[cfg(feature = "serde")]
     #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
@@ -225,10 +208,6 @@ impl fmt::Display for Error {
             Error::RuntimeError(msg) => write!(fmt, "runtime error: {msg}"),
             Error::MemoryError(msg) => {
                 write!(fmt, "memory error: {msg}")
-            }
-            #[cfg(any(feature = "lua53", feature = "lua52"))]
-            Error::GarbageCollectorError(msg) => {
-                write!(fmt, "garbage collector error: {msg}")
             }
             Error::SafetyError(msg) => {
                 write!(fmt, "safety error: {msg}")
@@ -290,32 +269,7 @@ impl fmt::Display for Error {
             Error::MismatchedRegistryKey => {
                 write!(fmt, "RegistryKey used from different Lua state")
             }
-            Error::CallbackError { cause, traceback } => {
-                // Trace errors down to the root
-                let (mut cause, mut full_traceback) = (cause, None);
-                while let Error::CallbackError { cause: cause2, traceback: traceback2 } = &**cause {
-                    cause = cause2;
-                    full_traceback = Some(traceback2);
-                }
-                writeln!(fmt, "{cause}")?;
-                if let Some(full_traceback) = full_traceback {
-                    let traceback = traceback.trim_start_matches("stack traceback:");
-                    let traceback = traceback.trim_start().trim_end();
-                    // Try to find local traceback within the full traceback
-                    if let Some(pos) = full_traceback.find(traceback) {
-                        write!(fmt, "{}", &full_traceback[..pos])?;
-                        writeln!(fmt, ">{}", &full_traceback[pos..].trim_end())?;
-                    } else {
-                        writeln!(fmt, "{}", full_traceback.trim_end())?;
-                    }
-                } else {
-                    writeln!(fmt, "{}", traceback.trim_end())?;
-                }
-                Ok(())
-            }
-            Error::PreviouslyResumedPanic => {
-                write!(fmt, "previously resumed panic returned again")
-            }
+
             #[cfg(feature = "serde")]
             Error::SerializeError(err) => {
                 write!(fmt, "serialize error: {err}")
@@ -343,9 +297,7 @@ impl StdError for Error {
             // An error type with a source error should either return that error via source or
             // include that source's error message in its own Display output, but never both.
             // https://blog.rust-lang.org/inside-rust/2021/07/01/What-the-error-handling-project-group-is-working-towards.html
-            // Given that we include source to fmt::Display implementation for `CallbackError`, this call
-            // returns nothing.
-            Error::CallbackError { .. } => None,
+            // Given that we include source to fmt::Display implementation, this call
             Error::ExternalError(err) => err.source(),
             Error::WithContext { cause, .. } => Self::source(cause),
             _ => None,
@@ -383,16 +335,6 @@ impl Error {
         Chain {
             root: self,
             current: None,
-        }
-    }
-
-    /// Returns the parent of this error.
-    #[doc(hidden)]
-    pub fn parent(&self) -> Option<&Error> {
-        match self {
-            Error::CallbackError { cause, .. } => Some(cause.as_ref()),
-            Error::WithContext { cause, .. } => Some(cause.as_ref()),
-            _ => None,
         }
     }
 
@@ -546,7 +488,6 @@ impl<'a> Iterator for Chain<'a> {
                 }
                 Some(current) => match current.downcast_ref::<Error>()? {
                     Error::BadArgument { cause, .. }
-                    | Error::CallbackError { cause, .. }
                     | Error::WithContext { cause, .. } => {
                         self.current = Some(&**cause);
                         self.current

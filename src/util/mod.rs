@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int, c_void};
-use std::{ptr, slice, str};
+use std::{slice, str};
 
 use crate::error::{Error, Result};
 
 pub(crate) use error::{
-    error_traceback, error_traceback_thread, init_error_registry, pop_error, protect_lua_call,
-    protect_lua_closure, WrappedFailure,
+    error_traceback, error_traceback_thread, init_destructed_userdata_registry, pop_error, protect_lua_call,
+    protect_lua_closure,
 };
 pub(crate) use path::parse_path as parse_lookup_path;
 pub(crate) use short_names::short_type_name;
@@ -15,7 +15,7 @@ pub(crate) use types::TypeKey;
 #[cfg(feature = "dynamic-userdata")]
 pub(crate) use userdata::push_userdata_dyn;
 pub(crate) use userdata::{
-    get_destructed_userdata_metatable, get_internal_metatable, get_internal_userdata, get_userdata,
+    get_destructed_userdata_metatable, get_userdata,
     init_internal_metatable, push_internal_userdata, push_userdata, take_userdata,
     DESTRUCTED_USERDATA_METATABLE,
 };
@@ -158,75 +158,6 @@ pub(crate) unsafe fn rawset_field(state: *mut ffi::lua_State, table: c_int, fiel
         ffi::lua_rotate(state, -3, 2);
         ffi::lua_rawset(state, -3);
     })
-}
-
-// A variant of `pcall` that does not allow Lua to catch Rust panics from `callback_error`.
-pub(crate) unsafe extern "C-unwind" fn safe_pcall(state: *mut ffi::lua_State) -> c_int {
-    ffi::luaL_checkstack(state, 2, ptr::null());
-
-    let top = ffi::lua_gettop(state);
-    if top == 0 {
-        ffi::lua_pushstring(state, cstr!("not enough arguments to pcall"));
-        ffi::lua_error(state);
-    }
-
-    if ffi::lua_pcall(state, top - 1, ffi::LUA_MULTRET, 0) == ffi::LUA_OK {
-        ffi::lua_pushboolean(state, 1);
-        ffi::lua_insert(state, 1);
-        ffi::lua_gettop(state)
-    } else {
-        let wf_ud = get_internal_userdata::<WrappedFailure>(state, -1, ptr::null());
-        if let Some(WrappedFailure::Panic(_)) = wf_ud.as_ref() {
-            ffi::lua_error(state);
-        }
-        ffi::lua_pushboolean(state, 0);
-        ffi::lua_insert(state, -2);
-        2
-    }
-}
-
-// A variant of `xpcall` that does not allow Lua to catch Rust panics from `callback_error`.
-pub(crate) unsafe extern "C-unwind" fn safe_xpcall(state: *mut ffi::lua_State) -> c_int {
-    unsafe extern "C-unwind" fn xpcall_msgh(state: *mut ffi::lua_State) -> c_int {
-        ffi::luaL_checkstack(state, 2, ptr::null());
-
-        let wf_ud = get_internal_userdata::<WrappedFailure>(state, -1, ptr::null());
-        if let Some(WrappedFailure::Panic(_)) = wf_ud.as_ref() {
-            1
-        } else {
-            ffi::lua_pushvalue(state, ffi::lua_upvalueindex(1));
-            ffi::lua_insert(state, 1);
-            ffi::lua_call(state, ffi::lua_gettop(state) - 1, ffi::LUA_MULTRET);
-            ffi::lua_gettop(state)
-        }
-    }
-
-    ffi::luaL_checkstack(state, 2, ptr::null());
-
-    let top = ffi::lua_gettop(state);
-    if top < 2 {
-        ffi::lua_pushstring(state, cstr!("not enough arguments to xpcall"));
-        ffi::lua_error(state);
-    }
-
-    ffi::lua_pushvalue(state, 2);
-    ffi::lua_pushcclosure(state, xpcall_msgh, 1);
-    ffi::lua_copy(state, 1, 2);
-    ffi::lua_replace(state, 1);
-
-    if ffi::lua_pcall(state, ffi::lua_gettop(state) - 2, ffi::LUA_MULTRET, 1) == ffi::LUA_OK {
-        ffi::lua_pushboolean(state, 1);
-        ffi::lua_insert(state, 2);
-        ffi::lua_gettop(state) - 1
-    } else {
-        let wf_ud = get_internal_userdata::<WrappedFailure>(state, -1, ptr::null());
-        if let Some(WrappedFailure::Panic(_)) = wf_ud.as_ref() {
-            ffi::lua_error(state);
-        }
-        ffi::lua_pushboolean(state, 0);
-        ffi::lua_insert(state, -2);
-        2
-    }
 }
 
 // Returns Lua main thread for Lua >= 5.2 or checks that the passed thread is main for Lua 5.1.

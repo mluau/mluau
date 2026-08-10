@@ -250,14 +250,14 @@ pub trait ObjectLike: Sealed {
 
 /// A trait for types that can be used as Lua functions.
 pub trait LuaNativeFn<A: FromLuaMulti> {
-    type Output: IntoLuaMulti;
+    type Output;
 
     fn call(&self, args: A) -> Self::Output;
 }
 
 /// A trait for types with mutable state that can be used as Lua functions.
 pub trait LuaNativeFnMut<A: FromLuaMulti> {
-    type Output: IntoLuaMulti;
+    type Output;
 
     fn call(&mut self, args: A) -> Self::Output;
 }
@@ -268,7 +268,6 @@ macro_rules! impl_lua_native_fn {
         where
             FN: Fn($($A,)*) -> R + MaybeSend + 'static,
             ($($A,)*): FromLuaMulti,
-            R: IntoLuaMulti,
         {
             type Output = R;
 
@@ -283,7 +282,6 @@ macro_rules! impl_lua_native_fn {
         where
             FN: FnMut($($A,)*) -> R + MaybeSend + 'static,
             ($($A,)*): FromLuaMulti,
-            R: IntoLuaMulti,
         {
             type Output = R;
 

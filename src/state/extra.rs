@@ -16,7 +16,7 @@ use crate::stdlib::StdLib;
 use crate::types::{AppData, ReentrantMutex, XRc};
 
 use crate::userdata::RawUserDataRegistry;
-use crate::util::{get_internal_metatable, push_internal_userdata, TypeKey, WrappedFailure};
+use crate::util::{push_internal_userdata, TypeKey};
 
 #[cfg(any(feature = "luau", doc))]
 use crate::chunk::Compiler;
@@ -27,7 +27,6 @@ use super::{Lua, WeakLua};
 // Unique key to store `ExtraData` in the registry
 static EXTRA_REGISTRY_KEY: u8 = 0;
 
-const WRAPPED_FAILURE_POOL_DEFAULT_CAPACITY: usize = 64;
 pub const REF_STACK_RESERVE: c_int = 3;
 
 pub(crate) struct RefThread {
@@ -107,13 +106,6 @@ pub(crate) struct ExtraData {
     // Special auxiliary thread for mlua internal use
     pub(crate) ref_thread_internal: RefThread,
 
-    // Pool of `WrappedFailure` enums in the ref thread (as userdata)
-    pub(super) wrapped_failure_pool: Vec<c_int>,
-    pub(super) wrapped_failure_top: usize,
-
-    // Address of `WrappedFailure` metatable
-    pub(super) wrapped_failure_mt_ptr: *const c_void,
-
     #[cfg(not(feature = "luau"))]
     pub(super) hook_callback: Option<crate::types::HookCallback>,
     #[cfg(not(feature = "luau"))]
@@ -138,10 +130,6 @@ pub(crate) struct ExtraData {
     pub(super) compiler: Option<Compiler>,
     #[cfg(feature = "luau-jit")]
     pub(super) enable_jit: bool,
-
-    // Disable error userdata in mlua errors
-    pub disable_error_userdata: bool,
-    // Optional fallback lua string
 
     // Values currently being yielded from Lua.yield()
     #[cfg(not(feature = "lua51"))]
@@ -184,13 +172,6 @@ impl ExtraData {
     pub(crate) const MEMORY_ERROR_IDX: c_int = 2;
 
     pub(super) unsafe fn init(state: *mut ffi::lua_State, owned: bool) -> XRc<UnsafeCell<Self>> {
-        let wrapped_failure_mt_ptr = {
-            get_internal_metatable::<WrappedFailure>(state);
-            let ptr = ffi::lua_topointer(state, -1);
-            ffi::lua_pop(state, 1);
-            ptr
-        };
-
         #[allow(clippy::arc_with_non_send_sync)]
         let extra = XRc::new(UnsafeCell::new(ExtraData {
             lua: MaybeUninit::uninit(),
@@ -212,15 +193,6 @@ impl ExtraData {
             libs: StdLib::NONE,
             ref_thread: vec![RefThread::new(state)],
             ref_thread_internal: RefThread::new(state),
-            wrapped_failure_pool: Vec::with_capacity(WRAPPED_FAILURE_POOL_DEFAULT_CAPACITY),
-            wrapped_failure_top: 0,
-            wrapped_failure_mt_ptr,
-            #[cfg(not(feature = "luau"))]
-            hook_callback: None,
-            #[cfg(not(feature = "luau"))]
-            hook_triggers: Default::default(),
-            #[cfg(feature = "lua54")]
-            warn_callback: None,
 
             interrupt_callback: None,
 
@@ -241,7 +213,6 @@ impl ExtraData {
             running_gc: false,
             #[cfg(not(feature = "lua51"))]
             yielded_values: None,
-            disable_error_userdata: false,
             on_close: None,
 
             mem_categories: vec![std::ffi::CString::new("main").unwrap()],

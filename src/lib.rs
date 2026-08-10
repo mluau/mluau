@@ -98,7 +98,7 @@ pub use crate::debug::{Debug, DebugEvent, DebugNames, DebugSource, DebugStack};
 pub use crate::error::{Error, ErrorContext, ExternalError, ExternalResult, Result};
 pub use crate::function::{Function, FunctionInfo};
 pub use crate::multi::{MultiValue, Variadic};
-pub use crate::state::{GCMode, Lua, LuaOptions, WeakLua};
+pub use crate::state::{GCMode, Lua, WeakLua};
 pub use crate::stdlib::StdLib;
 pub use crate::string::{BorrowedBytes, BorrowedStr, String};
 pub use crate::table::{Table, TablePairs, TablePairsOwned, TableSequence};

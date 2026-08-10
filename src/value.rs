@@ -6,7 +6,7 @@ use std::{fmt, ptr, str};
 
 use num_traits::FromPrimitive;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::function::Function;
 use crate::string::{BorrowedStr, String};
 use crate::table::Table;
@@ -84,8 +84,6 @@ pub enum Value {
     #[cfg(any(feature = "luau-classes", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau-classes")))]
     Object(crate::Object),
-    /// `Error` is a special builtin userdata type. When received from Lua it is implicitly cloned.
-    Error(Box<Error>),
     /// Any other value not known to mlua (eg. LuaJIT CData).
     Other(#[doc(hidden)] ValueRef),
 }
@@ -119,7 +117,6 @@ impl Value {
             Value::Class(_) => "class",
             #[cfg(any(feature = "luau-classes", doc))]
             Value::Object(_) => "object",
-            Value::Error(_) => "error",
             Value::Other(_) => "other",
         }
     }
@@ -216,7 +213,6 @@ impl Value {
             Value::Class(crate::Class(vref)) | Value::Object(crate::Object(vref)) => unsafe {
                 invoke_to_string(vref)
             },
-            Value::Error(err) => Ok(err.to_string()),
         }
     }
 
@@ -554,22 +550,6 @@ impl Value {
         self.as_object().is_some()
     }
 
-    /// Returns `true` if the value is an [`Error`].
-    #[inline]
-    pub fn is_error(&self) -> bool {
-        self.as_error().is_some()
-    }
-
-    /// Cast the value to [`Error`].
-    ///
-    /// If the value is an [`Error`], returns it or `None` otherwise.
-    pub fn as_error(&self) -> Option<&Error> {
-        match self {
-            Value::Error(e) => Some(e),
-            _ => None,
-        }
-    }
-
     /// Wrap reference to this Value into [`SerializableValue`].
     ///
     /// This allows customizing serialization behavior using serde.
@@ -680,8 +660,6 @@ impl Value {
                     .unwrap_or_else(|_| format!("object: {:?}", o.to_pointer()));
                 write!(fmt, "{s}")
             }
-            Value::Error(e) if recursive => write!(fmt, "{e:?}"),
-            Value::Error(_) => write!(fmt, "error"),
             Value::Other(v) => write!(fmt, "other: {:?}", v.to_pointer()),
         }
     }
@@ -717,7 +695,6 @@ impl fmt::Debug for Value {
             Value::Class(c) => write!(fmt, "{c:?}"),
             #[cfg(any(feature = "luau-classes", doc))]
             Value::Object(o) => write!(fmt, "{o:?}"),
-            Value::Error(e) => write!(fmt, "Error({e:?})"),
             Value::Other(v) => write!(fmt, "Other({v:?})"),
         }
     }
@@ -880,7 +857,6 @@ impl Serialize for SerializableValue<'_> {
             | Value::Thread(_)
             | Value::UserData(_)
             | Value::LightUserData(_)
-            | Value::Error(_)
             | Value::Other(_) => {
                 if self.options.deny_unsupported_types {
                     let msg = format!("cannot serialize <{}>", self.value.type_name());

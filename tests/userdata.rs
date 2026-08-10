@@ -339,10 +339,7 @@ fn test_userdata_take() -> Result<()> {
             r => panic!("expected `UserDataDestructed` error, got {:?}", r),
         }
         match lua.load("userdata:num()").exec() {
-            Err(Error::CallbackError { ref cause, .. }) => match cause.as_ref() {
-                Error::UserDataDestructed => {}
-                err => panic!("expected `UserDataDestructed`, got {:?}", err),
-            },
+            Err(Error::RuntimeError(msg)) if msg.contains("userdata has been destructed") => {}
             r => panic!("improper return for destructed userdata: {:?}", r),
         }
 
@@ -450,12 +447,11 @@ fn test_userdata_method_once() -> Result<()> {
 
     assert_eq!(lua.load("userdata:take_value()").eval::<i64>()?, 42);
     match lua.load("userdata2.take_value(userdata)").eval::<i64>() {
-        Err(Error::CallbackError { cause, .. }) => {
-            let err = cause.to_string();
+        Err(Error::RuntimeError(err)) => {
             assert!(err.contains("bad argument `self` to `MyUserdata.take_value`"));
             assert!(err.contains("userdata has been destructed"));
         }
-        r => panic!("expected Err(CallbackError), got {r:?}"),
+        r => panic!("expected Err(RuntimeError), got {r:?}"),
     }
     assert_eq!(Arc::strong_count(&rc), 2);
 
@@ -931,23 +927,11 @@ fn test_userdata_method_errors() -> Result<()> {
     let ud = lua.create_userdata(MyUserData(123))?;
     let res = ud.call_function::<()>("get_value", "not a userdata");
     match res {
-        Err(Error::CallbackError { cause, .. }) => match cause.as_ref() {
-            Error::BadArgument {
-                to,
-                name,
-                cause: cause2,
-                ..
-            } => {
-                assert_eq!(to.as_deref(), Some("MyUserData.get_value"));
-                assert_eq!(name.as_deref(), Some("self"));
-                assert_eq!(
-                    cause2.to_string(),
-                    "error converting Lua string to userdata (expected userdata of type 'MyUserData')"
-                );
-            }
-            err => panic!("expected BadArgument, got {err:?}"),
-        },
-        r => panic!("expected CallbackError, got {r:?}"),
+        Err(Error::RuntimeError(msg)) => {
+            assert!(msg.contains("bad argument `self` to `MyUserData.get_value`"));
+            assert!(msg.contains("error converting Lua string to userdata"));
+        }
+        r => panic!("expected RuntimeError, got {r:?}"),
     }
 
     Ok(())

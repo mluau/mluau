@@ -47,7 +47,6 @@ fn test_gc_allocation_rate() -> Result<()> {
 fn test_gc_interrupt() -> Result<()> {
     let lua = Lua::new_with(
         mluau::StdLib::ALL_SAFE,
-        mluau::LuaOptions::new().disable_error_userdata(true),
     )?;
 
     lua.set_interrupt(|_lua| Ok(mluau::VmState::Continue));

@@ -3,7 +3,7 @@ use std::os::raw::c_void;
 use std::ptr;
 use std::string::String as StdString;
 
-use mluau::{Error, LightUserData, Lua, MultiValue, Result, UserData, UserDataMethods, Value};
+use mluau::{LightUserData, Lua, MultiValue, Result, UserData, UserDataMethods, Value};
 
 #[test]
 fn test_value_eq() -> Result<()> {
@@ -202,10 +202,6 @@ fn test_value_to_string() -> Result<()> {
     let ud: Value = Value::UserData(lua.create_userdata(MyUserData)?);
     assert!(ud.to_string()?.starts_with("MyUserData:"));
 
-    let err = Value::Error(Box::new(Error::runtime("test error")));
-    assert_eq!(err.to_string()?, "runtime error: test error");
-    assert_eq!(err.type_name(), "error");
-
     {
         let buf = Value::Buffer(lua.create_buffer(b"hello")?);
         assert!(buf.to_string()?.starts_with("buffer:"));
@@ -283,14 +279,6 @@ fn test_value_conversions() -> Result<()> {
         Some(&"hello")
     );
 
-    assert!(Value::Error(Box::new(Error::runtime("some error"))).is_error());
-    assert_eq!(
-        (Value::Error(Box::new(Error::runtime("some error"))).as_error())
-            .unwrap()
-            .to_string(),
-        "runtime error: some error"
-    );
-
     Ok(())
 }
 
@@ -318,7 +306,6 @@ fn test_value_exhaustive_match() {
         Value::Class(_) => {}
         #[cfg(feature = "luau-classes")]
         Value::Object(_) => {}
-        Value::Error(_) => {}
         Value::Other(_) => {}
     }
 }

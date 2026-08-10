@@ -369,10 +369,7 @@ fn test_function_wrap() -> Result<()> {
 
     // Check recursive mut callback error
     let fmut = Function::wrap_mut(|f: Function| match f.call::<()>(&f) {
-        Err(Error::CallbackError { cause, .. }) => match cause.as_ref() {
-            Error::RecursiveMutCallback { .. } => Ok(()),
-            other => panic!("incorrect result: {other:?}"),
-        },
+        Err(Error::RuntimeError(msg)) if msg.contains("mutable callback called recursively") => Ok(()),
         other => panic!("incorrect result: {other:?}"),
     });
     let fmut = lua.convert::<Function>(fmut)?;

@@ -447,6 +447,7 @@ impl Function {
     pub fn wrap_raw<F, A>(func: F) -> impl IntoLua
     where
         F: LuaNativeFn<A> + MaybeSend + 'static,
+        F::Output: IntoLuaMulti,
         A: FromLuaMulti,
     {
         WrappedFunction(Box::new(move |lua, nargs| unsafe {
@@ -464,6 +465,7 @@ impl Function {
     pub fn wrap_raw_mut<F, A>(func: F) -> impl IntoLua
     where
         F: LuaNativeFnMut<A> + MaybeSend + 'static,
+        F::Output: IntoLuaMulti,
         A: FromLuaMulti,
     {
         let func = RefCell::new(func);

@@ -1,99 +1,21 @@
-use std::any::Any;
 use std::mem::MaybeUninit;
 use std::os::raw::{c_int, c_void};
-use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
 use std::ptr;
-use std::sync::Arc;
 
 use crate::error::{Error, Result};
 use crate::memory::MemoryState;
-use crate::state::util::{extract_panic_str, extract_panic_str_ref, push_error_string};
-use crate::state::ExtraData;
+use crate::state::{ExtraData, callback_error_ext};
 use crate::util::{
-    check_stack, get_internal_userdata, init_internal_metatable, push_internal_userdata,
-    push_table, rawset_field, to_string, TypeKey, DESTRUCTED_USERDATA_METATABLE,
+    check_stack, push_table, rawset_field, to_string, DESTRUCTED_USERDATA_METATABLE,
 };
 
-static WRAPPED_FAILURE_TYPE_KEY: u8 = 0;
-
-pub(crate) enum WrappedFailure {
-    None,
-    Error(Error),
-    Panic(Option<Box<dyn Any + Send + 'static>>),
-}
-
-impl TypeKey for WrappedFailure {
-    #[inline(always)]
-    fn type_key() -> *const c_void {
-        &WRAPPED_FAILURE_TYPE_KEY as *const u8 as *const c_void
-    }
-}
-
-impl WrappedFailure {
-    pub(crate) unsafe fn new_userdata(state: *mut ffi::lua_State) -> *mut Self {
-        // Unprotected calls always return `Ok`
-        push_internal_userdata(state, WrappedFailure::None, false).unwrap()
-    }
-}
-
-// In the context of a lua callback, this will call the given function and if the given function
-// returns an error, *or if the given function panics*, this will result in a call to `lua_error` (a
-// longjmp). The error or panic is wrapped in such a way that when calling `pop_error` back on
-// the Rust side, it will resume the panic.
-//
-// This function assumes the structure of the stack at the beginning of a callback, that the only
-// elements on the stack are the arguments to the callback.
-//
-// This function uses some of the bottom of the stack for error handling, the given callback will be
-// given the number of arguments available as an argument, and should return the number of returns
-// as normal, but cannot assume that the arguments available start at 0.
+// Alias to `callback_error_ext`
 unsafe fn callback_error<F, R>(state: *mut ffi::lua_State, f: F) -> R
 where
     F: FnOnce(c_int) -> Result<R>,
 {
-    let nargs = ffi::lua_gettop(state);
-
-    // We need 2 extra stack spaces to store preallocated memory and error/panic metatable
-    let extra_stack = if nargs < 2 { 2 - nargs } else { 1 };
-    ffi::luaL_checkstack(
-        state,
-        extra_stack,
-        cstr!("not enough stack space for callback error handling"),
-    );
-
-    // We cannot shadow Rust errors with Lua ones, we pre-allocate enough memory
-    // to store a wrapped error or panic *before* we proceed.
-    let ud = WrappedFailure::new_userdata(state);
-    ffi::lua_rotate(state, 1, 1);
-
-    match catch_unwind(AssertUnwindSafe(|| f(nargs))) {
-        Ok(Ok(r)) => {
-            ffi::lua_remove(state, 1);
-            r
-        }
-        Ok(Err(err)) => {
-            ffi::lua_settop(state, 1);
-
-            // Build `CallbackError` with traceback
-            let traceback = if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {
-                ffi::luaL_traceback(state, state, ptr::null(), 0);
-                let traceback = to_string(state, -1);
-                ffi::lua_pop(state, 1);
-                traceback
-            } else {
-                "<not enough stack space for traceback>".to_string()
-            };
-            let cause = Arc::new(err);
-            let wrapped_error = WrappedFailure::Error(Error::CallbackError { traceback, cause });
-            ptr::write(ud, wrapped_error);
-            ffi::lua_error(state)
-        }
-        Err(p) => {
-            ffi::lua_settop(state, 1);
-            ptr::write(ud, WrappedFailure::Panic(Some(p)));
-            ffi::lua_error(state)
-        }
-    }
+    let extra = ExtraData::get(state);
+    callback_error_ext(state, extra, |_, status| f(status))
 }
 
 // Pops an error off of the stack and returns it. The specific behavior depends on the type of the
@@ -107,70 +29,56 @@ pub(crate) unsafe fn pop_error(state: *mut ffi::lua_State, err_code: c_int) -> E
         err_code != ffi::LUA_OK && err_code != ffi::LUA_YIELD,
         "pop_error called with non-error return code"
     );
-    match get_internal_userdata::<WrappedFailure>(state, -1, ptr::null()).as_mut() {
-        Some(WrappedFailure::Error(err)) => {
-            ffi::lua_pop(state, 1);
-            err.clone()
-        }
-        Some(WrappedFailure::Panic(panic)) => {
-            if let Some(p) = panic.take() {
-                resume_unwind(p);
-            } else {
-                Error::PreviouslyResumedPanic
-            }
-        }
-        _ => {
-            #[cfg(feature = "error-value")]
-            {
-                if err_code == ffi::LUA_ERRMEM {
-                    let err_string = to_string(state, -1);
-                    ffi::lua_pop(state, 1);
-                    return Error::MemoryError(err_string);
-                }
 
-                match ffi::lua_type(state, -1) {
-                    ffi::LUA_TSTRING | ffi::LUA_TNUMBER => {}
-                    _ => {
-                        use crate::state::ExtraData;
-                        // Special logic for error values that are not strings or numbers
-                        use crate::{FromLua, Value};
-                        let ed = ExtraData::get(state);
-                        let raw_lua = (*ed).raw_lua();
-                        let value = Value::from_specified_stack(-1, raw_lua, state);
-                        if let Ok(err) = value {
-                            ffi::lua_pop(state, 1);
-                            return Error::Value((err, "".to_string()));
-                        }
-                    }
-                }
-            }
-
+    #[cfg(feature = "error-value")]
+    {
+        if err_code == ffi::LUA_ERRMEM {
             let err_string = to_string(state, -1);
             ffi::lua_pop(state, 1);
+            return Error::MemoryError(err_string);
+        }
 
-            match err_code {
-                ffi::LUA_ERRRUN => Error::RuntimeError(err_string),
-                ffi::LUA_ERRSYNTAX => {
-                    Error::SyntaxError {
-                        // This seems terrible, but as far as I can tell, this is exactly what the
-                        // stock Lua REPL does.
-                        incomplete_input: err_string.ends_with("<eof>") || err_string.ends_with("'<eof>'"),
-                        message: err_string,
-                    }
+        match ffi::lua_type(state, -1) {
+            ffi::LUA_TSTRING | ffi::LUA_TNUMBER => {}
+            _ => {
+                use crate::state::ExtraData;
+                // Special logic for error values that are not strings or numbers
+                use crate::{FromLua, Value};
+                let ed = ExtraData::get(state);
+                let raw_lua = (*ed).raw_lua();
+                let value = Value::from_specified_stack(-1, raw_lua, state);
+                if let Ok(err) = value {
+                    ffi::lua_pop(state, 1);
+                    return Error::Value((err, "".to_string()));
                 }
-                ffi::LUA_ERRERR => {
-                    // This error is raised when the error handler raises an error too many times
-                    // recursively, and continuing to trigger the error handler would cause a stack
-                    // overflow. It is not very useful to differentiate between this and "ordinary"
-                    // runtime errors, so we handle them the same way.
-                    Error::RuntimeError(err_string)
-                }
-                ffi::LUA_ERRMEM => Error::MemoryError(err_string),
-                #[cfg(any(feature = "lua53", feature = "lua52"))]
-                ffi::LUA_ERRGCMM => Error::GarbageCollectorError(err_string),
-                _ => mlua_panic!("unrecognized lua error code"),
             }
         }
+    }
+
+    let err_string = to_string(state, -1);
+    ffi::lua_pop(state, 1);
+
+    match err_code {
+        ffi::LUA_ERRRUN => Error::RuntimeError(err_string),
+        ffi::LUA_ERRSYNTAX => {
+            Error::SyntaxError {
+                // This seems terrible, but as far as I can tell, this is exactly what the
+                // stock Lua REPL does.
+                incomplete_input: err_string.ends_with("<eof>") || err_string.ends_with("'<eof>'"),
+                message: err_string,
+            }
+        }
+        ffi::LUA_ERRERR => {
+            // This error is raised when the error handler raises an error too many times
+            // recursively, and continuing to trigger the error handler would cause a stack
+            // overflow. It is not very useful to differentiate between this and "ordinary"
+            // runtime errors, so we handle them the same way.
+            Error::RuntimeError(err_string)
+        }
+        ffi::LUA_ERRMEM => Error::MemoryError(err_string),
+        #[cfg(any(feature = "lua53", feature = "lua52"))]
+        ffi::LUA_ERRGCMM => Error::GarbageCollectorError(err_string),
+        _ => mlua_panic!("unrecognized lua error code"),
     }
 }
 
@@ -318,47 +226,45 @@ pub(crate) unsafe extern "C-unwind" fn error_traceback(state: *mut ffi::lua_Stat
         return 1;
     }
 
-    if get_internal_userdata::<WrappedFailure>(state, -1, ptr::null()).is_null() {
-        #[cfg(feature = "error-value")]
-        {
-            match ffi::lua_type(state, -1) {
-                ffi::LUA_TSTRING | ffi::LUA_TNUMBER => {}
-                _ => {
-                    use crate::state::ExtraData;
-                    use crate::{FromLuaMulti, Value};
-                    if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK + 3) != 0 {
-                        ffi::luaL_traceback(state, state, std::ptr::null(), 0);
+    #[cfg(feature = "error-value")]
+    {
+        match ffi::lua_type(state, -1) {
+            ffi::LUA_TSTRING | ffi::LUA_TNUMBER => {}
+            _ => {
+                use crate::state::ExtraData;
+                use crate::{FromLuaMulti, Value};
+                if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK + 3) != 0 {
+                    ffi::luaL_traceback(state, state, std::ptr::null(), 0);
 
-                        // Now, we should have the traceback at the top of the stack, and the original
-                        // error below it.
-                        let extra_data = ExtraData::get(state);
-                        let raw_lua = (*extra_data).raw_lua();
-                        let result = <(Value, String)>::from_specified_stack_multi(2, raw_lua, state);
+                    // Now, we should have the traceback at the top of the stack, and the original
+                    // error below it.
+                    let extra_data = ExtraData::get(state);
+                    let raw_lua = (*extra_data).raw_lua();
+                    let result = <(Value, String)>::from_specified_stack_multi(2, raw_lua, state);
 
-                        if let Ok((value, traceback)) = result {
-                            // Push the wrapped error
-                            let cause = Error::Value((value, traceback));
-                            let wrapped_error = WrappedFailure::Error(cause);
-                            ffi::lua_remove(state, -2); // Remove original error and traceback
-                            push_internal_userdata(state, wrapped_error, true).unwrap();
-                            return 1;
-                        } else {
-                            // Remove the traceback we pushed
-                            ffi::lua_pop(state, 1);
-                        }
-
+                    if let Ok((value, traceback)) = result {
+                        // Push the wrapped error
+                        let cause = Error::Value((value, traceback));
+                        let wrapped_error = WrappedFailure::Error(cause);
+                        ffi::lua_remove(state, -2); // Remove original error and traceback
+                        push_internal_userdata(state, wrapped_error, true).unwrap();
                         return 1;
+                    } else {
+                        // Remove the traceback we pushed
+                        ffi::lua_pop(state, 1);
                     }
-                    return 1; // Return the error directly if we cant make a traceback
+
+                    return 1;
                 }
+                return 1; // Return the error directly if we cant make a traceback
             }
         }
+    }
 
-        let s = ffi::luaL_tolstring(state, -1, ptr::null_mut());
-        if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {
-            ffi::luaL_traceback(state, state, s, 0);
-            ffi::lua_remove(state, -2);
-        }
+    let s = ffi::luaL_tolstring(state, -1, ptr::null_mut());
+    if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {
+        ffi::luaL_traceback(state, state, s, 0);
+        ffi::lua_remove(state, -2);
     }
 
     1
@@ -369,104 +275,25 @@ pub(crate) unsafe fn error_traceback_thread(state: *mut ffi::lua_State, thread: 
     // Move error object to the main thread to safely call `__tostring` metamethod if present
     ffi::lua_xmove(thread, state, 1);
 
-    if get_internal_userdata::<WrappedFailure>(state, -1, ptr::null()).is_null() {
-        let s = ffi::luaL_tolstring(state, -1, ptr::null_mut());
-        if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {
-            ffi::luaL_traceback(state, thread, s, 0);
-            ffi::lua_remove(state, -2);
-        }
+    let s = ffi::luaL_tolstring(state, -1, ptr::null_mut());
+    if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {
+        ffi::luaL_traceback(state, thread, s, 0);
+        ffi::lua_remove(state, -2);
     }
 }
 
-// Initialize the error, panic, and destructed userdata metatables.
-pub(crate) unsafe fn init_error_registry(state: *mut ffi::lua_State) -> Result<()> {
-    check_stack(state, 7)?;
-
-    // Create error and panic metatables
-
-    unsafe extern "C-unwind" fn error_tostring(state: *mut ffi::lua_State) -> c_int {
-        let res = std::panic::catch_unwind(
-            AssertUnwindSafe(|| match get_internal_userdata::<WrappedFailure>(state, -1, ptr::null()).as_ref() {
-                Some(WrappedFailure::Error(error)) => error.to_string(),
-                Some(WrappedFailure::Panic(Some(panic))) => extract_panic_str_ref(panic),
-                Some(WrappedFailure::Panic(None)) => {
-                    "previously resumed panic returned again".to_string()
-                }
-                _ => "userdata is not expected type".to_string(),
-            },
-        ));
-
-        let err_str = match res {
-            Ok(s) => s,
-            Err(p) => format!("<error in error tostring: {}>", extract_panic_str(p)),
-        };
-
-        let extra = ExtraData::get(state);
-        push_error_string(state, extra, err_str);
-
-        1
-    }
-
-    init_internal_metatable::<WrappedFailure>(
-        state,
-        Some(|state| {
-            ffi::lua_pushcfunction(state, error_tostring);
-            ffi::lua_setfield(state, -2, cstr!("__tostring"));
-
-            // This is mostly for Luau typeof() function
-            ffi::lua_pushstring(state, cstr!("error"));
-            ffi::lua_setfield(state, -2, cstr!("__type"));
-        }),
-    )?;
+// Initialize the destructed userdata metatables.
+pub(crate) unsafe fn init_destructed_userdata_registry(state: *mut ffi::lua_State) -> Result<()> {
+    check_stack(state, 3)?;
 
     // Create destructed userdata metatable
-
     unsafe extern "C-unwind" fn destructed_error(state: *mut ffi::lua_State) -> c_int {
         callback_error(state, |_| Err(Error::UserDataDestructed))
     }
 
-    push_table(state, 0, 26)?;
+    push_table(state, 0, 2)?;
     ffi::lua_pushcfunction(state, destructed_error);
-    for &method in &[
-        "__add",
-        "__sub",
-        "__mul",
-        "__div",
-        "__mod",
-        "__pow",
-        "__unm",
-        #[cfg(any(feature = "lua54", feature = "lua53", feature = "luau"))]
-        "__idiv",
-        #[cfg(any(feature = "lua54", feature = "lua53"))]
-        "__band",
-        #[cfg(any(feature = "lua54", feature = "lua53"))]
-        "__bor",
-        #[cfg(any(feature = "lua54", feature = "lua53"))]
-        "__bxor",
-        #[cfg(any(feature = "lua54", feature = "lua53"))]
-        "__bnot",
-        #[cfg(any(feature = "lua54", feature = "lua53"))]
-        "__shl",
-        #[cfg(any(feature = "lua54", feature = "lua53"))]
-        "__shr",
-        "__concat",
-        "__len",
-        "__eq",
-        "__lt",
-        "__le",
-        "__index",
-        "__newindex",
-        "__call",
-        "__tostring",
-        #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52", feature = "luajit52"))]
-        "__pairs",
-        #[cfg(any(feature = "lua53", feature = "lua52", feature = "luajit52"))]
-        "__ipairs",
-        "__iter",
-        "__namecall",
-        #[cfg(feature = "lua54")]
-        "__close",
-    ] {
+    for &method in &["__index", "__newindex"] {
         ffi::lua_pushvalue(state, -1);
         rawset_field(state, -3, method)?;
     }

@@ -5,7 +5,7 @@ use std::{mem, ptr};
 
 use crate::error::Result;
 use crate::userdata::collect_userdata;
-use crate::util::{check_stack, get_metatable_ptr, push_table, rawset_field, TypeKey};
+use crate::util::{check_stack, push_table, rawset_field, TypeKey};
 
 #[cfg(feature = "dynamic-userdata")]
 use crate::userdata::collect_userdata_dyn;
@@ -61,28 +61,6 @@ pub(crate) unsafe fn init_internal_metatable<T: TypeKey>(
     })?;
 
     Ok(())
-}
-
-// Uses up to 1 stack space, does not call `checkstack`
-pub(crate) unsafe fn get_internal_userdata<T: TypeKey>(
-    state: *mut ffi::lua_State,
-    index: c_int,
-    mut type_mt_ptr: *const c_void,
-) -> *mut T {
-    let ud = ffi::lua_touserdata(state, index) as *mut T;
-    if ud.is_null() {
-        return ptr::null_mut();
-    }
-    let mt_ptr = get_metatable_ptr(state, index);
-    if type_mt_ptr.is_null() {
-        get_internal_metatable::<T>(state);
-        type_mt_ptr = ffi::lua_topointer(state, -1);
-        ffi::lua_pop(state, 1);
-    }
-    if mt_ptr != type_mt_ptr {
-        return ptr::null_mut();
-    }
-    ud
 }
 
 // Internally uses 3 stack spaces, does not call checkstack.
