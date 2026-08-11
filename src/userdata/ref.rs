@@ -10,7 +10,7 @@ use crate::userdata::AnyUserData;
 use crate::util::get_userdata;
 use crate::value::Value;
 
-use super::cell::{UserDataStorage, UserDataVariant};
+use super::cell::UserDataStorage;
 use super::lock::{LockGuard, RawLock, UserDataLock};
 
 #[cfg(feature = "userdata-wrappers")]
@@ -57,11 +57,11 @@ impl<T: fmt::Display> fmt::Display for UserDataRef<T> {
     }
 }
 
-impl<T> TryFrom<UserDataVariant<T>> for UserDataRef<T> {
+impl<T> TryFrom<UserDataStorage<T>> for UserDataRef<T> {
     type Error = Error;
 
     #[inline]
-    fn try_from(variant: UserDataVariant<T>) -> Result<Self> {
+    fn try_from(variant: UserDataStorage<T>) -> Result<Self> {
         // Shared (read) lock is always correct:
         // - with `send` feature, `T: Sync` is guaranteed by the `MaybeSync` bound on userdata creation
         // - without `send` feature, single-threaded access makes shared lock safe for any `T`
@@ -92,7 +92,7 @@ impl<T: 'static> UserDataRef<T> {
     #[cfg(feature = "userdata-wrappers")]
     fn remap<U>(
         self,
-        f: impl FnOnce(UserDataVariant<T>) -> Result<UserDataRefInner<U>>,
+        f: impl FnOnce(UserDataStorage<T>) -> Result<UserDataRefInner<U>>,
     ) -> Result<UserDataRef<U>> {
         match &self.inner {
             UserDataRefInner::Default(variant) => {
@@ -199,19 +199,19 @@ impl<T> UserDataRef<Arc<RwLockPL<T>>> {
 
 #[allow(unused)]
 enum UserDataRefInner<T: 'static> {
-    Default(UserDataVariant<T>),
+    Default(UserDataStorage<T>),
 
     #[cfg(all(feature = "userdata-wrappers", not(feature = "send")))]
-    Rc(UserDataVariant<Rc<T>>),
+    Rc(UserDataStorage<Rc<T>>),
     #[cfg(all(feature = "userdata-wrappers", not(feature = "send")))]
-    RcRefCell(Ref<'static, T>, UserDataVariant<Rc<RefCell<T>>>),
+    RcRefCell(Ref<'static, T>, UserDataStorage<Rc<RefCell<T>>>),
 
     #[cfg(feature = "userdata-wrappers")]
-    Arc(UserDataVariant<Arc<T>>),
+    Arc(UserDataStorage<Arc<T>>),
     #[cfg(feature = "userdata-wrappers")]
-    ArcMutexPL(MutexGuardPL<'static, T>, UserDataVariant<Arc<MutexPL<T>>>),
+    ArcMutexPL(MutexGuardPL<'static, T>, UserDataStorage<Arc<MutexPL<T>>>),
     #[cfg(feature = "userdata-wrappers")]
-    ArcRwLockPL(RwLockReadGuardPL<'static, T>, UserDataVariant<Arc<RwLockPL<T>>>),
+    ArcRwLockPL(RwLockReadGuardPL<'static, T>, UserDataStorage<Arc<RwLockPL<T>>>),
 }
 
 impl<T> Deref for UserDataRefInner<T> {
@@ -274,11 +274,11 @@ impl<T: fmt::Display> fmt::Display for UserDataRefMut<T> {
     }
 }
 
-impl<T> TryFrom<UserDataVariant<T>> for UserDataRefMut<T> {
+impl<T> TryFrom<UserDataStorage<T>> for UserDataRefMut<T> {
     type Error = Error;
 
     #[inline]
-    fn try_from(variant: UserDataVariant<T>) -> Result<Self> {
+    fn try_from(variant: UserDataStorage<T>) -> Result<Self> {
         let guard = variant.raw_lock().try_lock_exclusive_guarded();
         let guard = guard.map_err(|_| Error::UserDataBorrowMutError)?;
         let guard = unsafe { mem::transmute::<LockGuard<_>, LockGuard<'static, _>>(guard) };
@@ -308,7 +308,7 @@ impl<T: 'static> UserDataRefMut<T> {
     #[cfg(feature = "userdata-wrappers")]
     fn remap<U>(
         self,
-        f: impl FnOnce(UserDataVariant<T>) -> Result<UserDataRefMutInner<U>>,
+        f: impl FnOnce(UserDataStorage<T>) -> Result<UserDataRefMutInner<U>>,
     ) -> Result<UserDataRefMut<U>> {
         match &self.inner {
             UserDataRefMutInner::Default(variant) => {
@@ -394,15 +394,15 @@ impl<T> UserDataRefMut<Arc<RwLockPL<T>>> {
 
 #[allow(unused)]
 enum UserDataRefMutInner<T: 'static> {
-    Default(UserDataVariant<T>),
+    Default(UserDataStorage<T>),
 
     #[cfg(all(feature = "userdata-wrappers", not(feature = "send")))]
-    RcRefCell(RefMut<'static, T>, UserDataVariant<Rc<RefCell<T>>>),
+    RcRefCell(RefMut<'static, T>, UserDataStorage<Rc<RefCell<T>>>),
 
     #[cfg(feature = "userdata-wrappers")]
-    ArcMutexPL(MutexGuardPL<'static, T>, UserDataVariant<Arc<MutexPL<T>>>),
+    ArcMutexPL(MutexGuardPL<'static, T>, UserDataStorage<Arc<MutexPL<T>>>),
     #[cfg(feature = "userdata-wrappers")]
-    ArcRwLockPL(RwLockWriteGuardPL<'static, T>, UserDataVariant<Arc<RwLockPL<T>>>),
+    ArcRwLockPL(RwLockWriteGuardPL<'static, T>, UserDataStorage<Arc<RwLockPL<T>>>),
 }
 
 impl<T> Deref for UserDataRefMutInner<T> {

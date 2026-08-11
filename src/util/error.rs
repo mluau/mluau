@@ -52,8 +52,6 @@ pub(crate) unsafe fn pop_error(state: *mut ffi::lua_State, err_code: c_int) -> E
             Error::RuntimeError(err_string)
         }
         ffi::LUA_ERRMEM => Error::MemoryError(err_string),
-        #[cfg(any(feature = "lua53", feature = "lua52"))]
-        ffi::LUA_ERRGCMM => Error::GarbageCollectorError(err_string),
         _ => mlua_panic!("unrecognized lua error code"),
     }
 }

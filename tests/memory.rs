@@ -72,13 +72,6 @@ fn test_gc_control() -> Result<()> {
     let lua = Lua::new();
     let globals = lua.globals();
 
-    #[cfg(feature = "lua54")]
-    {
-        assert_eq!(lua.gc_gen(0, 0), GCMode::Incremental);
-        assert_eq!(lua.gc_inc(0, 0, 0), GCMode::Generational);
-    }
-
-    #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52", feature = "luau"))]
     {
         assert!(lua.gc_is_running());
         lua.gc_stop();
@@ -102,32 +95,4 @@ fn test_gc_control() -> Result<()> {
     assert_eq!(Arc::strong_count(&rc), 1);
 
     Ok(())
-}
-
-#[cfg(any(feature = "lua53", feature = "lua52"))]
-#[test]
-fn test_gc_error() {
-    use mluau::Error;
-
-    let lua = Lua::new();
-    match lua
-        .load(
-            r#"
-            val = nil
-            table = {}
-            setmetatable(table, {
-                __gc = function()
-                    error("gcwascalled")
-                end
-            })
-            table = nil
-            collectgarbage("collect")
-    "#,
-        )
-        .exec()
-    {
-        Err(Error::GarbageCollectorError(_)) => {}
-        Err(e) => panic!("__gc error did not result in correct error, instead: {}", e),
-        Ok(()) => panic!("__gc error did not result in error"),
-    }
 }

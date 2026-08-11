@@ -1,44 +1,23 @@
 use std::cell::UnsafeCell;
 
-#[cfg(feature = "serde")]
-use serde::ser::{Serialize, Serializer};
-
 use crate::error::{Error, Result};
 use crate::types::XRc;
 
 use super::lock::{RawLock, UserDataLock};
 use super::r#ref::{UserDataRef, UserDataRefMut};
 
-#[cfg(all(feature = "serde", not(feature = "send")))]
-type DynSerialize = dyn erased_serde::Serialize;
-
-#[cfg(all(feature = "serde", feature = "send"))]
-type DynSerialize = dyn erased_serde::Serialize + Send;
-
-pub(crate) enum UserDataStorage<T> {
-    Owned(UserDataVariant<T>),
-}
-
-// A enum for storing userdata values.
+// A struct for storing userdata values.
 // It's stored inside a Lua VM and protected by the outer `ReentrantMutex`.
-pub(crate) enum UserDataVariant<T> {
-    Default(XRc<UserDataCell<T>>),
-    #[cfg(feature = "serde")]
-    Serializable(XRc<UserDataCell<Box<DynSerialize>>>),
-}
+pub(crate) struct UserDataStorage<T>(XRc<UserDataCell<T>>);
 
-impl<T> Clone for UserDataVariant<T> {
+impl<T> Clone for UserDataStorage<T> {
     #[inline]
     fn clone(&self) -> Self {
-        match self {
-            Self::Default(inner) => Self::Default(XRc::clone(inner)),
-            #[cfg(feature = "serde")]
-            Self::Serializable(inner) => Self::Serializable(XRc::clone(inner)),
-        }
+        Self(XRc::clone(&self.0))
     }
 }
 
-impl<T> UserDataVariant<T> {
+impl<T> UserDataStorage<T> {
     #[inline(always)]
     pub(super) fn try_borrow_scoped<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
         // Shared (read) lock is always correct for in-place borrows:
@@ -47,93 +26,65 @@ impl<T> UserDataVariant<T> {
         // - with `send` feature, all owned userdata satisfies `T: Sync`, so simultaneous shared references
         //   from multiple threads are sound
         // - without `send` feature, single-threaded execution makes shared lock safe for any `T`
-        let _guard = (self.raw_lock().try_lock_shared_guarded()).map_err(|_| Error::UserDataBorrowError)?;
-        Ok(f(unsafe { &*self.as_ptr() }))
+        let _guard = (self.0.raw_lock.try_lock_shared_guarded()).map_err(|_| Error::UserDataBorrowError)?;
+        Ok(f(unsafe { &*self.0.value.get() }))
     }
 
     // Mutably borrows the wrapped value in-place.
     #[inline(always)]
-    fn try_borrow_scoped_mut<R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R> {
+    pub(crate) fn try_borrow_scoped_mut<R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R> {
         let _guard =
-            (self.raw_lock().try_lock_exclusive_guarded()).map_err(|_| Error::UserDataBorrowMutError)?;
-        Ok(f(unsafe { &mut *self.as_ptr() }))
+            (self.0.raw_lock.try_lock_exclusive_guarded()).map_err(|_| Error::UserDataBorrowMutError)?;
+        Ok(f(unsafe { &mut *self.0.value.get() }))
     }
 
     // Immutably borrows the wrapped value and returns an owned reference.
     #[inline(always)]
-    fn try_borrow_owned(&self) -> Result<UserDataRef<T>> {
+    pub(crate) fn try_borrow_owned(&self) -> Result<UserDataRef<T>> {
         UserDataRef::try_from(self.clone())
     }
 
     // Mutably borrows the wrapped value and returns an owned reference.
     #[inline(always)]
-    fn try_borrow_owned_mut(&self) -> Result<UserDataRefMut<T>> {
+    pub(crate) fn try_borrow_owned_mut(&self) -> Result<UserDataRefMut<T>> {
         UserDataRefMut::try_from(self.clone())
     }
 
     // Returns the wrapped value.
     //
     // This method checks that we have exclusive access to the value.
-    fn into_inner(self) -> Result<T> {
-        if !self.raw_lock().try_lock_exclusive() {
+    pub(crate) fn into_inner(self) -> Result<T> {
+        if !self.0.raw_lock.try_lock_exclusive() {
             return Err(Error::UserDataBorrowMutError);
         }
-        Ok(match self {
-            Self::Default(inner) => XRc::into_inner(inner).unwrap().value.into_inner(),
-            #[cfg(feature = "serde")]
-            Self::Serializable(inner) => unsafe {
-                let raw = Box::into_raw(XRc::into_inner(inner).unwrap().value.into_inner());
-                *Box::from_raw(raw as *mut T)
-            },
-        })
+        Ok(XRc::into_inner(self.0).unwrap().value.into_inner())
     }
 
     #[inline(always)]
-    fn strong_count(&self) -> usize {
-        match self {
-            Self::Default(inner) => XRc::strong_count(inner),
-            #[cfg(feature = "serde")]
-            Self::Serializable(inner) => XRc::strong_count(inner),
-        }
+    pub(crate) fn is_safe_to_destroy(&self) -> bool {
+        XRc::strong_count(&self.0) > 1 || !self.0.raw_lock.is_locked()
+    }
+
+    #[inline(always)]
+    pub(crate) fn has_exclusive_access(&self) -> bool {
+        !self.0.raw_lock.is_locked()
     }
 
     #[inline(always)]
     pub(super) fn raw_lock(&self) -> &RawLock {
-        match self {
-            Self::Default(inner) => &inner.raw_lock,
-            #[cfg(feature = "serde")]
-            Self::Serializable(inner) => &inner.raw_lock,
-        }
+        &self.0.raw_lock
     }
 
     #[inline(always)]
     pub(super) fn as_ptr(&self) -> *mut T {
-        match self {
-            Self::Default(inner) => inner.value.get(),
-            #[cfg(feature = "serde")]
-            Self::Serializable(inner) => unsafe { &mut **(inner.value.get() as *mut Box<T>) },
-        }
-    }
-}
-
-#[cfg(feature = "serde")]
-impl Serialize for UserDataStorage<()> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
-        match self {
-            Self::Owned(variant @ UserDataVariant::Serializable(inner)) => unsafe {
-                let _guard = (variant.raw_lock().try_lock_shared_guarded())
-                    .map_err(|_| serde::ser::Error::custom(Error::UserDataBorrowError))?;
-                (*inner.value.get()).serialize(serializer)
-            },
-            _ => Err(serde::ser::Error::custom("cannot serialize <userdata>")),
-        }
+        self.0.value.get()
     }
 }
 
 /// A type that provides interior mutability for a userdata value (thread-safe).
 pub(crate) struct UserDataCell<T> {
-    raw_lock: RawLock,
-    value: UnsafeCell<T>,
+    pub(crate) raw_lock: RawLock,
+    pub(crate) value: UnsafeCell<T>,
 }
 
 #[cfg(feature = "send")]
@@ -154,81 +105,6 @@ impl<T> UserDataCell<T> {
 impl<T: 'static> UserDataStorage<T> {
     #[inline(always)]
     pub(crate) fn new(data: T) -> Self {
-        Self::Owned(UserDataVariant::Default(XRc::new(UserDataCell::new(data))))
-    }
-
-    #[cfg(feature = "serde")]
-    #[inline(always)]
-    pub(crate) fn new_ser(data: T) -> Self
-    where
-        T: Serialize + crate::types::MaybeSend + crate::types::MaybeSync,
-    {
-        let data = Box::new(data) as Box<DynSerialize>;
-        let variant = UserDataVariant::Serializable(XRc::new(UserDataCell::new(data)));
-        Self::Owned(variant)
-    }
-
-    #[cfg(feature = "serde")]
-    #[inline(always)]
-    pub(crate) fn is_serializable(&self) -> bool {
-        matches!(self, Self::Owned(UserDataVariant::Serializable(..)))
-    }
-
-    // Immutably borrows the wrapped value and returns an owned reference.
-    #[inline(always)]
-    pub(crate) fn try_borrow_owned(&self) -> Result<UserDataRef<T>> {
-        match self {
-            Self::Owned(data) => data.try_borrow_owned(),
-        }
-    }
-
-    // Mutably borrows the wrapped value and returns an owned reference.
-    #[inline(always)]
-    pub(crate) fn try_borrow_owned_mut(&self) -> Result<UserDataRefMut<T>> {
-        match self {
-            Self::Owned(data) => data.try_borrow_owned_mut(),
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn into_inner(self) -> Result<T> {
-        match self {
-            Self::Owned(data) => data.into_inner(),
-        }
-    }
-}
-
-impl<T> UserDataStorage<T> {
-    /// Returns `true` if it's safe to destroy the container.
-    ///
-    /// It's safe to destroy the container if the reference count is greater than 1 or the lock is
-    /// not acquired.
-    #[inline(always)]
-    pub(crate) fn is_safe_to_destroy(&self) -> bool {
-        match self {
-            Self::Owned(variant) => variant.strong_count() > 1 || !variant.raw_lock().is_locked(),
-        }
-    }
-
-    /// Returns `true` if the container has exclusive access to the value.
-    #[inline(always)]
-    pub(crate) fn has_exclusive_access(&self) -> bool {
-        match self {
-            Self::Owned(variant) => !variant.raw_lock().is_locked(),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn try_borrow_scoped<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
-        match self {
-            Self::Owned(data) => data.try_borrow_scoped(f),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn try_borrow_scoped_mut<R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R> {
-        match self {
-            Self::Owned(data) => data.try_borrow_scoped_mut(f),
-        }
+        Self(XRc::new(UserDataCell::new(data)))
     }
 }

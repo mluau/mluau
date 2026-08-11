@@ -15,11 +15,7 @@ use crate::types::{MaybeSend, MaybeSync, ValueRef};
 use crate::util::{check_stack, get_userdata, push_string, take_userdata, StackGuard};
 use crate::value::Value;
 
-#[cfg(feature = "serde")]
-use {
-    serde::ser::{self, Serialize, Serializer},
-    std::result::Result as StdResult,
-};
+
 
 // Re-export for convenience
 pub(crate) use cell::UserDataStorage;
@@ -961,20 +957,6 @@ impl AnyUserData {
 
         Ok(false)
     }
-
-    /// Returns `true` if this [`AnyUserData`] is serializable (e.g. was created using
-    /// [`Lua::create_ser_userdata`]).
-    #[cfg(feature = "serde")]
-    pub(crate) fn is_serializable(&self) -> bool {
-        let lua = self.0.lua.lock();
-        let is_serializable = || unsafe {
-            // Userdata must be registered and not destructed
-            let _ = lua.get_userdata_ref_type_id(&self.0)?;
-            let ud = &*get_userdata::<UserDataStorage<()>>(lua.ref_thread(self.0.aux_thread), self.0.index);
-            Ok::<_, Error>((*ud).is_serializable())
-        };
-        is_serializable().unwrap_or(false)
-    }
 }
 
 /// Handle to a [`AnyUserData`] metatable.
@@ -1048,22 +1030,6 @@ where
     }
 }
 
-#[cfg(feature = "serde")]
-impl Serialize for AnyUserData {
-    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let lua = self.0.lua.lock();
-        unsafe {
-            let _ = lua
-                .get_userdata_ref_type_id(&self.0)
-                .map_err(ser::Error::custom)?;
-            let ud = &*get_userdata::<UserDataStorage<()>>(lua.ref_thread(self.0.aux_thread), self.0.index);
-            ud.serialize(serializer)
-        }
-    }
-}
 
 struct WrappedUserdata<F: FnOnce(&Lua) -> Result<AnyUserData>>(F);
 
@@ -1075,15 +1041,7 @@ impl AnyUserData {
         WrappedUserdata(move |lua| lua.create_any_userdata(data))
     }
 
-    /// Wraps any Rust type that implements [`Serialize`], returning an opaque type that implements
-    /// [`IntoLua`] trait.
-    ///
-    /// This function uses [`Lua::create_ser_any_userdata`] under the hood.
-    #[cfg(feature = "serde")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
-    pub fn wrap_ser<T: Serialize + MaybeSend + MaybeSync + 'static>(data: T) -> impl IntoLua {
-        WrappedUserdata(move |lua| lua.create_ser_any_userdata(data))
-    }
+
 }
 
 impl<F> IntoLua for WrappedUserdata<F>

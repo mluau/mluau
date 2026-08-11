@@ -1,50 +1,15 @@
-use mluau::{Error, Lua, LuaSerdeExt, Result, UserData, Value};
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize)]
-enum Transmission {
-    Manual,
-    Automatic,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Engine {
-    v: u32,
-    kw: u32,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Car {
-    active: bool,
-    model: String,
-    transmission: Transmission,
-    engine: Engine,
-}
-
-impl UserData for Car {}
+use mluau::{Error, Lua, LuaSerdeExt, Result, Value};
 
 fn main() -> Result<()> {
     let lua = Lua::new();
     let globals = lua.globals();
 
-    // Create Car struct from a Lua table
-    let car: Car = lua.from_value(
-        lua.load(
-            r#"
-        {active = true, model = "Volkswagen Golf", transmission = "Automatic", engine = {v = 1499, kw = 90}}
-    "#,
-        )
-        .eval()?,
-    )?;
-
-    // Set it as (serializable) userdata
     globals.set("null", Value::None)?;
     globals.set("array_mt", lua.array_metatable())?;
-    globals.set("car", lua.create_ser_userdata(car)?)?;
 
     // Create a Lua table with multiple data types
     let val: Value = lua
-        .load(r#"{driver = "Boris", car = car, price = null, points = setmetatable({}, array_mt)}"#)
+        .load(r#"{driver = "Boris", price = null, points = setmetatable({}, array_mt)}"#)
         .eval()?;
 
     // Serialize the table above to JSON

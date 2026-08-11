@@ -40,8 +40,7 @@ use crate::{buffer::Buffer, chunk::Compiler};
 
 use std::ffi::c_void;
 
-#[cfg(feature = "serde")]
-use serde::Serialize;
+
 
 pub(crate) use extra::ExtraData;
 pub use raw::RawLua;
@@ -1242,16 +1241,6 @@ impl Lua {
         unsafe { self.lock().make_userdata(UserDataStorage::new(data)) }
     }
 
-    /// Creates a Lua userdata object from a custom serializable userdata type.
-    #[cfg(feature = "serde")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
-    #[inline]
-    pub fn create_ser_userdata<T>(&self, data: T) -> Result<AnyUserData>
-    where
-        T: UserData + Serialize + MaybeSend + MaybeSync + 'static,
-    {
-        unsafe { self.lock().make_userdata(UserDataStorage::new_ser(data)) }
-    }
 
     /// Creates a Lua userdata object from a custom Rust type.
     ///
@@ -1268,18 +1257,6 @@ impl Lua {
         unsafe { self.lock().make_any_userdata(UserDataStorage::new(data)) }
     }
 
-    /// Creates a Lua userdata object from a custom serializable Rust type.
-    ///
-    /// See [`Lua::create_any_userdata`] for more details.
-    #[cfg(feature = "serde")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
-    #[inline]
-    pub fn create_ser_any_userdata<T>(&self, data: T) -> Result<AnyUserData>
-    where
-        T: Serialize + MaybeSend + MaybeSync + 'static,
-    {
-        unsafe { (self.lock()).make_any_userdata(UserDataStorage::new_ser(data)) }
-    }
 
     /// Registers a custom Rust type in Lua to use in userdata objects.
     ///

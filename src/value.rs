@@ -848,9 +848,6 @@ impl Serialize for SerializableValue<'_> {
                 let visited = self.visited.as_ref().unwrap().clone();
                 SerializableTable::new(t, self.options, visited).serialize(serializer)
             }
-            Value::UserData(ud) if ud.is_serializable() || self.options.deny_unsupported_types => {
-                ud.serialize(serializer)
-            }
 
             Value::Buffer(buf) => buf.serialize(serializer),
             Value::Function(_)
