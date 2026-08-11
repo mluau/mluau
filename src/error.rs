@@ -1,21 +1,8 @@
 use std::error::Error as StdError;
 use std::fmt;
-use std::io::Error as IoError;
-use std::net::AddrParseError;
 use std::result::Result as StdResult;
-use std::str::Utf8Error;
 use std::string::String as StdString;
 use std::sync::Arc;
-
-use crate::private::Sealed;
-
-#[cfg(feature = "error-send")]
-type DynStdError = dyn StdError + Send + Sync;
-
-#[cfg(not(feature = "error-send"))]
-type DynStdError = dyn StdError;
-
-
 
 /// Error type returned by `mlua` methods.
 #[derive(Debug, Clone)]
@@ -178,17 +165,8 @@ pub enum Error {
     /// This can be used for returning user-defined errors from callbacks.
     ///
     /// Returning `Err(ExternalError(...))` from a Rust callback will raise the error as a Lua
-    /// error. The Rust code that originally invoked the Lua code then receives a `CallbackError`,
-    /// from which the original error (and a stack traceback) can be recovered.
-    ExternalError(Arc<DynStdError>),
-    /// An error with additional context.
-    WithContext {
-        /// A string containing additional context.
-        context: StdString,
-        /// Underlying error.
-        cause: Arc<Error>,
-    },
-
+    /// error.
+    ExternalError(StdString),
 }
 
 /// A specialized `Result` type used by `mlua`'s API.
@@ -273,28 +251,12 @@ impl fmt::Display for Error {
                 write!(fmt, "deserialize error: {err}")
             },
             Error::ExternalError(err) => err.fmt(fmt),
-            Error::WithContext { context, cause } => {
-                writeln!(fmt, "{context}")?;
-                write!(fmt, "{cause}")
-            },
 
         }
     }
 }
 
-impl StdError for Error {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        match self {
-            // An error type with a source error should either return that error via source or
-            // include that source's error message in its own Display output, but never both.
-            // https://blog.rust-lang.org/inside-rust/2021/07/01/What-the-error-handling-project-group-is-working-towards.html
-            // Given that we include source to fmt::Display implementation, this call
-            Error::ExternalError(err) => err.source(),
-            Error::WithContext { cause, .. } => Self::source(cause),
-            _ => None,
-        }
-    }
-}
+impl StdError for Error {}
 
 impl Error {
     /// Creates a new `RuntimeError` with the given message.
@@ -305,28 +267,8 @@ impl Error {
 
     /// Wraps an external error object.
     #[inline]
-    pub fn external<T: Into<Box<DynStdError>>>(err: T) -> Self {
-        Error::ExternalError(err.into().into())
-    }
-
-    /// Attempts to downcast the external error object to a concrete type by reference.
-    pub fn downcast_ref<T>(&self) -> Option<&T>
-    where
-        T: StdError + 'static,
-    {
-        match self {
-            Error::ExternalError(err) => err.downcast_ref(),
-            Error::WithContext { cause, .. } => Self::downcast_ref(cause),
-            _ => None,
-        }
-    }
-
-    /// An iterator over the chain of nested errors wrapped by this Error.
-    pub fn chain(&self) -> impl Iterator<Item = &(dyn StdError + 'static)> {
-        Chain {
-            root: self,
-            current: None,
-        }
+    pub fn external<T: Into<Box<dyn StdError + Send + Sync>>>(err: T) -> Self {
+        Error::ExternalError(err.into().to_string())
     }
 
     pub(crate) fn bad_self_argument(to: &str, cause: Error) -> Self {
@@ -351,89 +293,8 @@ impl Error {
     }
 }
 
-/// Trait for converting [`std::error::Error`] into Lua [`Error`].
-pub trait ExternalError {
-    fn into_lua_err(self) -> Error;
-}
-
-impl<E: Into<Box<DynStdError>>> ExternalError for E {
-    fn into_lua_err(self) -> Error {
-        Error::external(self)
-    }
-}
-
-/// Trait for converting [`std::result::Result`] into Lua [`Result`].
-pub trait ExternalResult<T> {
-    fn into_lua_err(self) -> Result<T>;
-}
-
-impl<T, E> ExternalResult<T> for StdResult<T, E>
-where
-    E: ExternalError,
-{
-    fn into_lua_err(self) -> Result<T> {
-        self.map_err(|e| e.into_lua_err())
-    }
-}
-
-/// Provides the `context` method for [`Error`] and `Result<T, Error>`.
-pub trait ErrorContext: Sealed {
-    /// Wraps the error value with additional context.
-    fn context<C: fmt::Display>(self, context: C) -> Self;
-
-    /// Wrap the error value with additional context that is evaluated lazily
-    /// only once an error does occur.
-    fn with_context<C: fmt::Display>(self, f: impl FnOnce(&Error) -> C) -> Self;
-}
-
-impl ErrorContext for Error {
-    fn context<C: fmt::Display>(self, context: C) -> Self {
-        let context = context.to_string();
-        match self {
-            Error::WithContext { cause, .. } => Error::WithContext { context, cause },
-            _ => Error::WithContext {
-                context,
-                cause: Arc::new(self),
-            },
-        }
-    }
-
-    fn with_context<C: fmt::Display>(self, f: impl FnOnce(&Error) -> C) -> Self {
-        let context = f(&self).to_string();
-        match self {
-            Error::WithContext { cause, .. } => Error::WithContext { context, cause },
-            _ => Error::WithContext {
-                context,
-                cause: Arc::new(self),
-            },
-        }
-    }
-}
-
-impl<T> ErrorContext for Result<T> {
-    fn context<C: fmt::Display>(self, context: C) -> Self {
-        self.map_err(|err| err.context(context))
-    }
-
-    fn with_context<C: fmt::Display>(self, f: impl FnOnce(&Error) -> C) -> Self {
-        self.map_err(|err| err.with_context(f))
-    }
-}
-
-impl From<AddrParseError> for Error {
-    fn from(err: AddrParseError) -> Self {
-        Error::external(err)
-    }
-}
-
-impl From<IoError> for Error {
-    fn from(err: IoError) -> Self {
-        Error::external(err)
-    }
-}
-
-impl From<Utf8Error> for Error {
-    fn from(err: Utf8Error) -> Self {
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
         Error::external(err)
     }
 }
@@ -452,62 +313,8 @@ impl serde::de::Error for Error {
     }
 }
 
-#[cfg(feature = "anyhow")]
-impl From<anyhow::Error> for Error {
-    fn from(err: anyhow::Error) -> Self {
-        match err.downcast::<Self>() {
-            Ok(err) => err,
-            Err(err) => Error::external(err),
-        }
-    }
-}
-
-struct Chain<'a> {
-    root: &'a Error,
-    current: Option<&'a (dyn StdError + 'static)>,
-}
-
-impl<'a> Iterator for Chain<'a> {
-    type Item = &'a (dyn StdError + 'static);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let error: Option<&dyn StdError> = match self.current {
-                None => {
-                    self.current = Some(self.root);
-                    self.current
-                }
-                Some(current) => match current.downcast_ref::<Error>()? {
-                    Error::BadArgument { cause, .. }
-                    | Error::WithContext { cause, .. } => {
-                        self.current = Some(&**cause);
-                        self.current
-                    }
-                    Error::ExternalError(err) => {
-                        self.current = Some(&**err);
-                        self.current
-                    }
-                    _ => None,
-                },
-            };
-
-            // Skip `ExternalError` as it only wraps the underlying error
-            // without meaningful context
-            if let Some(Error::ExternalError(_)) = error?.downcast_ref::<Error>() {
-                continue;
-            }
-
-            return self.current;
-        }
-    }
-}
-
 #[cfg(test)]
 mod assertions {
     use super::*;
-
-    #[cfg(not(feature = "error-send"))]
-    static_assertions::assert_not_impl_any!(Error: Send, Sync);
-    #[cfg(feature = "send")]
     static_assertions::assert_impl_all!(Error: Send, Sync);
 }

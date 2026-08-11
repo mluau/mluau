@@ -271,7 +271,7 @@ pub(super) unsafe extern "C-unwind" fn init_config(config: *mut ffi::luarequire_
         let mut this = try_borrow_mut!(state, ctx);
         let config = callback_error_ext(state, ptr::null_mut(), move |extra, _| {
             let mut wrap = || -> crate::error::Result<Vec<u8>> {
-                Ok(this.config_cache.take().unwrap_or_else(|| this.config()).map_err(crate::error::Error::from)?)
+                Ok(this.config_cache.take().unwrap_or_else(|| this.config()).map_err(crate::error::Error::external)?)
             };
             wrap().map_err(|e| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), e))
         });

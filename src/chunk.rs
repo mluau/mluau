@@ -685,7 +685,7 @@ impl Chunk<'_> {
             Some(&name),
             self.env?.as_ref(),
             self.mode,
-            self.source?.as_ref(),
+            self.source.map_err(crate::Error::runtime)?.as_ref(),
             self.trusted_binary,
         )
     }

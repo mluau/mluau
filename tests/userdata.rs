@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use mluau::{
-    AnyUserData, Error, ExternalError, Function, Lua, MetaMethod, Nil, ObjectLike, Result, String, UserData,
+    AnyUserData, Error, Function, Lua, MetaMethod, Nil, ObjectLike, Result, String, UserData,
     UserDataFields, UserDataMethods, UserDataRef, UserDataRegistry, Value, Variadic,
 };
 
@@ -136,7 +136,7 @@ fn test_metamethods() -> Result<()> {
                 if index.to_str()? == "inner" {
                     Ok(data.0)
                 } else {
-                    Err("no such custom index".into_lua_err())
+                    Err(mluau::Error::external("no such custom index"))
                 }
             });
             #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52", feature = "luajit52"))]

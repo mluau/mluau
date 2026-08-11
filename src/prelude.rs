@@ -4,7 +4,6 @@
 pub use crate::{
     AnyUserData as LuaAnyUserData, BorrowedBytes as LuaBorrowedBytes, BorrowedStr as LuaBorrowedStr,
     Chunk as LuaChunk, ContinuationStatus as LuaContinuationStatus, Either as LuaEither, Error as LuaError,
-    ErrorContext as LuaErrorContext, ExternalError as LuaExternalError, ExternalResult as LuaExternalResult,
     FromLua, FromLuaMulti, Function as LuaFunction, FunctionInfo as LuaFunctionInfo, GCMode as LuaGCMode,
     Integer as LuaInteger, IntoLua, IntoLuaMulti, IntoLuaErr, IntoLuaResult, IntoLuaResultMulti, LightUserData as LuaLightUserData, Lua, LuaNativeFn,
     LuaNativeFnMut, MetaMethod as LuaMetaMethod, MultiValue as LuaMultiValue, Nil as LuaNil,

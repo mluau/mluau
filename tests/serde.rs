@@ -5,8 +5,7 @@ use std::error::Error as StdError;
 
 use bstr::BString;
 use mluau::{
-    AnyUserData, DeserializeOptions, Error, ExternalResult, IntoLua, Lua, LuaSerdeExt, Result as LuaResult,
-    SerializeOptions, UserData, Value,
+    AnyUserData, DeserializeOptions, Error, IntoLua, Lua, LuaSerdeExt, Result as LuaResult, SerializeOptions, UserData, Value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -764,7 +763,7 @@ fn test_from_value_sorted() -> Result<(), Box<dyn StdError>> {
     let to_json = lua.create_function(|lua, value| {
         let json_value: serde_json::Value =
             lua.from_value_with(value, DeserializeOptions::new().sort_keys(true))?;
-        serde_json::to_string(&json_value).into_lua_err()
+        serde_json::to_string(&json_value).map_err(mluau::Error::external)
     })?;
     lua.globals().set("to_json", to_json)?;
 

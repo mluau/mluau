@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::{error, f32, f64, fmt};
 
 use mluau::{
-    ChunkSource, Error, ExternalError, Function, Lua, Nil, Result,
+    ChunkSource, Error, Function, Lua, Nil, Result,
     String, Table, UserData, Value, Variadic,
 };
 
@@ -254,7 +254,7 @@ fn test_error() -> Result<()> {
     )
     .exec()?;
 
-    let rust_error_function = lua.create_function(|_, ()| -> Result<()> { Err(TestError.into_lua_err()) })?;
+    let rust_error_function = lua.create_function(|_, ()| -> Result<()> { Err(mluau::Error::external(TestError)) })?;
     globals.set("rust_error_function", rust_error_function)?;
 
     let no_error = globals.get::<Function>("no_error")?;
