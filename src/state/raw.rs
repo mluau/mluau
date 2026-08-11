@@ -22,14 +22,13 @@ use crate::table::Table;
 use crate::thread::Thread;
 use crate::traits::IntoLua;
 use crate::types::{
-    AppDataRef, AppDataRefMut, Callback, CallbackUpvalue, DestructedUserdata, Integer, LightUserData,
+    AppDataRef, AppDataRefMut, Callback, DestructedUserdata, Integer, LightUserData,
     LuaType, MaybeSend, ReentrantMutex, RegistryKey, ValueRef, XRc,
 };
 
-use crate::types::{NamecallCallback, NamecallCallbackUpvalue, NamecallMap, NamecallMapUpvalue};
+use crate::types::{NamecallCallback, NamecallMap};
 
 use crate::types::Continuation;
-use crate::types::ContinuationUpvalue;
 
 use crate::userdata::{
     init_userdata_metatable, AnyUserData, MetaMethod, RawUserDataRegistry, UserData, UserDataRegistry,
@@ -37,7 +36,7 @@ use crate::userdata::{
 };
 use crate::util::{
     assert_stack, check_stack, get_destructed_userdata_metatable, get_main_state,
-    get_metatable_ptr, get_userdata, init_destructed_userdata_registry, pop_error,
+    get_metatable_ptr, init_destructed_userdata_registry, pop_error,
     push_string, push_table, push_userdata, rawset_field,
     short_type_name, to_string, StackGuard,
 };
@@ -901,7 +900,7 @@ impl RawLua {
         let metatable_nrec = registry.meta_methods.len() + registry.meta_fields.len();
         push_table(state, 0, metatable_nrec)?;
         for (k, m) in registry.meta_methods {
-            self.push_at(state, self.create_callback_with_debug(m, std::ptr::null())?)?;
+            self.push_at(state, self.create_callback(m, std::ptr::null())?)?;
             rawset_field(state, -2, MetaMethod::validate(&k)?)?;
         }
         let mut has_name = false;
@@ -947,7 +946,7 @@ impl RawLua {
         if field_getters_nrec > 0 {
             push_table(state, 0, field_getters_nrec)?;
             for (k, m) in registry.field_getters {
-                self.push_at(state, self.create_callback_with_debug(m, std::ptr::null())?)?;
+                self.push_at(state, self.create_callback(m, std::ptr::null())?)?;
                 rawset_field(state, -2, &k)?;
             }
             for (k, v) in registry.fields {
@@ -969,7 +968,7 @@ impl RawLua {
         if field_setters_nrec > 0 {
             push_table(state, 0, field_setters_nrec)?;
             for (k, m) in registry.field_setters {
-                self.push_at(state, self.create_callback_with_debug(m, std::ptr::null())?)?;
+                self.push_at(state, self.create_callback(m, std::ptr::null())?)?;
                 rawset_field(state, -2, &k)?;
             }
             field_setters_index = Some(ffi::lua_absindex(state, -1));
@@ -1131,20 +1130,18 @@ impl RawLua {
     }
 
     // Creates a Function out of a Callback containing a 'static Fn.
-    pub(crate) fn create_callback(&self, func: Callback) -> Result<Function> {
+    pub(crate) fn create_callback(&self, func: Callback, debugname: *const c_char) -> Result<Function> {
         unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
-            let upvalue = get_userdata::<CallbackUpvalue>(state, ffi::lua_upvalueindex(1));
+            let upvalue = ffi::lua_getcclosuredata(state) as *mut Callback;
+            let extra = crate::state::extra::ExtraData::get(state);
             callback_error_ext_yieldable(
                 state,
-                (*upvalue).extra.get(),
+                extra,
                 |extra, nargs| {
                     // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
                     // The lock must be already held as the callback is executed
                     let rawlua = (*extra).raw_lua();
-                    match (*upvalue).data {
-                        Some(ref func) => func(rawlua, nargs),
-                        None => Err(crate::state::util::map_err_to_value(rawlua.lua(), Error::CallbackDestructed)),
-                    }
+                    (*upvalue)(rawlua, nargs)
                 },
                 false,
             )
@@ -1155,60 +1152,15 @@ impl RawLua {
             let _sg = StackGuard::new(state);
             check_stack(state, 4)?;
 
-            let func = Some(func);
-            let extra = XRc::clone(&self.extra);
-            push_userdata(state, CallbackUpvalue { data: func, extra })?;
-            protect_lua!(state, 1, 1, fn(state) {
-                ffi::lua_pushcclosure(state, call_callback, 1);
-            })?;
+            crate::util::push_fat_cclosure(
+                state,
+                func,
+                call_callback,
+                debugname,
+                None,
+            )?;
 
             Ok(Function(self.pop_ref()))
-        }
-    }
-
-    // Creates a Function out of a Callback containing a 'static Fn and debug name
-    //
-    // Does nothing on non-luau
-    #[allow(unused_variables)]
-    pub(crate) fn create_callback_with_debug(
-        &self,
-        func: Callback,
-        debugname: *const c_char,
-    ) -> Result<Function> {
-        {
-            unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
-                let upvalue = get_userdata::<CallbackUpvalue>(state, ffi::lua_upvalueindex(1));
-                callback_error_ext_yieldable(
-                    state,
-                    (*upvalue).extra.get(),
-                    |extra, nargs| {
-                        // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
-                        // arguments) The lock must be already held as the callback is
-                        // executed
-                        let rawlua = (*extra).raw_lua();
-                        match (*upvalue).data {
-                            Some(ref func) => func(rawlua, nargs),
-                            None => Err(crate::state::util::map_err_to_value(rawlua.lua(), Error::CallbackDestructed)),
-                        }
-                    },
-                    false,
-                )
-            }
-
-            let state = self.state();
-            unsafe {
-                let _sg = StackGuard::new(state);
-                check_stack(state, 4)?;
-
-                let func = Some(func);
-                let extra = XRc::clone(&self.extra);
-                push_userdata(state, CallbackUpvalue { data: func, extra })?;
-                protect_lua!(state, 1, 1, |state| {
-                    ffi::lua_pushcclosurek(state, call_callback, debugname, 1, None);
-                })?;
-
-                Ok(Function(self.pop_ref()))
-            }
         }
     }
 
@@ -1219,18 +1171,16 @@ impl RawLua {
         debugname: *const c_char,
     ) -> Result<Function> {
         unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
-            let upvalue = get_userdata::<NamecallCallbackUpvalue>(state, ffi::lua_upvalueindex(1));
+            let upvalue = ffi::lua_getcclosuredata(state) as *mut NamecallCallback;
+            let extra = crate::state::extra::ExtraData::get(state);
             callback_error_ext_yieldable(
                 state,
-                (*upvalue).extra.get(),
+                extra,
                 |extra, nargs| {
                     // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
                     // The lock must be already held as the callback is executed
                     let rawlua = (*extra).raw_lua();
-                    match (*upvalue).data {
-                        Some(ref func) => func(rawlua, nargs),
-                        None => Err(crate::state::util::map_err_to_value(rawlua.lua(), Error::CallbackDestructed)),
-                    }
+                    (*upvalue)(rawlua, nargs)
                 },
                 false,
             )
@@ -1241,12 +1191,13 @@ impl RawLua {
             let _sg = StackGuard::new(state);
             check_stack(state, 4)?;
 
-            let func = Some(func);
-            let extra = XRc::clone(&self.extra);
-            push_userdata(state, NamecallCallbackUpvalue { data: func, extra })?;
-            protect_lua!(state, 1, 1, |state| {
-                ffi::lua_pushcclosurek(state, call_callback, debugname, 1, None);
-            })?;
+            crate::util::push_fat_cclosure(
+                state,
+                func,
+                call_callback,
+                debugname,
+                None,
+            )?;
 
             Ok(Function(self.pop_ref()))
         }
@@ -1255,10 +1206,11 @@ impl RawLua {
     // Handles namecalls in userdata
     pub(crate) fn create_namecall_map(&self, map: NamecallMap) -> Result<Function> {
         unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
-            let upvalue = get_userdata::<NamecallMapUpvalue>(state, ffi::lua_upvalueindex(1));
+            let upvalue = ffi::lua_getcclosuredata(state) as *mut NamecallMap;
+            let extra = crate::state::extra::ExtraData::get(state);
             callback_error_ext_yieldable(
                 state,
-                (*upvalue).extra.get(),
+                extra,
                 |extra, nargs| {
                     // Get namecall method name
                     let method = unsafe {
@@ -1268,31 +1220,27 @@ impl RawLua {
                         }
 
                         let name = CStr::from_ptr(name);
-                        let name = name
-                            .to_str()
-                            .map_err(|_| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::runtime("Invalid namecall method")))?;
-                        if name.is_empty() {
-                            return Err(crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::runtime("Namecall method is empty")));
-                        }
+                    let name = name
+                        .to_str()
+                        .map_err(|_| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::runtime("Invalid namecall method")))?;
+                    if name.is_empty() {
+                        return Err(crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::runtime("Namecall method is empty")));
+                    }
 
-                        name
-                    };
+                    name
+                };
 
-                    let Some(ref data) = (*upvalue).data else {
-                        return Err(crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::CallbackDestructed));
-                    };
-
-                    if let Some(func) = data.map.get(method) {
+                if let Some(func) = (*upvalue).map.get(method) {
                         // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
                         // arguments) The lock must be already held as the callback is
                         // executed
                         let rawlua = (*extra).raw_lua();
                         (func)(rawlua, nargs)
-                    } else if let Some(dynamic_method) = &data.dynamic {
-                        // If dynamic method is set, call it
-                        let rawlua = (*extra).raw_lua();
-                        (dynamic_method)(rawlua, method, nargs)
-                    } else {
+                    } else if let Some(dynamic_method) = &(*upvalue).dynamic {
+                    // If dynamic method is set, call it
+                    let rawlua = (*extra).raw_lua();
+                    (dynamic_method)(rawlua, method, nargs)
+                } else {
                         Err(crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::runtime(format!("Method `{}` not found", method))))
                     }
                 },
@@ -1305,12 +1253,13 @@ impl RawLua {
             let _sg = StackGuard::new(state);
             check_stack(state, 4)?;
 
-            let func = Some(map);
-            let extra = XRc::clone(&self.extra);
-            push_userdata(state, NamecallMapUpvalue { data: func, extra })?;
-            protect_lua!(state, 1, 1, |state| {
-                ffi::lua_pushcclosurek(state, call_callback, c"__namecall".as_ptr(), 1, None);
-            })?;
+            crate::util::push_fat_cclosure(
+                state,
+                map,
+                call_callback,
+                c"__namecall".as_ptr(),
+                None,
+            )?;
 
             Ok(Function(self.pop_ref()))
         }
@@ -1330,38 +1279,34 @@ impl RawLua {
         debugname: *const c_char,
     ) -> Result<Function> {
         unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
-            let upvalue = get_userdata::<ContinuationUpvalue>(state, ffi::lua_upvalueindex(1));
+            let upvalue = ffi::lua_getcclosuredata(state) as *mut (Callback, Continuation);
+            let extra = crate::state::extra::ExtraData::get(state);
             callback_error_ext_yieldable(
                 state,
-                (*upvalue).extra.get(),
+                extra,
                 |extra, nargs| {
                     // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
                     // arguments) The lock must be already held as the callback is
                     // executed
                     let rawlua = (*extra).raw_lua();
-                    match (*upvalue).data {
-                        Some(ref cont) => (cont.0)(rawlua, nargs),
-                        None => Err(crate::state::util::map_err_to_value(rawlua.lua(), Error::CallbackDestructed)),
-                    }
+                    ((*upvalue).0)(rawlua, nargs)
                 },
                 true,
             )
         }
 
         unsafe extern "C-unwind" fn cont_callback(state: *mut ffi::lua_State, status: c_int) -> c_int {
-            let upvalue = get_userdata::<ContinuationUpvalue>(state, ffi::lua_upvalueindex(1));
+            let upvalue = ffi::lua_getcclosuredata(state) as *mut (Callback, Continuation);
+            let extra = crate::state::extra::ExtraData::get(state);
             callback_error_ext_yieldable(
                 state,
-                (*upvalue).extra.get(),
+                extra,
                 |extra, nargs| {
                     // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
                     // arguments) The lock must be already held as the callback is
                     // executed
                     let rawlua = (*extra).raw_lua();
-                    match (*upvalue).data {
-                        Some(ref cont) => (cont.1)(rawlua, nargs, status),
-                        None => Err(crate::state::util::map_err_to_value(rawlua.lua(), Error::CallbackDestructed)),
-                    }
+                    ((*upvalue).1)(rawlua, nargs, status)
                 },
                 true,
             )
@@ -1372,12 +1317,13 @@ impl RawLua {
             let _sg = StackGuard::new(state);
             check_stack(state, 4)?;
 
-            let func = Some((func, cont));
-            let extra = XRc::clone(&self.extra);
-            push_userdata(state, ContinuationUpvalue { data: func, extra })?;
-            protect_lua!(state, 1, 1, |state| {
-                ffi::lua_pushcclosurek(state, call_callback, debugname, 1, Some(cont_callback));
-            })?;
+            crate::util::push_fat_cclosure(
+                state,
+                (func, cont),
+                call_callback,
+                debugname,
+                Some(cont_callback),
+            )?;
 
             Ok(Function(self.pop_ref()))
         }

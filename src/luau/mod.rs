@@ -23,7 +23,8 @@ pub static ENABLED_FFLAGS: &[&str] = &[
     "DebugLuauUserDefinedClassesRuntime",
     #[cfg(feature = "none-primitive")]
     "LuauNonePrimitive",
-    "LuauAutoStack" // lets mluau avoid calls to lua_checkstack (avoids ffi calls)
+    "LuauAutoStack", // lets mluau avoid calls to lua_checkstack (avoids ffi calls)
+    "LuauFatCClosure"
 ];
 
 pub static RESTRICTED_FFLAGS: &[&str] = &[
@@ -38,7 +39,8 @@ pub static RESTRICTED_FFLAGS: &[&str] = &[
     // none primitive
     "LuauNonePrimitive",
     // internally needed
-    "LuauAutoStack"
+    "LuauAutoStack",
+    "LuauFatCClosure"
 ];
 
 // Since Luau has some missing standard functions, we re-implement them here

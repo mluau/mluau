@@ -1075,14 +1075,17 @@ impl Lua {
         A: FromLuaMulti,
         R: IntoLuaResultMulti,
     {
-        (self.lock()).create_callback(Box::new(move |rawlua, nargs| unsafe {
-            let state = rawlua.state();
-            let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
-            func(rawlua.lua(), args)
-                .into_result()
-                .map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?
-                .push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
-        }))
+        (self.lock()).create_callback(
+            Box::new(move |rawlua, nargs| unsafe {
+                let state = rawlua.state();
+                let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
+                func(rawlua.lua(), args)
+                    .into_result()
+                    .map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?
+                    .push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
+            }),
+            std::ptr::null(),
+        )
     }
 
     /// Same as ``create_function`` but with an added continuation function.
@@ -1145,14 +1148,17 @@ impl Lua {
         R: IntoLuaResultMulti,
     {
         let func = RefCell::new(func);
-        (self.lock()).create_callback(Box::new(move |rawlua, nargs| unsafe {
-            let state = rawlua.state();
-            let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
-            (*func.try_borrow_mut().map_err(|_| crate::state::util::map_err_to_value(rawlua.lua(), Error::RecursiveMutCallback))?)(rawlua.lua(), args)
-                .into_result()
-                .map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?
-                .push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
-        }))
+        (self.lock()).create_callback(
+            Box::new(move |rawlua, nargs| unsafe {
+                let state = rawlua.state();
+                let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
+                (*func.try_borrow_mut().map_err(|_| crate::state::util::map_err_to_value(rawlua.lua(), Error::RecursiveMutCallback))?)(rawlua.lua(), args)
+                    .into_result()
+                    .map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?
+                    .push_into_specified_stack_multi(rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
+            }),
+            std::ptr::null(),
+        )
     }
 
     /// Same as ``create_function`` but with an added ``debugname``
@@ -1167,7 +1173,7 @@ impl Lua {
         A: FromLuaMulti,
         R: IntoLuaResultMulti,
     {
-        (self.lock()).create_callback_with_debug(
+        (self.lock()).create_callback(
             Box::new(move |rawlua, nargs| unsafe {
                 let state = rawlua.state();
                 let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
@@ -1193,7 +1199,7 @@ impl Lua {
         R: IntoLuaResultMulti,
     {
         let func = RefCell::new(func);
-        (self.lock()).create_callback_with_debug(
+        (self.lock()).create_callback(
             Box::new(move |rawlua, nargs| unsafe {
                 let state = rawlua.state();
                 let args = A::from_specified_stack_args(nargs, 1, None, rawlua, state).map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;

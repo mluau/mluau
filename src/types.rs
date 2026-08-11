@@ -1,8 +1,7 @@
-use std::cell::UnsafeCell;
 use std::os::raw::{c_int, c_void};
 
 use crate::error::Result;
-use crate::state::{ExtraData, Lua, RawLua};
+use crate::state::{Lua, RawLua};
 
 // Re-export mutex wrappers
 pub use sync::XRc;
@@ -64,23 +63,10 @@ pub(crate) type DynamicCallback = XRc<dyn Fn(&RawLua, &str, c_int) -> std::resul
 #[cfg(all(feature = "luau", not(feature = "send")))]
 pub(crate) type DynamicCallback = XRc<dyn Fn(&RawLua, &str, c_int) -> std::result::Result<c_int, crate::Value> + 'static>;
 
-pub(crate) struct Upvalue<T> {
-    pub(crate) data: T,
-    pub(crate) extra: XRc<UnsafeCell<ExtraData>>,
-}
-
-pub(crate) type CallbackUpvalue = Upvalue<Option<Callback>>;
-
-pub(crate) type ContinuationUpvalue = Upvalue<Option<(Callback, Continuation)>>;
-
-pub(crate) type NamecallCallbackUpvalue = Upvalue<Option<NamecallCallback>>;
-
 pub struct NamecallMap {
     pub(crate) map: HashMap<String, NamecallCallback>,
     pub(crate) dynamic: Option<DynamicCallback>,
 }
-
-pub(crate) type NamecallMapUpvalue = Upvalue<Option<NamecallMap>>;
 
 /// Type to set next Lua VM action after executing interrupt or hook function.
 pub enum VmState {

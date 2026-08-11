@@ -40,11 +40,6 @@ pub enum Error {
     ///
     /// This is an error because a mutable callback can only be borrowed mutably once.
     RecursiveMutCallback,
-    /// Either a callback or a userdata method has been called, but the callback or userdata has
-    /// been destructed.
-    ///
-    /// This can happen due to to being destructed in a previous __gc
-    CallbackDestructed,
     /// Not enough stack space to place arguments to Lua functions or return values from callbacks.
     ///
     /// Due to the way `mlua` works, it should not be directly possible to run out of stack space
@@ -188,10 +183,6 @@ impl fmt::Display for Error {
                 write!(fmt, "memory control is not available")
             }
             Error::RecursiveMutCallback => write!(fmt, "mutable callback called recursively"),
-            Error::CallbackDestructed => write!(
-                fmt,
-                "a destructed callback or destructed userdata method was called"
-            ),
             Error::StackError => write!(
                 fmt,
                 "out of Lua stack, too many arguments to a Lua function or too many return values from a callback"

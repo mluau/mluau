@@ -13,9 +13,8 @@ pub(crate) use short_names::short_type_name;
 #[cfg(feature = "dynamic-userdata")]
 pub(crate) use userdata::push_userdata_dyn;
 pub(crate) use userdata::{
-    get_destructed_userdata_metatable, get_userdata,
-    push_userdata, take_userdata,
-    DESTRUCTED_USERDATA_METATABLE,
+    get_destructed_userdata_metatable, get_userdata, push_fat_cclosure, push_userdata,
+    take_userdata, DESTRUCTED_USERDATA_METATABLE,
 };
 
 // Checks that Lua has enough free stack space for future stack operations. On failure, this will

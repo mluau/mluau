@@ -24,6 +24,37 @@ pub(crate) unsafe fn push_userdata<T>(state: *mut ffi::lua_State, t: T) -> Resul
     Ok(ud_ptr)
 }
 
+#[inline]
+pub(crate) unsafe fn push_fat_cclosure<T>(
+    state: *mut ffi::lua_State,
+    func: T,
+    call_callback: ffi::lua_CFunction,
+    debugname: *const std::os::raw::c_char,
+    cont_callback: Option<ffi::lua_Continuation>,
+) -> Result<()> {
+    unsafe extern "C" fn dtor<T>(
+        _state: *mut ffi::lua_State,
+        data: *mut c_void,
+        _sz: usize,
+    ) {
+        ptr::drop_in_place(data as *mut T);
+    }
+
+    let ptr = protect_lua!(state, 0, 1, |state| {
+        ffi::lua_pushcclosurewithdatak(
+            state,
+            call_callback,
+            debugname,
+            cont_callback,
+            mem::size_of::<T>(),
+            Some(dtor::<T>),
+        )
+    })? as *mut T;
+    
+    ptr::write(ptr, func);
+    Ok(())
+}
+
 // Internally uses 3 stack spaces, does not call checkstack.
 //
 // mt_ptr is a pointer to the metatable for this userdata

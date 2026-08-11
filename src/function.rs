@@ -493,7 +493,7 @@ impl Function {
 impl IntoLua for WrappedFunction {
     #[inline]
     fn into_lua(self, lua: &Lua) -> Result<Value> {
-        lua.lock().create_callback(self.0).map(Value::Function)
+        lua.lock().create_callback(self.0, std::ptr::null()).map(Value::Function)
     }
 }
 

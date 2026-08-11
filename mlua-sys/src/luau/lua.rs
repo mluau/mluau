@@ -98,6 +98,8 @@ pub type lua_Continuation = unsafe extern "C-unwind" fn(L: *mut lua_State, statu
 /// Type for userdata destructor functions (no unwinding).
 pub type lua_Destructor = unsafe extern "C" fn(L: *mut lua_State, *mut c_void);
 
+pub type lua_ClosureWithDataFree = unsafe extern "C" fn(L: *mut lua_State, data: *mut c_void, sz: usize);
+
 /// Type for externally managed buffer destructor functions (no unwinding).
 pub type lua_BufferFree =
     unsafe extern "C" fn(L: *mut lua_State, data: *mut c_void, sz: usize, userdata: *mut c_void);
@@ -215,6 +217,15 @@ unsafe extern "C-unwind" {
         nup: c_int,
         cont: Option<lua_Continuation>,
     );
+    pub fn lua_pushcclosurewithdatak(
+        L: *mut lua_State,
+        f: lua_CFunction,
+        debugname: *const c_char,
+        cont: Option<lua_Continuation>,
+        size: usize,
+        dtor: Option<lua_ClosureWithDataFree>,
+    ) -> *mut c_void;
+    pub fn lua_getcclosuredata(L: *mut lua_State) -> *mut c_void;
     pub fn lua_pushboolean(L: *mut lua_State, b: c_int);
     pub fn lua_pushthread(L: *mut lua_State) -> c_int;
 
