@@ -5,63 +5,11 @@ use std::{mem, ptr};
 
 use crate::error::Result;
 use crate::userdata::collect_userdata;
-use crate::util::{check_stack, push_table, rawset_field, TypeKey};
 
 #[cfg(feature = "dynamic-userdata")]
 use crate::userdata::collect_userdata_dyn;
 #[cfg(feature = "dynamic-userdata")]
 use crate::userdata::DynamicUserDataPtr;
-
-// Pushes the userdata and attaches a metatable with __gc method.
-// Internally uses 3 stack spaces
-pub(crate) unsafe fn push_internal_userdata<T: TypeKey>(
-    state: *mut ffi::lua_State,
-    t: T,
-    protect: bool,
-) -> Result<*mut T> {
-    check_stack(state, 3)?;
-    let ud_ptr = if protect {
-        protect_lua!(state, 0, 1, move |state| {
-            ffi::lua_newuserdata_t::<T>(state, t)
-        })?
-    } else {
-        ffi::lua_newuserdata_t::<T>(state, t)
-    };
-
-    get_internal_metatable::<T>(state);
-    ffi::lua_setmetatable(state, -2);
-    Ok(ud_ptr)
-}
-
-#[track_caller]
-pub(crate) unsafe fn get_internal_metatable<T: TypeKey>(state: *mut ffi::lua_State) {
-    ffi::lua_rawgetp(state, ffi::LUA_REGISTRYINDEX, T::type_key());
-    debug_assert!(ffi::lua_isnil(state, -1) == 0, "internal metatable not found");
-}
-
-// Initialize the internal metatable for a type T (with __gc method).
-// Uses 6 stack spaces and calls checkstack.
-pub(crate) unsafe fn init_internal_metatable<T: TypeKey>(
-    state: *mut ffi::lua_State,
-    customize_fn: Option<fn(*mut ffi::lua_State)>,
-) -> Result<()> {
-    check_stack(state, 6)?;
-
-    push_table(state, 0, 3)?;
-
-    ffi::lua_pushboolean(state, 0);
-    rawset_field(state, -2, "__metatable")?;
-
-    protect_lua!(state, 1, 0, |state| {
-        if let Some(f) = customize_fn {
-            f(state);
-        }
-
-        ffi::lua_rawsetp(state, ffi::LUA_REGISTRYINDEX, T::type_key());
-    })?;
-
-    Ok(())
-}
 
 // Internally uses 3 stack spaces, does not call checkstack.
 #[inline]

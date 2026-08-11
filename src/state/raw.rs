@@ -37,8 +37,8 @@ use crate::userdata::{
 };
 use crate::util::{
     assert_stack, check_stack, get_destructed_userdata_metatable, get_main_state,
-    get_metatable_ptr, get_userdata, init_destructed_userdata_registry, init_internal_metatable, pop_error,
-    push_internal_userdata, push_string, push_table, push_userdata, rawset_field,
+    get_metatable_ptr, get_userdata, init_destructed_userdata_registry, pop_error,
+    push_string, push_table, push_userdata, rawset_field,
     short_type_name, to_string, StackGuard,
 };
 use crate::value::{Nil, Value};
@@ -187,18 +187,6 @@ impl RawLua {
         mlua_expect!(
             (|state| {
                 init_destructed_userdata_registry(state)?;
-
-                // Create the internal metatables and store them in the registry
-                // to prevent from being garbage collected.
-
-                init_internal_metatable::<XRc<UnsafeCell<ExtraData>>>(state, None)?;
-                init_internal_metatable::<Callback>(state, None)?;
-                init_internal_metatable::<CallbackUpvalue>(state, None)?;
-                init_internal_metatable::<ContinuationUpvalue>(state, None)?;
-
-                init_internal_metatable::<NamecallCallbackUpvalue>(state, None)?;
-
-                init_internal_metatable::<NamecallMapUpvalue>(state, None)?;
 
 
                 // Init serde metatables
@@ -1169,7 +1157,7 @@ impl RawLua {
 
             let func = Some(func);
             let extra = XRc::clone(&self.extra);
-            push_internal_userdata(state, CallbackUpvalue { data: func, extra }, true)?;
+            push_userdata(state, CallbackUpvalue { data: func, extra })?;
             protect_lua!(state, 1, 1, fn(state) {
                 ffi::lua_pushcclosure(state, call_callback, 1);
             })?;
@@ -1214,7 +1202,7 @@ impl RawLua {
 
                 let func = Some(func);
                 let extra = XRc::clone(&self.extra);
-                push_internal_userdata(state, CallbackUpvalue { data: func, extra }, true)?;
+                push_userdata(state, CallbackUpvalue { data: func, extra })?;
                 protect_lua!(state, 1, 1, |state| {
                     ffi::lua_pushcclosurek(state, call_callback, debugname, 1, None);
                 })?;
@@ -1255,7 +1243,7 @@ impl RawLua {
 
             let func = Some(func);
             let extra = XRc::clone(&self.extra);
-            push_internal_userdata(state, NamecallCallbackUpvalue { data: func, extra }, true)?;
+            push_userdata(state, NamecallCallbackUpvalue { data: func, extra })?;
             protect_lua!(state, 1, 1, |state| {
                 ffi::lua_pushcclosurek(state, call_callback, debugname, 1, None);
             })?;
@@ -1319,7 +1307,7 @@ impl RawLua {
 
             let func = Some(map);
             let extra = XRc::clone(&self.extra);
-            push_internal_userdata(state, NamecallMapUpvalue { data: func, extra }, true)?;
+            push_userdata(state, NamecallMapUpvalue { data: func, extra })?;
             protect_lua!(state, 1, 1, |state| {
                 ffi::lua_pushcclosurek(state, call_callback, c"__namecall".as_ptr(), 1, None);
             })?;
@@ -1386,7 +1374,7 @@ impl RawLua {
 
             let func = Some((func, cont));
             let extra = XRc::clone(&self.extra);
-            push_internal_userdata(state, ContinuationUpvalue { data: func, extra }, true)?;
+            push_userdata(state, ContinuationUpvalue { data: func, extra })?;
             protect_lua!(state, 1, 1, |state| {
                 ffi::lua_pushcclosurek(state, call_callback, debugname, 1, Some(cont_callback));
             })?;

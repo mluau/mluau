@@ -31,7 +31,7 @@ luau-vector4 = ["luau", "ffi/luau-vector4"]
 luau-classes = ["luau", "ffi/luau-classes"]
 # Custom `none` primitive in mluau/luau
 none-primitive = ["luau", "ffi/none-primitive"]
-module = ["mlua_derive", "ffi/module"]
+
 send = ["error-send"]
 error-send = []
 serde = ["dep:serde", "dep:erased-serde", "dep:serde-value", "bstr/serde", "none-primitive"]

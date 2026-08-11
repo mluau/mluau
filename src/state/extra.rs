@@ -16,16 +16,12 @@ use crate::stdlib::StdLib;
 use crate::types::{AppData, ReentrantMutex, XRc};
 
 use crate::userdata::RawUserDataRegistry;
-use crate::util::{push_internal_userdata, TypeKey};
 
 #[cfg(any(feature = "luau", doc))]
 use crate::chunk::Compiler;
 use crate::MultiValue;
 
 use super::{Lua, WeakLua};
-
-// Unique key to store `ExtraData` in the registry
-static EXTRA_REGISTRY_KEY: u8 = 0;
 
 pub const REF_STACK_RESERVE: c_int = 3;
 
@@ -150,15 +146,6 @@ impl Drop for ExtraData {
     }
 }
 
-static EXTRA_TYPE_KEY: u8 = 0;
-
-impl TypeKey for XRc<UnsafeCell<ExtraData>> {
-    #[inline(always)]
-    fn type_key() -> *const c_void {
-        &EXTRA_TYPE_KEY as *const u8 as *const c_void
-    }
-}
-
 impl ExtraData {
     // Index of `error_traceback` function in auxiliary thread stack
     pub(crate) const ERROR_TRACEBACK_IDX: c_int = 1;
@@ -229,16 +216,8 @@ impl ExtraData {
     }
 
     unsafe fn store(extra: &XRc<UnsafeCell<Self>>, state: *mut ffi::lua_State) -> Result<()> {
-        if cfg!(not(feature = "module")) {
-            (*ffi::lua_callbacks(state)).userdata = extra.get() as *mut _;
-            return Ok(());
-        }
-
-        push_internal_userdata(state, XRc::clone(extra), true)?;
-        protect_lua!(state, 1, 0, fn(state) {
-            let extra_key = &EXTRA_REGISTRY_KEY as *const u8 as *const c_void;
-            ffi::lua_rawsetp(state, ffi::LUA_REGISTRYINDEX, extra_key);
-        })
+        (*ffi::lua_callbacks(state)).userdata = extra.get() as *mut _;
+        Ok(())
     }
 
     #[inline(always)]

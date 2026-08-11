@@ -11,12 +11,11 @@ pub(crate) use error::{
 };
 pub(crate) use path::parse_path as parse_lookup_path;
 pub(crate) use short_names::short_type_name;
-pub(crate) use types::TypeKey;
 #[cfg(feature = "dynamic-userdata")]
 pub(crate) use userdata::push_userdata_dyn;
 pub(crate) use userdata::{
     get_destructed_userdata_metatable, get_userdata,
-    init_internal_metatable, push_internal_userdata, push_userdata, take_userdata,
+    push_userdata, take_userdata,
     DESTRUCTED_USERDATA_METATABLE,
 };
 
@@ -247,5 +246,4 @@ pub(crate) fn linenumber_to_usize(n: c_int) -> Option<usize> {
 mod error;
 mod path;
 mod short_names;
-mod types;
 mod userdata;
