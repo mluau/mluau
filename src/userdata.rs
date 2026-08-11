@@ -2,7 +2,7 @@ use std::any::TypeId;
 use std::ffi::CStr;
 use std::fmt;
 use std::hash::Hash;
-use std::os::raw::{c_char, c_void};
+use std::os::raw::c_void;
 use std::string::String as StdString;
 
 use crate::{IntoLuaMulti, WeakLua};
@@ -13,7 +13,7 @@ use crate::string::String;
 use crate::table::{Table, TablePairs};
 use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaResult, IntoLuaResultMulti};
 use crate::types::{MaybeSend, MaybeSync, ValueRef};
-use crate::util::{check_stack, get_userdata, push_string, take_userdata, StackGuard};
+use crate::util::{check_stack, get_userdata, take_userdata, StackGuard};
 use crate::value::Value;
 
 
@@ -654,154 +654,7 @@ impl AnyUserData {
         }
     }
 
-    /// Sets an associated value to this [`AnyUserData`].
-    ///
-    /// The value may be any Lua value whatsoever, and can be retrieved with [`user_value`].
-    ///
-    /// This is the same as calling [`set_nth_user_value`] with `n` set to 1.
-    ///
-    /// [`user_value`]: AnyUserData::user_value
-    /// [`set_nth_user_value`]: AnyUserData::set_nth_user_value
-    #[inline]
-    pub fn set_user_value(&self, v: impl IntoLua) -> Result<()> {
-        self.set_nth_user_value(1, v)
-    }
 
-    /// Returns an associated value set by [`set_user_value`].
-    ///
-    /// This is the same as calling [`nth_user_value`] with `n` set to 1.
-    ///
-    /// [`set_user_value`]: AnyUserData::set_user_value
-    /// [`nth_user_value`]: AnyUserData::nth_user_value
-    #[inline]
-    pub fn user_value<V: FromLua>(&self) -> Result<V> {
-        self.nth_user_value(1)
-    }
-
-    /// Sets an associated `n`th value to this [`AnyUserData`].
-    ///
-    /// The value may be any Lua value whatsoever, and can be retrieved with [`nth_user_value`].
-    /// `n` starts from 1 and can be up to 65535.
-    ///
-    /// This is supported for all Lua versions using a wrapping table.
-    ///
-    /// [`nth_user_value`]: AnyUserData::nth_user_value
-    pub fn set_nth_user_value(&self, n: usize, v: impl IntoLua) -> Result<()> {
-        if n < 1 || n > u16::MAX as usize {
-            return Err(Error::runtime("user value index out of bounds"));
-        }
-
-        let lua = self.0.lua.lock();
-        let state = lua.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            check_stack(state, 5)?;
-
-            lua.push_userdata_ref_at(&self.0, state)?;
-            lua.push_at(state, v)?;
-
-            // Multiple (extra) user values are emulated by storing them in a table
-            protect_lua!(state, 2, 0, |state| {
-                if ffi::lua_getuservalue(state, -2) != ffi::LUA_TTABLE {
-                    // Create a new table to use as uservalue
-                    ffi::lua_pop(state, 1);
-                    ffi::lua_newtable(state);
-                    ffi::lua_pushvalue(state, -1);
-                    ffi::lua_setuservalue(state, -4);
-                }
-                ffi::lua_pushvalue(state, -2);
-                ffi::lua_rawseti(state, -2, n as ffi::lua_Integer);
-            })?;
-
-            Ok(())
-        }
-    }
-
-    /// Returns an associated `n`th value set by [`set_nth_user_value`].
-    ///
-    /// `n` starts from 1 and can be up to 65535.
-    ///
-    /// This is supported for all Lua versions using a wrapping table.
-    ///
-    /// [`set_nth_user_value`]: AnyUserData::set_nth_user_value
-    pub fn nth_user_value<V: FromLua>(&self, n: usize) -> Result<V> {
-        if n < 1 || n > u16::MAX as usize {
-            return Err(Error::runtime("user value index out of bounds"));
-        }
-
-        let lua = self.0.lua.lock();
-        let state = lua.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            check_stack(state, 4)?;
-
-            lua.push_userdata_ref_at(&self.0, state)?;
-
-            // Multiple (extra) user values are emulated by storing them in a table
-            if ffi::lua_getuservalue(state, -1) != ffi::LUA_TTABLE {
-                return V::from_lua(Value::Nil, lua.lua());
-            }
-            ffi::lua_rawgeti(state, -1, n as ffi::lua_Integer);
-
-            V::from_lua(lua.pop_value_at(state)?, lua.lua())
-        }
-    }
-
-    /// Sets an associated value to this [`AnyUserData`] by name.
-    ///
-    /// The value can be retrieved with [`named_user_value`].
-    ///
-    /// [`named_user_value`]: AnyUserData::named_user_value
-    pub fn set_named_user_value(&self, name: &str, v: impl IntoLua) -> Result<()> {
-        let lua = self.0.lua.lock();
-        let state = lua.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            check_stack(state, 5)?;
-
-            lua.push_userdata_ref_at(&self.0, state)?;
-            lua.push_at(state, v)?;
-
-            // Multiple (extra) user values are emulated by storing them in a table
-            protect_lua!(state, 2, 0, |state| {
-                if ffi::lua_getuservalue(state, -2) != ffi::LUA_TTABLE {
-                    // Create a new table to use as uservalue
-                    ffi::lua_pop(state, 1);
-                    ffi::lua_newtable(state);
-                    ffi::lua_pushvalue(state, -1);
-                    ffi::lua_setuservalue(state, -4);
-                }
-                ffi::lua_pushlstring(state, name.as_ptr() as *const c_char, name.len());
-                ffi::lua_pushvalue(state, -3);
-                ffi::lua_rawset(state, -3);
-            })?;
-
-            Ok(())
-        }
-    }
-
-    /// Returns an associated value by name set by [`set_named_user_value`].
-    ///
-    /// [`set_named_user_value`]: AnyUserData::set_named_user_value
-    pub fn named_user_value<V: FromLua>(&self, name: &str) -> Result<V> {
-        let lua = self.0.lua.lock();
-        let state = lua.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            check_stack(state, 4)?;
-
-            lua.push_userdata_ref_at(&self.0, state)?;
-
-            // Multiple (extra) user values are emulated by storing them in a table
-            if ffi::lua_getuservalue(state, -1) != ffi::LUA_TTABLE {
-                return V::from_lua(Value::Nil, lua.lua());
-            }
-            push_string(state, name.as_bytes())?;
-            ffi::lua_rawget(state, -2);
-
-            V::from_specified_stack(-1, &lua, state)
-        }
-    }
 
     /// Returns a metatable of this [`AnyUserData`].
     ///

@@ -285,7 +285,7 @@ fn test_userdata_take() -> Result<()> {
 
     fn check_userdata_take(lua: &Lua, userdata: AnyUserData, rc: Arc<i64>) -> Result<()> {
         lua.globals().set("userdata", &userdata)?;
-        assert_eq!(Arc::strong_count(&rc), 3);
+        assert_eq!(Arc::strong_count(&rc), 2);
         {
             let _value = userdata.borrow::<MyUserdata>()?;
             // We should not be able to take userdata if it's borrowed
@@ -298,7 +298,7 @@ fn test_userdata_take() -> Result<()> {
         let value = userdata.take::<MyUserdata>()?;
         assert_eq!(*value.0, 18);
         drop(value);
-        assert_eq!(Arc::strong_count(&rc), 2);
+        assert_eq!(Arc::strong_count(&rc), 1);
 
         match userdata.borrow::<MyUserdata>() {
             Err(Error::UserDataDestructed) => {}
@@ -324,7 +324,6 @@ fn test_userdata_take() -> Result<()> {
 
     let rc = Arc::new(18);
     let userdata = lua.create_userdata(MyUserdata(rc.clone()))?;
-    userdata.set_nth_user_value(2, MyUserdata(rc.clone()))?;
     check_userdata_take(&lua, userdata, rc)?;
 
     Ok(())
@@ -351,10 +350,9 @@ fn test_userdata_destroy() -> Result<()> {
 
     let lua = Lua::new();
     let ud = lua.create_userdata(MyUserdata(rc.clone()))?;
-    ud.set_user_value(MyUserdata(rc.clone()))?;
     lua.globals().set("userdata", ud)?;
 
-    assert_eq!(Arc::strong_count(&rc), 3);
+    assert_eq!(Arc::strong_count(&rc), 2);
 
     // Should destroy all objects
     lua.globals().raw_remove("userdata")?;
@@ -383,37 +381,7 @@ fn test_userdata_destroy() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_user_values() -> Result<()> {
-    struct MyUserData;
 
-    impl UserData for MyUserData {}
-
-    let lua = Lua::new();
-    let ud = lua.create_userdata(MyUserData)?;
-
-    ud.set_nth_user_value(1, "hello")?;
-    ud.set_nth_user_value(2, "world")?;
-    ud.set_nth_user_value(65535, 321)?;
-    assert_eq!(ud.nth_user_value::<String>(1)?, "hello");
-    assert_eq!(ud.nth_user_value::<String>(2)?, "world");
-    assert_eq!(ud.nth_user_value::<Value>(3)?, Value::Nil);
-    assert_eq!(ud.nth_user_value::<i32>(65535)?, 321);
-
-    assert!(ud.nth_user_value::<Value>(0).is_err());
-    assert!(ud.nth_user_value::<Value>(65536).is_err());
-
-    // Named user values
-    let ud = lua.create_userdata(MyUserData)?;
-    ud.set_named_user_value("name", "alex")?;
-    ud.set_named_user_value("age", 10)?;
-
-    assert_eq!(ud.named_user_value::<String>("name")?, "alex");
-    assert_eq!(ud.named_user_value::<i32>("age")?, 10);
-    assert_eq!(ud.named_user_value::<Value>("nonexist")?, Value::Nil);
-
-    Ok(())
-}
 
 #[test]
 fn test_functions() -> Result<()> {
@@ -542,9 +510,7 @@ fn test_fields() -> Result<()> {
                 lua.create_function(move |_, ()| Ok(ud.borrow::<MyUserData>()?.0))
             });
 
-            // Use userdata "uservalue" storage
-            fields.add_field_function_get("uval", |_, ud| ud.user_value::<Option<String>>());
-            fields.add_field_function_set("uval", |_, ud, s: Option<String>| ud.set_user_value(s));
+
 
             fields.add_meta_field(MetaMethod::Index, HashMap::from([("f", 321)]));
             fields.add_meta_field_with(MetaMethod::NewIndex, |lua| {
@@ -569,9 +535,7 @@ fn test_fields() -> Result<()> {
         assert(ud.val == 10)
         assert(ud:val_fget() == 10)
 
-        assert(ud.uval == nil)
-        ud.uval = "hello"
-        assert(ud.uval == "hello")
+
 
         assert(ud.f == 321)
 

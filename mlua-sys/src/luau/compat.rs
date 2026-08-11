@@ -206,19 +206,6 @@ pub unsafe fn lua_rawgetp(L: *mut lua_State, idx: c_int, p: *const c_void) -> c_
     lua_rawgetptagged(L, idx, p, 0)
 }
 
-#[inline(always)]
-pub unsafe fn lua_getuservalue(L: *mut lua_State, mut idx: c_int) -> c_int {
-    luaL_checkstack(L, 2, cstr!("not enough stack slots available"));
-    idx = lua_absindex(L, idx);
-    lua_pushliteral(L, c"__mlua_uservalues");
-    if lua_rawget(L, LUA_REGISTRYINDEX) != LUA_TTABLE {
-        return LUA_TNIL;
-    }
-    lua_pushvalue(L, idx);
-    lua_rawget(L, -2);
-    lua_remove(L, -2);
-    lua_type(L, -1)
-}
 
 #[inline(always)]
 pub unsafe fn lua_seti(L: *mut lua_State, mut idx: c_int, n: lua_Integer) {
@@ -240,30 +227,6 @@ pub unsafe fn lua_rawsetp(L: *mut lua_State, idx: c_int, p: *const c_void) {
     lua_rawsetptagged(L, idx, p, 0)
 }
 
-#[inline(always)]
-pub unsafe fn lua_setuservalue(L: *mut lua_State, mut idx: c_int) {
-    luaL_checkstack(L, 4, cstr!("not enough stack slots available"));
-    idx = lua_absindex(L, idx);
-    lua_pushliteral(L, c"__mlua_uservalues");
-    lua_pushvalue(L, -1);
-    if lua_rawget(L, LUA_REGISTRYINDEX) != LUA_TTABLE {
-        lua_pop(L, 1);
-        lua_createtable(L, 0, 2); // main table
-        lua_createtable(L, 0, 1); // metatable
-        lua_pushliteral(L, c"k");
-        lua_setfield(L, -2, cstr!("__mode"));
-        lua_setmetatable(L, -2);
-        lua_pushvalue(L, -2);
-        lua_pushvalue(L, -2);
-        lua_rawset(L, LUA_REGISTRYINDEX);
-    }
-    lua_replace(L, -2);
-    lua_pushvalue(L, idx);
-    lua_pushvalue(L, -3);
-    lua_remove(L, -4);
-    lua_rawset(L, -3);
-    lua_pop(L, 1);
-}
 
 #[inline(always)]
 pub unsafe fn lua_len(L: *mut lua_State, idx: c_int) {
