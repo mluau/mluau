@@ -106,12 +106,6 @@ pub(crate) struct ExtraData {
     // Special auxiliary thread for mlua internal use
     pub(crate) ref_thread_internal: RefThread,
 
-    #[cfg(not(feature = "luau"))]
-    pub(super) hook_callback: Option<crate::types::HookCallback>,
-    #[cfg(not(feature = "luau"))]
-    pub(super) hook_triggers: crate::debug::HookTriggers,
-    #[cfg(feature = "lua54")]
-    pub(super) warn_callback: Option<crate::types::WarnCallback>,
 
     pub(super) interrupt_callback: Option<crate::types::InterruptCallback>,
 
@@ -132,7 +126,6 @@ pub(crate) struct ExtraData {
     pub(super) enable_jit: bool,
 
     // Values currently being yielded from Lua.yield()
-    #[cfg(not(feature = "lua51"))]
     pub(super) yielded_values: Option<MultiValue>,
 
     // Callback called when lua VM is about to be closed
@@ -211,7 +204,6 @@ impl ExtraData {
             enable_jit: true,
 
             running_gc: false,
-            #[cfg(not(feature = "lua51"))]
             yielded_values: None,
             on_close: None,
 

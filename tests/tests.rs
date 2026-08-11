@@ -989,44 +989,6 @@ fn test_register_module() -> Result<()> {
     Ok(())
 }
 
-#[test]
-#[cfg(not(feature = "luau"))]
-fn test_preload_module() -> Result<()> {
-    let lua = Lua::new();
-
-    let loader = lua.create_function(move |lua, modname: String| {
-        let t = lua.create_table()?;
-        t.set("name", modname)?;
-        Ok(t)
-    })?;
-
-    lua.preload_module("@my_module", loader.clone())?;
-    lua.load(
-        r#"
-        -- `my_module` is global for purposes of next test
-        my_module = require("@my_module")
-        assert(my_module.name == "@my_module")
-        local my_module2 = require("@my_module")
-        assert(my_module == my_module2)
-    "#,
-    )
-    .exec()
-    .unwrap();
-
-    // Test unloading and loading again
-    lua.unload_module("@my_module")?;
-    lua.load(
-        r#"
-        local my_module3 = require("@my_module")
-        -- `my_module` is not equal to `my_module3` because it was reloaded
-        assert(my_module ~= my_module3)
-        "#,
-    )
-    .exec()
-    .unwrap();
-
-    Ok(())
-}
 
 #[test]
 fn test_inspect_stack() -> Result<()> {
@@ -1378,25 +1340,6 @@ fn test_gc_drop_ref_thread() -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(feature = "luau"))]
-#[test]
-fn test_get_or_init_from_ptr() -> Result<()> {
-    // This would not work with Luau, the state must be init by mlua internally
-    let state = unsafe { ffi::luaL_newstate() };
-
-    let mut lua = unsafe { Lua::get_or_init_from_ptr(state) };
-    lua.globals().set("hello", "world678")?;
-
-    // The same Lua instance must be returned
-    lua = unsafe { Lua::get_or_init_from_ptr(state) };
-    assert_eq!(lua.globals().get::<String>("hello")?, "world678");
-
-    unsafe { ffi::lua_close(state) };
-
-    // Lua must not be accessed after closing
-
-    Ok(())
-}
 
 #[test]
 fn test_onclose() -> Result<()> {

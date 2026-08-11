@@ -28,9 +28,7 @@ use crate::types::{
 
 use crate::types::{NamecallCallback, NamecallCallbackUpvalue, NamecallMap, NamecallMapUpvalue};
 
-#[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 use crate::types::Continuation;
-#[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
 use crate::types::ContinuationUpvalue;
 
 use crate::userdata::{
@@ -196,14 +194,12 @@ impl RawLua {
                 init_internal_metatable::<XRc<UnsafeCell<ExtraData>>>(state, None)?;
                 init_internal_metatable::<Callback>(state, None)?;
                 init_internal_metatable::<CallbackUpvalue>(state, None)?;
-                #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
                 init_internal_metatable::<ContinuationUpvalue>(state, None)?;
 
                 init_internal_metatable::<NamecallCallbackUpvalue>(state, None)?;
 
                 init_internal_metatable::<NamecallMapUpvalue>(state, None)?;
-                #[cfg(not(feature = "luau"))]
-                init_internal_metatable::<HookCallback>(state, None)?;
+
 
                 // Init serde metatables
                 #[cfg(feature = "serde")]
@@ -274,29 +270,12 @@ impl RawLua {
     pub(super) unsafe fn load_std_libs(&self, libs: StdLib) -> Result<()> {
         let is_safe = (*self.extra.get()).safe;
 
-        #[cfg(not(feature = "luau"))]
-        if is_safe && libs.contains(StdLib::DEBUG) {
-            return Err(Error::SafetyError(
-                "the unsafe `debug` module can't be loaded in safe mode".to_string(),
-            ));
-        }
-        #[cfg(feature = "luajit")]
-        if is_safe && libs.contains(StdLib::FFI) {
-            return Err(Error::SafetyError(
-                "the unsafe `ffi` module can't be loaded in safe mode".to_string(),
-            ));
-        }
+
 
         let res = load_std_libs(self.main_state(), libs);
 
         // If `package` library loaded into a safe lua state then disable C modules
-        #[cfg(not(feature = "luau"))]
-        if is_safe {
-            let curr_libs = (*self.extra.get()).libs;
-            if (curr_libs ^ (curr_libs | libs)).contains(StdLib::PACKAGE) {
-                mlua_expect!(self.lua().disable_c_modules(), "Error disabling C modules");
-            }
-        }
+
 
         let _ = is_safe;
         unsafe { (*self.extra.get()).libs |= libs };
@@ -815,11 +794,7 @@ impl RawLua {
 
     #[inline]
     pub(crate) unsafe fn push_error_traceback_at(&self, state: *mut ffi::lua_State) {
-        #[cfg(any(feature = "lua51", feature = "luajit", feature = "luau"))]
         ffi::lua_xpush(self.ref_thread_internal(), state, ExtraData::ERROR_TRACEBACK_IDX);
-        // Lua 5.2+ support light C functions that does not require extra allocations
-        #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-        ffi::lua_pushcfunction(state, crate::util::error_traceback);
     }
 
     pub(crate) unsafe fn make_userdata<T>(&self, data: UserDataStorage<T>) -> Result<AnyUserData>
@@ -1358,7 +1333,7 @@ impl RawLua {
     // In Luau, uses pushcclosurek
     //
     // In Lua 5.2/5.3/5.4/JIT, makes a normal function that then yields to the continuation via yieldk
-    #[cfg(all(not(feature = "lua51"), not(feature = "luajit")))]
+
     #[allow(unused_variables)]
     pub(crate) fn create_callback_with_continuation(
         &self,
@@ -1440,7 +1415,7 @@ impl RawLua {
         unsafe { ffi::lua_gcallocationrate(self.state()) }
     }
 
-    #[cfg(not(any(feature = "lua51", feature = "lua52", feature = "luajit")))]
+
     #[inline]
     pub(crate) fn is_yieldable(&self) -> bool {
         unsafe { ffi::lua_isyieldable(self.state()) != 0 }

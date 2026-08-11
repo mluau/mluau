@@ -406,11 +406,7 @@ impl Thread {
     /// In Luau: resets to the initial state of a newly created Lua thread.
     /// Lua threads in arbitrary states (like yielded or errored) can be reset properly.
     ///
-    /// Requires `feature = "lua54"` OR `feature = "luau"`.
-    ///
-    /// [Lua 5.4]: https://www.lua.org/manual/5.4/manual.html#lua_closethread
-    #[cfg(any(feature = "lua54", feature = "luau"))]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "lua54", feature = "luau"))))]
+
     pub fn close(&self) -> Result<()> {
         let lua = self.0.lua.lock();
         if self.status_inner(&lua) == ThreadStatusInner::Running {
@@ -454,8 +450,7 @@ impl Thread {
     /// # Ok(())
     /// # }
     ///
-    /// # #[cfg(not(feature = "luau"))]
-    /// # fn main() { }
+
     /// ```
     pub fn sandbox(&self) -> Result<()> {
         let lua = self.0.lua.lock();

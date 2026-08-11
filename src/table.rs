@@ -387,27 +387,8 @@ impl Table {
     pub fn clear(&self) -> Result<()> {
         let lua = self.0.lua.lock();
         unsafe {
-            {
-                self.check_readonly_write(&lua)?;
-                ffi::lua_cleartable(lua.ref_thread(self.0.aux_thread), self.0.index);
-            }
-
-            #[cfg(not(feature = "luau"))]
-            {
-                let state = lua.state();
-                check_stack(state, 4)?;
-
-                lua.push_ref_at(&self.0, state);
-
-                // This is safe as long as we don't assign new keys
-                ffi::lua_pushnil(state);
-                while ffi::lua_next(state, -2) != 0 {
-                    ffi::lua_pop(state, 1); // pop value
-                    ffi::lua_pushvalue(state, -1); // copy key
-                    ffi::lua_pushnil(state);
-                    ffi::lua_rawset(state, -4);
-                }
-            }
+            self.check_readonly_write(&lua)?;
+            ffi::lua_cleartable(lua.ref_thread(self.0.aux_thread), self.0.index);
         }
 
         Ok(())

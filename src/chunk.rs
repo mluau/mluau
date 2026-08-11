@@ -673,7 +673,7 @@ impl Chunk<'_> {
     /// Load this chunk into a regular [`Function`].
     ///
     /// This simply compiles the chunk without actually executing it.
-    #[cfg_attr(not(feature = "luau"), allow(unused_mut))]
+
     pub fn into_function(mut self) -> Result<Function> {
         if self.compiler.is_some() {
             // We don't need to compile source if no compiler set

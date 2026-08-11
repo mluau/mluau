@@ -45,14 +45,10 @@ pub(crate) struct RawUserDataRegistry {
     pub(crate) meta_fields: Vec<(String, Result<Value>)>,
 
     // Functions
-    #[cfg(not(feature = "luau"))] // luau has namecalls as a optimization for this
-    pub(crate) functions: Vec<(String, Callback)>,
 
     pub(crate) functions: Vec<(String, NamecallCallback, Option<&'static CStr>)>,
 
     // Methods
-    #[cfg(not(feature = "luau"))] // luau has namecalls as a optimization for this
-    pub(crate) methods: Vec<(String, Callback)>,
 
     pub(crate) methods: Vec<(String, NamecallCallback, Option<&'static CStr>)>,
 
@@ -298,10 +294,7 @@ impl<T> UserDataRegistry<T> {
             fields.push(name.as_str());
         }
 
-        #[cfg(not(feature = "luau"))]
-        for (name, _) in &self.raw.methods {
-            fields.push(name.as_str());
-        }
+
 
         if include_meta {
             for (name, _) in &self.raw.meta_methods {
@@ -309,10 +302,7 @@ impl<T> UserDataRegistry<T> {
             }
         }
 
-        #[cfg(not(feature = "luau"))]
-        for (name, _) in &self.raw.functions {
-            fields.push(name.as_str());
-        }
+
 
         for (name, _, _) in &self.raw.functions {
             fields.push(name.as_str());

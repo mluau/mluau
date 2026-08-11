@@ -6,11 +6,7 @@ pub struct StdLib(u32);
 
 impl StdLib {
     /// [`coroutine`](https://www.lua.org/manual/5.4/manual.html#6.2) library
-    #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52", feature = "luau"))]
-    #[cfg_attr(
-        docsrs,
-        doc(cfg(any(feature = "lua54", feature = "lua53", feature = "lua52", feature = "luau")))
-    )]
+
     pub const COROUTINE: StdLib = StdLib(1);
 
     /// [`table`](https://www.lua.org/manual/5.4/manual.html#6.6) library
@@ -23,33 +19,26 @@ impl StdLib {
     pub const STRING: StdLib = StdLib(1 << 4);
 
     /// [`utf8`](https://www.lua.org/manual/5.4/manual.html#6.5) library
-    #[cfg(any(feature = "lua54", feature = "lua53", feature = "luau"))]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "lua54", feature = "lua53", feature = "luau"))))]
+
     pub const UTF8: StdLib = StdLib(1 << 5);
 
     /// [`bit`](https://www.lua.org/manual/5.2/manual.html#6.7) library
-    #[cfg_attr(
-        docsrs,
-        doc(cfg(any(feature = "lua52", feature = "luajit", feature = "luau")))
-    )]
+
     pub const BIT: StdLib = StdLib(1 << 6);
 
     /// [`math`](https://www.lua.org/manual/5.4/manual.html#6.7) library
     pub const MATH: StdLib = StdLib(1 << 7);
 
     /// [`buffer`](https://luau.org/library#buffer-library) library
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+
     pub const BUFFER: StdLib = StdLib(1 << 9);
 
     /// [`vector`](https://luau.org/library#vector-library) library
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+
     pub const VECTOR: StdLib = StdLib(1 << 10);
 
     /// [`integer`](https://luau.org/library#integer-library) library
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+
     pub const INTEGER: StdLib = StdLib(1 << 11);
 
     /// (**unsafe**) [`debug`](https://www.lua.org/manual/5.4/manual.html#6.10) library

@@ -163,24 +163,7 @@ pub(crate) unsafe fn rawset_field(state: *mut ffi::lua_State, table: c_int, fiel
 // Returns Lua main thread for Lua >= 5.2 or checks that the passed thread is main for Lua 5.1.
 // Does not call lua_checkstack, uses 1 stack space.
 pub(crate) unsafe fn get_main_state(state: *mut ffi::lua_State) -> Option<*mut ffi::lua_State> {
-    #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-    {
-        ffi::lua_rawgeti(state, ffi::LUA_REGISTRYINDEX, ffi::LUA_RIDX_MAINTHREAD);
-        let main_state = ffi::lua_tothread(state, -1);
-        ffi::lua_pop(state, 1);
-        Some(main_state)
-    }
-    #[cfg(any(feature = "lua51", feature = "luajit"))]
-    {
-        // Check the current state first
-        let is_main_state = ffi::lua_pushthread(state) == 1;
-        ffi::lua_pop(state, 1);
-        if is_main_state {
-            Some(state)
-        } else {
-            None
-        }
-    }
+
 
     Some(ffi::lua_mainthread(state))
 }
@@ -238,14 +221,6 @@ pub(crate) unsafe fn to_string(state: *mut ffi::lua_State, index: c_int) -> Stri
 pub(crate) unsafe fn get_metatable_ptr(state: *mut ffi::lua_State, index: c_int) -> *const c_void {
     return ffi::lua_getmetatablepointer(state, index);
 
-    #[cfg(not(feature = "luau"))]
-    if ffi::lua_getmetatable(state, index) == 0 {
-        ptr::null()
-    } else {
-        let p = ffi::lua_topointer(state, -1);
-        ffi::lua_pop(state, 1);
-        p
-    }
 }
 
 pub(crate) unsafe fn ptr_to_str<'a>(input: *const c_char) -> Option<&'a str> {

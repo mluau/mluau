@@ -706,7 +706,7 @@ impl Lua {
     }
 
     /// Returns `true` if the garbage collector is currently running automatically.
-    #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52", feature = "luau"))]
+
     pub fn gc_is_running(&self) -> bool {
         let lua = self.lock();
         unsafe { ffi::lua_gc(lua.main_state(), ffi::LUA_GCISRUNNING, 0) != 0 }
@@ -1213,16 +1213,6 @@ impl Lua {
     /// This function is unsafe because provides a way to execute unsafe C function.
     pub unsafe fn create_c_function(&self, func: ffi::lua_CFunction) -> Result<Function> {
         let lua = self.lock();
-        if cfg!(any(feature = "lua54", feature = "lua53", feature = "lua52")) {
-            let (aux_thread, idx, replace) = get_next_spot(lua.extra());
-            ffi::lua_pushcfunction(lua.ref_thread(aux_thread), func);
-            if replace {
-                ffi::lua_replace(lua.ref_thread(aux_thread), idx);
-            }
-
-            return Ok(Function(lua.new_value_ref(aux_thread, idx)));
-        }
-
         // Lua <5.2 requires memory allocation to push a C function
         let state = lua.state();
         {

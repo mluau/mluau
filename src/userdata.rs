@@ -57,33 +57,8 @@ pub enum MetaMethod {
     /// The unary minus (`-`) operator.
     Unm,
     /// The floor division (//) operator.
-    #[cfg(any(feature = "lua54", feature = "lua53", feature = "luau"))]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "lua54", feature = "lua53", feature = "luau"))))]
     IDiv,
-    /// The bitwise AND (&) operator.
-    #[cfg(any(feature = "lua54", feature = "lua53"))]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "lua54", feature = "lua53"))))]
-    BAnd,
-    /// The bitwise OR (|) operator.
-    #[cfg(any(feature = "lua54", feature = "lua53"))]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "lua54", feature = "lua53"))))]
-    BOr,
-    /// The bitwise XOR (binary ~) operator.
-    #[cfg(any(feature = "lua54", feature = "lua53"))]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "lua54", feature = "lua53"))))]
-    BXor,
-    /// The bitwise NOT (unary ~) operator.
-    #[cfg(any(feature = "lua54", feature = "lua53"))]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "lua54", feature = "lua53"))))]
-    BNot,
-    /// The bitwise left shift (<<) operator.
-    #[cfg(any(feature = "lua54", feature = "lua53"))]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "lua54", feature = "lua53"))))]
-    Shl,
-    /// The bitwise right shift (>>) operator.
-    #[cfg(any(feature = "lua54", feature = "lua53"))]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "lua54", feature = "lua53"))))]
-    Shr,
+
     /// The string concatenation operator `..`.
     Concat,
     /// The length operator `#`.
@@ -104,41 +79,13 @@ pub enum MetaMethod {
     ///
     /// This is not an operator, but will be called by methods such as `tostring` and `print`.
     ToString,
-    /// The `__pairs` metamethod.
-    ///
-    /// This is not an operator, but it will be called by the built-in `pairs` function.
-    #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52", feature = "luajit52"))]
-    #[cfg_attr(
-        docsrs,
-        doc(cfg(any(feature = "lua54", feature = "lua53", feature = "lua52", feature = "luajit52")))
-    )]
-    Pairs,
-    /// The `__ipairs` metamethod.
-    ///
-    /// This is not an operator, but it will be called by the built-in [`ipairs`] function.
-    ///
-    /// [`ipairs`]: https://www.lua.org/manual/5.2/manual.html#pdf-ipairs
-    #[cfg(any(feature = "lua52", feature = "luajit52", doc))]
-    #[cfg_attr(docsrs, doc(cfg(any(feature = "lua52", feature = "luajit52"))))]
-    IPairs,
+
     /// The `__iter` metamethod.
     ///
     /// Executed before the iteration begins, and should return an iterator function like `next`
     /// (or a custom one).
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     Iter,
-    /// The `__close` metamethod.
-    ///
-    /// Executed when a variable, that marked as to-be-closed, goes out of scope.
-    ///
-    /// More information about to-be-closed variables can be found in the Lua 5.4
-    /// [documentation][lua_doc].
-    ///
-    /// [lua_doc]: https://www.lua.org/manual/5.4/manual.html#3.3.8
-    #[cfg(feature = "lua54")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "lua54")))]
-    Close,
+
     /// The `__name`/`__type` metafield.
     ///
     /// This is not a function, but it's value can be used by `tostring` and `typeof` built-in
@@ -177,21 +124,7 @@ impl MetaMethod {
             MetaMethod::Pow => "__pow",
             MetaMethod::Unm => "__unm",
 
-            #[cfg(any(feature = "lua54", feature = "lua53", feature = "luau"))]
             MetaMethod::IDiv => "__idiv",
-            #[cfg(any(feature = "lua54", feature = "lua53"))]
-            MetaMethod::BAnd => "__band",
-            #[cfg(any(feature = "lua54", feature = "lua53"))]
-            MetaMethod::BOr => "__bor",
-            #[cfg(any(feature = "lua54", feature = "lua53"))]
-            MetaMethod::BXor => "__bxor",
-            #[cfg(any(feature = "lua54", feature = "lua53"))]
-            MetaMethod::BNot => "__bnot",
-            #[cfg(any(feature = "lua54", feature = "lua53"))]
-            MetaMethod::Shl => "__shl",
-            #[cfg(any(feature = "lua54", feature = "lua53"))]
-            MetaMethod::Shr => "__shr",
-
             MetaMethod::Concat => "__concat",
             MetaMethod::Len => "__len",
             MetaMethod::Eq => "__eq",
@@ -202,18 +135,10 @@ impl MetaMethod {
             MetaMethod::Call => "__call",
             MetaMethod::ToString => "__tostring",
 
-            #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52", feature = "luajit52"))]
-            MetaMethod::Pairs => "__pairs",
-            #[cfg(any(feature = "lua52", feature = "luajit52"))]
-            MetaMethod::IPairs => "__ipairs",
 
             MetaMethod::Iter => "__iter",
 
-            #[cfg(feature = "lua54")]
-            MetaMethod::Close => "__close",
-
-            #[rustfmt::skip]
-            MetaMethod::Type => if cfg!(feature = "luau") { "__type" } else { "__name" },
+            MetaMethod::Type => "__type",
         }
     }
 
@@ -228,8 +153,6 @@ impl MetaMethod {
     pub(crate) fn validate(name: &str) -> Result<&str> {
         match name {
             // __gc is safe on Luau as it doesnt actually exist
-            #[cfg(not(feature = "luau"))]
-            "__gc" => Err(Error::MetaMethodRestricted(name.to_string())),
             "__metatable" => Err(Error::MetaMethodRestricted(name.to_string())),
             _ if name.starts_with("__mlua") => Err(Error::MetaMethodRestricted(name.to_string())),
             name => Ok(name),
@@ -717,44 +640,27 @@ impl AnyUserData {
             check_stack(state, 3)?;
 
             // Luau does not have __gc
+            match lua.get_userdata_ref_type_id(&self.0)? {
+                Some(type_id) => {
+                    // Get out the destructor from extra
+                    let dtor = match (&(*lua.extra())).get_userdata_dtor(type_id) {
+                        Some(dtor) => dtor,
+                        None => return Err(Error::UserDataTypeMismatch),
+                    };
 
-            {
-                match lua.get_userdata_ref_type_id(&self.0)? {
-                    Some(type_id) => {
-                        // Get out the destructor from extra
-                        let dtor = match (&(*lua.extra())).get_userdata_dtor(type_id) {
-                            Some(dtor) => dtor,
-                            None => return Err(Error::UserDataTypeMismatch),
-                        };
+                    // Call the destructor
+                    protect_lua!(state, 0, 1, |state| {
+                        ffi::lua_pushcfunction(state, dtor);
+                        lua.push_ref_at(&self.0, state);
+                        ffi::lua_call(state, 1, 1);
+                    })?;
 
-                        // Call the destructor
-                        protect_lua!(state, 0, 1, |state| {
-                            ffi::lua_pushcfunction(state, dtor);
-                            lua.push_ref_at(&self.0, state);
-                            ffi::lua_call(state, 1, 1);
-                        })?;
-
-                        if ffi::lua_isboolean(state, -1) != 0 && ffi::lua_toboolean(state, -1) != 0 {
-                            return Ok(());
-                        }
-                        return Err(Error::UserDataBorrowMutError);
+                    if ffi::lua_isboolean(state, -1) != 0 && ffi::lua_toboolean(state, -1) != 0 {
+                        return Ok(());
                     }
-                    None => return Err(Error::UserDataTypeMismatch),
+                    return Err(Error::UserDataBorrowMutError);
                 }
-            }
-
-            #[cfg(not(feature = "luau"))]
-            {
-                lua.push_userdata_ref_at(&self.0, state)?;
-                protect_lua!(state, 1, 1, fn(state) {
-                    if ffi::luaL_callmeta(state, -1, cstr!("__gc")) == 0 {
-                        ffi::lua_pushboolean(state, 0);
-                    }
-                })?;
-                if ffi::lua_isboolean(state, -1) != 0 && ffi::lua_toboolean(state, -1) != 0 {
-                    return Ok(());
-                }
-                Err(Error::UserDataBorrowMutError)
+                None => return Err(Error::UserDataTypeMismatch),
             }
         }
     }

@@ -16,7 +16,7 @@ use crate::types::ValueRef;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Buffer(pub(crate) ValueRef);
 
-#[cfg_attr(not(feature = "luau"), allow(unused))]
+
 impl Buffer {
     /// Copies the buffer data into a new `Vec<u8>`.
     pub fn to_vec(&self) -> Vec<u8> {
