@@ -2,7 +2,7 @@
 
 use std::string::String as StdString;
 
-use mluau::{AnyUserData, Error, Lua, ObjectLike, Result, UserData, UserDataMethods, UserDataRef};
+use mluau::{AnyUserData, Error, Lua, Result, UserData, UserDataMethods, UserDataRef};
 use static_assertions::{assert_impl_all, assert_not_impl_all};
 
 #[test]
