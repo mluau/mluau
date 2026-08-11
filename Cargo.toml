@@ -15,11 +15,11 @@ High level bindings to Luau.
 """
 
 [package.metadata.docs.rs]
-features = ["luau", "vendored", "send", "serde", "macros"]
+features = ["luau", "vendored", "send", "serde"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
-members = ["mlua_derive", "mlua-sys"]
+members = ["mlua-sys"]
 
 [features]
 default = ["luau", "dynamic-userdata", "bytes", "none-primitive", "serde"]
@@ -34,7 +34,7 @@ none-primitive = ["luau", "ffi/none-primitive"]
 
 send = []
 serde = ["dep:serde", "bstr/serde", "none-primitive"]
-macros = ["mlua_derive/macros"]
+
 
 dynamic-userdata = ["luau"]
 
@@ -45,7 +45,7 @@ serialize = ["serde"]
 vendored = []
 
 [dependencies]
-mlua_derive = { version = "=0.11.0", optional = true, path = "mlua_derive" }
+
 bstr = { version = "1.0", features = ["std"], default-features = false }
 either = "1.0"
 num-traits = { version = "0.2.14" }
@@ -59,7 +59,7 @@ bytes = { version = "1.0", optional = true }
 
 [dev-dependencies]
 trybuild = "1.0"
-tokio = { version = "1.0", features = ["macros", "rt", "time"] }
+tokio = { version = "1.0", features = ["rt", "time"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["arbitrary_precision"] }
 maplit = "1.0"
@@ -88,14 +88,3 @@ name = "serde"
 harness = false
 required-features = ["serde"]
 
-[[example]]
-name = "guided_tour"
-required-features = ["macros"]
-
-[[example]]
-name = "serde"
-required-features = ["serde"]
-
-[[example]]
-name = "userdata"
-required-features = ["macros"]
