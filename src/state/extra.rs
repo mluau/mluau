@@ -37,14 +37,11 @@ impl RefThread {
     pub(crate) unsafe fn new(state: *mut ffi::lua_State) -> Self {
         // Create ref stack thread and place it in the registry to prevent it
         // from being garbage collected.
-        let ref_thread = mlua_expect!(
-            protect_lua!(state, 0, 0, |state| {
-                let thread = ffi::lua_newthread(state);
-                ffi::luaL_ref(state, ffi::LUA_REGISTRYINDEX);
-                thread
-            }),
-            "Error while creating ref thread",
-        );
+        
+        // We do not use protect_lua! here because ExtraData is currently being built.
+        let thread = ffi::lua_newthread(state);
+        ffi::luaL_ref(state, ffi::LUA_REGISTRYINDEX);
+        let ref_thread = thread;
 
         // Store `error_traceback` function on the ref stack
         {
@@ -57,6 +54,12 @@ impl RefThread {
             let s = "memory error";
             ffi::lua_pushlstring(ref_thread, s.as_ptr() as *const std::os::raw::c_char, s.len());
             assert_eq!(ffi::lua_gettop(ref_thread), ExtraData::MEMORY_ERROR_IDX);
+        }
+
+        // Store `call_trampoline` function on the ref stack
+        {
+            ffi::lua_pushcfunction(ref_thread, crate::util::call_trampoline);
+            assert_eq!(ffi::lua_gettop(ref_thread), ExtraData::CALL_TRAMPOLINE_IDX);
         }
 
         RefThread {
@@ -150,6 +153,7 @@ impl ExtraData {
     // Index of `error_traceback` function in auxiliary thread stack
     pub(crate) const ERROR_TRACEBACK_IDX: c_int = 1;
     pub(crate) const MEMORY_ERROR_IDX: c_int = 2;
+    pub(crate) const CALL_TRAMPOLINE_IDX: c_int = 3;
 
     pub(super) unsafe fn init(state: *mut ffi::lua_State, owned: bool) -> XRc<UnsafeCell<Self>> {
         #[allow(clippy::arc_with_non_send_sync)]

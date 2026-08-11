@@ -6,8 +6,8 @@ use std::{slice, str};
 use crate::error::{Error, Result};
 
 pub(crate) use error::{
-    error_traceback, error_traceback_thread, init_destructed_userdata_registry, pop_error, protect_lua_call,
-    protect_lua_closure,
+    error_traceback, error_traceback_thread, init_destructed_userdata_registry, pop_error,
+    protect_lua_closure, call_trampoline,
 };
 pub(crate) use short_names::short_type_name;
 #[cfg(feature = "dynamic-userdata")]

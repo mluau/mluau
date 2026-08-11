@@ -33,11 +33,18 @@ pub(crate) unsafe fn push_fat_cclosure<T>(
     cont_callback: Option<ffi::lua_Continuation>,
 ) -> Result<()> {
     unsafe extern "C" fn dtor<T>(
-        _state: *mut ffi::lua_State,
+        state: *mut ffi::lua_State,
         data: *mut c_void,
         _sz: usize,
     ) {
+        // Almost none Lua operations are allowed when destructor is running,
+        // so we need to set a flag to prevent calling any Lua functions
+        let extra = (*ffi::lua_callbacks(state)).userdata as *mut crate::state::ExtraData;
+        (*extra).running_gc = true;
+        // Luau does not support _any_ panics in destructors (they are declared as "C", NOT as "C-unwind"),
+        // so any panics will trigger `abort()`.
         ptr::drop_in_place(data as *mut T);
+        (*extra).running_gc = false;
     }
 
     let ptr = protect_lua!(state, 0, 1, |state| {

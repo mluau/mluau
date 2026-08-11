@@ -56,67 +56,19 @@ pub(crate) unsafe fn pop_error(state: *mut ffi::lua_State, err_code: c_int) -> E
     }
 }
 
-unsafe fn push_cached_cfunction(
-    state: *mut ffi::lua_State,
-    f: unsafe extern "C-unwind" fn(*mut ffi::lua_State) -> c_int,
-) {
-    ffi::lua_pushlightuserdata(state, f as usize as *mut c_void);
-    ffi::lua_rawget(state, ffi::LUA_REGISTRYINDEX);
-    if ffi::lua_type(state, -1) == ffi::LUA_TNIL {
-        ffi::lua_pop(state, 1);
-        ffi::lua_pushcfunction(state, f);
-        ffi::lua_pushlightuserdata(state, f as usize as *mut c_void);
-        ffi::lua_pushvalue(state, -2);
-        ffi::lua_rawset(state, ffi::LUA_REGISTRYINDEX);
-    }
+
+struct ErasedParams {
+    invoke: unsafe fn(*mut ffi::lua_State, *mut c_void) -> c_int,
+    data: *mut c_void,
 }
 
-unsafe fn push_error_traceback(state: *mut ffi::lua_State) {
-    use crate::state::ExtraData;
-    let extra = ExtraData::get(state);
-    if !extra.is_null() {
-        ffi::lua_xpush(
-            (*extra).ref_thread_internal.ref_thread,
-            state,
-            ExtraData::ERROR_TRACEBACK_IDX,
-        );
-    } else {
-        push_cached_cfunction(state, error_traceback);
-    }
+// Trampoile between pcall and the c func to invoke
+pub(crate) unsafe extern "C-unwind" fn call_trampoline(state: *mut ffi::lua_State) -> c_int {
+    let params = ffi::lua_tolightuserdata(state, -1) as *mut ErasedParams;
+    ffi::lua_pop(state, 1);
+    ((*params).invoke)(state, (*params).data)
 }
 
-// Call a function that calls into the Lua API and may trigger a Lua error (longjmp) in a safe way.
-// Wraps the inner function in a call to `lua_pcall`, so the inner function only has access to a
-// limited lua stack. `nargs` is the same as the the parameter to `lua_pcall`, and `nresults` is
-// always `LUA_MULTRET`. Provided function must *not* panic, and since it will generally be
-// longjmping, should not contain any values that implements Drop.
-// Internally uses 2 extra stack spaces, and does not call checkstack.
-pub(crate) unsafe fn protect_lua_call(
-    state: *mut ffi::lua_State,
-    nargs: c_int,
-    f: unsafe extern "C-unwind" fn(*mut ffi::lua_State) -> c_int,
-) -> Result<()> {
-    let stack_start = ffi::lua_gettop(state) - nargs;
-
-    MemoryState::relax_limit_with(state, || {
-        push_error_traceback(state);
-        push_cached_cfunction(state, f);
-    });
-    if nargs > 0 {
-        ffi::lua_rotate(state, stack_start + 1, 2);
-    }
-
-    let ret = ffi::lua_pcall(state, nargs, ffi::LUA_MULTRET, stack_start + 1);
-    ffi::lua_remove(state, stack_start + 1);
-
-    if ret == ffi::LUA_OK {
-        Ok(())
-    } else {
-        Err(pop_error(state, ret))
-    }
-}
-
-// Call a function that calls into the Lua API and may trigger a Lua error (longjmp) in a safe way.
 // Wraps the inner function in a call to `lua_pcall`, so the inner function only has access to a
 // limited lua stack. `nargs` and `nresults` are similar to the parameters of `lua_pcall`, but the
 // given function return type is not the return value count, instead the inner function return
@@ -139,29 +91,31 @@ where
         nresults: c_int,
     }
 
-    unsafe extern "C-unwind" fn do_call<F, R>(state: *mut ffi::lua_State) -> c_int
+    // To avoid making constant c closures for every protect case, we use the call_trampoline
+    // and then push into invoke_thunk
+    unsafe fn invoke_thunk<F, R>(state: *mut ffi::lua_State, data: *mut c_void) -> c_int
     where
         F: FnOnce(*mut ffi::lua_State) -> R,
         R: Copy,
     {
-        let params = ffi::lua_tolightuserdata(state, -1) as *mut Params<F, R>;
-        ffi::lua_pop(state, 1);
-
-        let f = (*params).function.take().unwrap();
-        (*params).result.write(f(state));
-
-        if (*params).nresults == ffi::LUA_MULTRET {
+        let params = &mut *(data as *mut Params<F, R>);
+        let f = params.function.take().unwrap();
+        params.result.write(f(state));
+        if params.nresults == ffi::LUA_MULTRET {
             ffi::lua_gettop(state)
         } else {
-            (*params).nresults
+            params.nresults
         }
     }
 
     let stack_start = ffi::lua_gettop(state) - nargs;
 
+    let extra = crate::state::ExtraData::get(state);
+    mlua_debug_assert!(!extra.is_null(), "ExtraData is null in protect_lua_closure");
+
     MemoryState::relax_limit_with(state, || {
-        push_error_traceback(state);
-        push_cached_cfunction(state, do_call::<F, R>);
+        ffi::lua_xpush((*extra).ref_thread_internal.ref_thread, state, crate::state::ExtraData::ERROR_TRACEBACK_IDX);
+        ffi::lua_xpush((*extra).ref_thread_internal.ref_thread, state, crate::state::ExtraData::CALL_TRAMPOLINE_IDX);
     });
     if nargs > 0 {
         ffi::lua_rotate(state, stack_start + 1, 2);
@@ -173,7 +127,12 @@ where
         nresults,
     };
 
-    ffi::lua_pushlightuserdata(state, &mut params as *mut Params<F, R> as *mut c_void);
+    let mut erased = ErasedParams {
+        invoke: invoke_thunk::<F, R>,
+        data: &mut params as *mut _ as *mut c_void,
+    };
+
+    ffi::lua_pushlightuserdata(state, &mut erased as *mut _ as *mut c_void);
     let ret = ffi::lua_pcall(state, nargs + 1, nresults, stack_start + 1);
     ffi::lua_remove(state, stack_start + 1); // remove error handler
 

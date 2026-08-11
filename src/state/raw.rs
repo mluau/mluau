@@ -183,10 +183,12 @@ impl RawLua {
         let main_state = get_main_state(state).unwrap_or(state);
         let main_state_top = ffi::lua_gettop(main_state);
 
+        // Init ExtraData first so protect_lua can use it for error_traceback
+        let extra = ExtraData::init(main_state, owned);
+
         mlua_expect!(
             (|state| {
                 init_destructed_userdata_registry(state)?;
-
 
                 // Init serde metatables
                 #[cfg(feature = "serde")]
@@ -196,9 +198,6 @@ impl RawLua {
             })(main_state),
             "Error during Lua initialization",
         );
-
-        // Init ExtraData
-        let extra = ExtraData::init(main_state, owned);
 
         // Register `DestructedUserdata` type
         get_destructed_userdata_metatable(main_state);
