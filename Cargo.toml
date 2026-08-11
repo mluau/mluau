@@ -35,7 +35,7 @@ none-primitive = ["luau", "ffi/none-primitive"]
 send = []
 serde = ["dep:serde", "bstr/serde", "none-primitive"]
 macros = ["mlua_derive/macros"]
-userdata-wrappers = ["parking_lot/send_guard"]
+
 dynamic-userdata = ["luau"]
 
 bytes = ["dep:bytes"]

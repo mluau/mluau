@@ -15,7 +15,7 @@ use crate::thread::Thread;
 use std::any::TypeId;
 use std::cell::{BorrowError, BorrowMutError, RefCell};
 use std::ffi::CStr;
-use std::marker::PhantomData;
+
 use std::ops::Deref;
 use std::os::raw::{c_char, c_int};
 use std::panic::Location;
@@ -30,7 +30,7 @@ use crate::types::{
     AppDataRef, AppDataRefMut, ArcReentrantMutexGuard, Integer, LuaType, MaybeSend, MaybeSync, Number,
     ReentrantMutex, ReentrantMutexGuard, RegistryKey, VmState, XRc, XWeak,
 };
-use crate::userdata::{AnyUserData, UserData, UserDataProxy, UserDataRegistry, UserDataStorage};
+use crate::userdata::{AnyUserData, UserData, UserDataRegistry, UserDataStorage};
 use crate::util::{assert_stack, check_stack, protect_lua_closure, push_string, rawset_field, StackGuard};
 use crate::value::{Nil, Value};
 
@@ -1306,43 +1306,6 @@ impl Lua {
     ///
     /// Proxy object is an empty userdata object that has `T` metatable attached.
     /// The main purpose of this object is to provide access to static fields and functions
-    /// without creating an instance of type `T`.
-    ///
-    /// You can get or set uservalues on this object but you cannot borrow any Rust type.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use mluau::{Lua, Result, UserData, UserDataFields, UserDataMethods};
-    /// # fn main() -> Result<()> {
-    /// # let lua = Lua::new();
-    /// struct MyUserData(i32);
-    ///
-    /// impl UserData for MyUserData {
-    ///     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
-    ///         fields.add_field_method_get("val", |_, this| Ok::<_, mluau::Error>(this.0));
-    ///     }
-    ///
-    ///     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-    ///         methods.add_function("new", |_, value: i32| Ok::<_, mluau::Error>(MyUserData(value)));
-    ///     }
-    /// }
-    ///
-    /// lua.globals().set("MyUserData", lua.create_proxy::<MyUserData>()?)?;
-    ///
-    /// lua.load("assert(MyUserData.new(321).val == 321)").exec()?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[inline]
-    pub fn create_proxy<T>(&self) -> Result<AnyUserData>
-    where
-        T: UserData + 'static,
-    {
-        let ud = UserDataProxy::<T>(PhantomData);
-        unsafe { self.lock().make_userdata(UserDataStorage::new(ud)) }
-    }
-
     /// Gets the metatable of a Lua built-in (primitive) type.
     ///
     /// The metatable is shared by all values of the given type.

@@ -4,10 +4,9 @@ use std::sync::Arc;
 
 use crate::error::{Error, Result};
 use crate::multi::MultiValue;
-use crate::private::Sealed;
-use crate::state::{Lua, RawLua, WeakLua};
+use crate::state::{Lua, RawLua};
 use crate::types::MaybeSend;
-use crate::util::{check_stack, parse_lookup_path, short_type_name};
+use crate::util::{check_stack, short_type_name};
 use crate::value::Value;
 
 /// Trait for types convertible to a Lua error value.
@@ -192,92 +191,6 @@ pub trait FromLuaMulti: Sized {
             cause: Arc::new(err),
         })
     }
-}
-
-/// A trait for types that can be used as Lua objects (usually table and userdata).
-pub trait ObjectLike: Sealed {
-    /// Gets the value associated to `key` from the object, assuming it has `__index` metamethod.
-    fn get<V: FromLua>(&self, key: impl IntoLua) -> Result<V>;
-
-    /// Sets the value associated to `key` in the object, assuming it has `__newindex` metamethod.
-    fn set(&self, key: impl IntoLua, value: impl IntoLua) -> Result<()>;
-
-    /// Calls the object as a function assuming it has `__call` metamethod.
-    ///
-    /// The metamethod is called with the object as its first argument, followed by the passed
-    /// arguments.
-    fn call<R>(&self, args: impl IntoLuaMulti) -> Result<R>
-    where
-        R: FromLuaMulti;
-
-    /// Gets the function associated to key `name` from the object and calls it,
-    /// passing the object itself along with `args` as function arguments.
-    fn call_method<R>(&self, name: &str, args: impl IntoLuaMulti) -> Result<R>
-    where
-        R: FromLuaMulti;
-
-    /// Gets the function associated to key `name` from the object and calls it,
-    /// passing `args` as function arguments.
-    ///
-    /// This might invoke the `__index` metamethod.
-    fn call_function<R>(&self, name: &str, args: impl IntoLuaMulti) -> Result<R>
-    where
-        R: FromLuaMulti;
-
-    /// Look up a value by a path of keys.
-    ///
-    /// The syntax is similar to accessing nested tables in Lua, with additional support for
-    /// `?` operator to perform safe navigation.
-    ///
-    /// For example, the path `a[1].c` is equivalent to `table.a[1].c` in Lua.
-    /// With `?` operator, `a[1]?.c` is equivalent to `table.a[1] and table.a[1].c or nil` in Lua.
-    ///
-    /// Bracket notation rules:
-    /// - `[123]` - integer keys
-    /// - `["string key"]` or `['string key']` - string keys (must be quoted)
-    /// - String keys support escape sequences: `\"`, `\'`, `\\`
-    fn get_path<V: FromLua>(&self, path: &str) -> Result<V> {
-        let mut current = self.to_value();
-        for (key, safe_nil) in parse_lookup_path(path)? {
-            current = match current {
-                Value::Table(table) => table.get::<Value>(key),
-                Value::UserData(ud) => ud.get::<Value>(key),
-                _ => {
-                    let type_name = current.type_name();
-                    let err = format!("attempt to index a {type_name} value with key '{key}'");
-                    Err(Error::runtime(err))
-                }
-            }?;
-
-            #[cfg(feature = "none-primitive")]
-            {
-                if safe_nil && (current == Value::Nil || current == Value::None) {
-                    break;
-                }
-            }
-            #[cfg(not(feature = "none-primitive"))]
-            {
-                if safe_nil && (current == Value::Nil) {
-                    break;
-                }
-            }
-        }
-
-        let lua = self.weak_lua().lock();
-        V::from_lua(current, lua.lua())
-    }
-
-    /// Converts the object to a string in a human-readable format.
-    ///
-    /// This might invoke the `__tostring` metamethod.
-    fn to_string(&self) -> Result<StdString>;
-
-    /// Converts the object to a Lua value.
-    fn to_value(&self) -> Value;
-
-    /// Gets a reference to the associated Lua state.
-    #[doc(hidden)]
-    fn weak_lua(&self) -> &WeakLua;
 }
 
 /// A trait for types that can be used as Lua functions.

@@ -9,7 +9,6 @@ pub(crate) use error::{
     error_traceback, error_traceback_thread, init_destructed_userdata_registry, pop_error, protect_lua_call,
     protect_lua_closure,
 };
-pub(crate) use path::parse_path as parse_lookup_path;
 pub(crate) use short_names::short_type_name;
 #[cfg(feature = "dynamic-userdata")]
 pub(crate) use userdata::push_userdata_dyn;
@@ -244,6 +243,5 @@ pub(crate) fn linenumber_to_usize(n: c_int) -> Option<usize> {
 }
 
 mod error;
-mod path;
 mod short_names;
 mod userdata;

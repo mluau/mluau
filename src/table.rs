@@ -7,7 +7,7 @@ use std::string::String as StdString;
 use crate::error::{Error, Result};
 use crate::function::Function;
 use crate::state::{LuaGuard, RawLua, WeakLua};
-use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, ObjectLike};
+use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaMulti};
 use crate::types::{Integer, ValueRef};
 use crate::util::{assert_stack, check_stack, get_metatable_ptr, StackGuard};
 use crate::value::{Nil, Value};
@@ -853,6 +853,39 @@ impl Table {
     pub fn weak_lua(&self) -> WeakLua {
         self.0.lua.clone()
     }
+
+    #[inline]
+    pub fn call<R>(&self, args: impl IntoLuaMulti) -> Result<R>
+    where
+        R: FromLuaMulti,
+    {
+        // Convert table to a function and call via pcall that respects the `__call` metamethod.
+        Function(self.0.clone()).call(args)
+    }
+
+    #[inline]
+    pub fn call_method<R>(&self, name: &str, args: impl IntoLuaMulti) -> Result<R>
+    where
+        R: FromLuaMulti,
+    {
+        self.call_function(name, (self.clone(), args))
+    }
+
+    #[inline]
+    pub fn call_function<R: FromLuaMulti>(&self, name: &str, args: impl IntoLuaMulti) -> Result<R> {
+        match self.get(name)? {
+            Value::Function(func) => func.call(args),
+            val => {
+                let msg = format!("attempt to call a {} value (function '{name}')", val.type_name());
+                Err(Error::runtime(msg))
+            }
+        }
+    }
+
+    #[inline]
+    pub fn to_string(&self) -> Result<StdString> {
+        Value::Table(Table(self.0.clone())).to_string()
+    }
 }
 
 impl fmt::Debug for Table {
@@ -911,61 +944,6 @@ where
     #[inline]
     fn eq(&self, other: &[T; N]) -> bool {
         self == &other[..]
-    }
-}
-
-impl ObjectLike for Table {
-    #[inline]
-    fn get<V: FromLua>(&self, key: impl IntoLua) -> Result<V> {
-        self.get(key)
-    }
-
-    #[inline]
-    fn set(&self, key: impl IntoLua, value: impl IntoLua) -> Result<()> {
-        self.set(key, value)
-    }
-
-    #[inline]
-    fn call<R>(&self, args: impl IntoLuaMulti) -> Result<R>
-    where
-        R: FromLuaMulti,
-    {
-        // Convert table to a function and call via pcall that respects the `__call` metamethod.
-        Function(self.0.clone()).call(args)
-    }
-
-    #[inline]
-    fn call_method<R>(&self, name: &str, args: impl IntoLuaMulti) -> Result<R>
-    where
-        R: FromLuaMulti,
-    {
-        self.call_function(name, (self, args))
-    }
-
-    #[inline]
-    fn call_function<R: FromLuaMulti>(&self, name: &str, args: impl IntoLuaMulti) -> Result<R> {
-        match self.get(name)? {
-            Value::Function(func) => func.call(args),
-            val => {
-                let msg = format!("attempt to call a {} value (function '{name}')", val.type_name());
-                Err(Error::runtime(msg))
-            }
-        }
-    }
-
-    #[inline]
-    fn to_string(&self) -> Result<StdString> {
-        Value::Table(Table(self.0.clone())).to_string()
-    }
-
-    #[inline]
-    fn to_value(&self) -> Value {
-        Value::Table(self.clone())
-    }
-
-    #[inline]
-    fn weak_lua(&self) -> &WeakLua {
-        &self.0.lua
     }
 }
 

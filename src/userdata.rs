@@ -5,6 +5,7 @@ use std::hash::Hash;
 use std::os::raw::{c_char, c_void};
 use std::string::String as StdString;
 
+use crate::{IntoLuaMulti, WeakLua};
 use crate::error::{Error, Result};
 use crate::function::Function;
 use crate::state::Lua;
@@ -23,7 +24,7 @@ pub use r#ref::{UserDataRef, UserDataRefMut};
 #[cfg(feature = "dynamic-userdata")]
 pub(crate) use registry::DynamicUserDataPtr;
 pub use registry::UserDataRegistry;
-pub(crate) use registry::{RawUserDataRegistry, UserDataProxy};
+pub(crate) use registry::RawUserDataRegistry;
 #[cfg(feature = "dynamic-userdata")]
 pub(crate) use util::collect_userdata_dyn;
 pub(crate) use util::{
@@ -547,24 +548,7 @@ impl AnyUserData {
         unsafe { UserDataRef::borrow_from_stack(&lua, lua.ref_thread(self.0.aux_thread), self.0.index) }
     }
 
-    /// Borrow this userdata immutably if it is of type `T`, passing the borrowed value
-    /// to the closure.
-    ///
-    /// Will return `UserDataTypeMismatch` if the userdata is dynamic.
-    pub fn borrow_scoped<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
-        let lua = self.0.lua.lock();
-        let type_id = lua.get_userdata_ref_type_id(&self.0)?;
-        let type_hints = TypeIdHints::new::<T>();
-        unsafe {
-            borrow_userdata_scoped(
-                lua.ref_thread(self.0.aux_thread),
-                self.0.index,
-                type_id,
-                type_hints,
-                f,
-            )
-        }
-    }
+
 
     /// Borrow this userdata mutably if it is of type `T`.
     ///
@@ -582,22 +566,7 @@ impl AnyUserData {
         unsafe { UserDataRefMut::borrow_from_stack(&lua, lua.ref_thread(self.0.aux_thread), self.0.index) }
     }
 
-    /// Borrow this userdata mutably if it is of type `T`, passing the borrowed value
-    /// to the closure.
-    pub fn borrow_mut_scoped<T: 'static, R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R> {
-        let lua = self.0.lua.lock();
-        let type_id = lua.get_userdata_ref_type_id(&self.0)?;
-        let type_hints = TypeIdHints::new::<T>();
-        unsafe {
-            borrow_userdata_scoped_mut(
-                lua.ref_thread(self.0.aux_thread),
-                self.0.index,
-                type_id,
-                type_hints,
-                f,
-            )
-        }
-    }
+
 
     /// Takes the value out of this userdata.
     ///
@@ -957,6 +926,57 @@ impl AnyUserData {
 
         Ok(false)
     }
+
+    #[inline]
+    pub fn get<V: FromLua>(&self, key: impl IntoLua) -> Result<V> {
+        // `lua_gettable` method used under the hood can work with any Lua value
+        // that has `__index` metamethod
+        Table(self.0.clone()).get_protected(key)
+    }
+
+    #[inline]
+    pub fn set(&self, key: impl IntoLua, value: impl IntoLua) -> Result<()> {
+        // `lua_settable` method used under the hood can work with any Lua value
+        // that has `__newindex` metamethod
+        Table(self.0.clone()).set_protected(key, value)
+    }
+
+    #[inline]
+    pub fn call<R>(&self, args: impl IntoLuaMulti) -> Result<R>
+    where
+        R: FromLuaMulti,
+    {
+        Function(self.0.clone()).call(args)
+    }
+
+    #[inline]
+    pub fn call_method<R>(&self, name: &str, args: impl IntoLuaMulti) -> Result<R>
+    where
+        R: FromLuaMulti,
+    {
+        self.call_function(name, (self.clone(), args))
+    }
+
+    #[inline]
+    pub fn call_function<R: FromLuaMulti>(&self, name: &str, args: impl IntoLuaMulti) -> Result<R> {
+        match self.get(name)? {
+            Value::Function(func) => func.call(args),
+            val => {
+                let msg = format!("attempt to call a {} value (function '{name}')", val.type_name());
+                Err(Error::runtime(msg))
+            }
+        }
+    }
+
+    #[inline]
+    pub fn to_string(&self) -> Result<StdString> {
+        Value::UserData(self.clone()).to_string()
+    }
+
+    #[inline]
+    pub fn weak_lua(&self) -> &WeakLua {
+        &self.0.lua
+    }
 }
 
 /// Handle to a [`AnyUserData`] metatable.
@@ -1055,7 +1075,6 @@ where
 
 mod cell;
 mod lock;
-mod object;
 mod r#ref;
 mod registry;
 mod util;

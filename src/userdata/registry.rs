@@ -14,7 +14,7 @@ use crate::state::{Lua, LuaGuard};
 use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, IntoLuaResult, IntoLuaResultMulti};
 use crate::types::{Callback, MaybeSend};
 use crate::userdata::{
-    borrow_userdata_scoped, borrow_userdata_scoped_mut, AnyUserData, MetaMethod, TypeIdHints, UserData,
+    borrow_userdata_scoped, borrow_userdata_scoped_mut, AnyUserData, MetaMethod, TypeIdHints,
     UserDataFields, UserDataMethods,
 };
 use crate::util::short_type_name;
@@ -839,55 +839,6 @@ impl<T> UserDataMethods<T> for UserDataRegistry<T> {
         self.raw.meta_methods.push((name, callback));
     }
 }
-
-macro_rules! lua_userdata_impl {
-    ($type:ty) => {
-        impl<T: UserData + 'static> UserData for $type {
-            fn register(registry: &mut UserDataRegistry<Self>) {
-                let mut orig_registry = UserDataRegistry::new(registry.lua.lua());
-                T::register(&mut orig_registry);
-
-                // Copy all fields, methods, etc. from the original registry
-                (registry.raw.fields).extend(orig_registry.raw.fields);
-                (registry.raw.field_getters).extend(orig_registry.raw.field_getters);
-                (registry.raw.field_setters).extend(orig_registry.raw.field_setters);
-                (registry.raw.meta_fields).extend(orig_registry.raw.meta_fields);
-                (registry.raw.functions).extend(orig_registry.raw.functions);
-                (registry.raw.methods).extend(orig_registry.raw.methods);
-                (registry.raw.meta_methods).extend(orig_registry.raw.meta_methods);
-
-                {
-                    (registry.raw.namecalls).extend(orig_registry.raw.namecalls);
-                    if let Some(dynamic_method) = orig_registry.raw.dynamic_method {
-                        registry.raw.dynamic_method = Some(dynamic_method);
-                    }
-                    registry.raw.disable_namecall_optimization =
-                        orig_registry.raw.disable_namecall_optimization;
-                }
-            }
-        }
-    };
-}
-
-// A special proxy object for UserData
-pub(crate) struct UserDataProxy<T>(pub(crate) PhantomData<T>);
-
-lua_userdata_impl!(UserDataProxy<T>);
-
-#[cfg(all(feature = "userdata-wrappers", not(feature = "send")))]
-lua_userdata_impl!(std::rc::Rc<T>);
-#[cfg(all(feature = "userdata-wrappers", not(feature = "send")))]
-lua_userdata_impl!(std::rc::Rc<std::cell::RefCell<T>>);
-#[cfg(feature = "userdata-wrappers")]
-lua_userdata_impl!(std::sync::Arc<T>);
-#[cfg(feature = "userdata-wrappers")]
-lua_userdata_impl!(std::sync::Arc<std::sync::Mutex<T>>);
-#[cfg(feature = "userdata-wrappers")]
-lua_userdata_impl!(std::sync::Arc<std::sync::RwLock<T>>);
-#[cfg(feature = "userdata-wrappers")]
-lua_userdata_impl!(std::sync::Arc<parking_lot::Mutex<T>>);
-#[cfg(feature = "userdata-wrappers")]
-lua_userdata_impl!(std::sync::Arc<parking_lot::RwLock<T>>);
 
 #[cfg(feature = "dynamic-userdata")]
 pub(crate) struct DynamicUserDataPtr {
