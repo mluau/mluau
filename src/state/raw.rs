@@ -693,20 +693,18 @@ impl RawLua {
     }
 
     /// Same as pop_ref but allows specifying state
-    pub(crate) unsafe fn pop_ref_at(&self, state: *mut ffi::lua_State) -> ValueRef {
+    pub unsafe fn pop_ref_at(&self, state: *mut ffi::lua_State) -> ValueRef {
         let ref_id = ffi::lua_refpool(state, -1);
         ffi::lua_pop(state, 1);
         ValueRef::new(self, ref_id)
     }
 
-    pub(crate) unsafe fn new_value_ref_from(&self, state: *mut ffi::lua_State, idx: c_int) -> ValueRef {
-        ffi::lua_pushvalue(state, idx);
-        let ref_id = ffi::lua_refpool(state, -1);
-        ffi::lua_pop(state, 1);
+    pub unsafe fn new_value_ref_from(&self, state: *mut ffi::lua_State, idx: c_int) -> ValueRef {
+        let ref_id = ffi::lua_refpool(state, idx);
         ValueRef::new(self, ref_id)
     }
 
-    pub(crate) unsafe fn drop_ref(&self, vref: &ValueRef) {
+    pub unsafe fn drop_ref(&self, vref: &ValueRef) {
         ffi::lua_unrefpool(self.state(), vref.ref_id);
     }
 
