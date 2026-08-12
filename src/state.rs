@@ -7,7 +7,6 @@ use crate::function::Function;
 use crate::luau::RESTRICTED_FFLAGS;
 use crate::memory::MemoryState;
 use crate::multi::MultiValue;
-use crate::state::util::get_next_spot;
 use crate::stdlib::StdLib;
 use crate::string::String;
 use crate::table::Table;
@@ -34,7 +33,7 @@ use crate::userdata::{AnyUserData, UserData, UserDataRegistry, UserDataStorage};
 use crate::util::{assert_stack, check_stack, protect_lua_closure, push_string, rawset_field, StackGuard};
 use crate::value::{Nil, Value};
 
-use crate::types::ThreadDataHeader;
+use crate::types::ErasedHeader;
 #[cfg(any(feature = "luau", doc))]
 use crate::{buffer::Buffer, chunk::Compiler};
 
@@ -352,7 +351,7 @@ impl Lua {
                         ffi::luaL_sandboxthread(state);
                     } else {
                         // Restore original `LUA_GLOBALSINDEX`
-                        ffi::lua_xpush(lua.ref_thread_internal(), state, ffi::LUA_GLOBALSINDEX);
+                        ffi::lua_getrefpool(state, (*lua.extra.get()).original_globals_ref);
                         ffi::lua_replace(state, ffi::LUA_GLOBALSINDEX);
                         ffi::luaL_sandbox(state, 0);
                     }
@@ -549,12 +548,7 @@ impl Lua {
                 return; // Don't allow recursion
             }
             ffi::lua_pushthread(child);
-            let (aux_thread, index, replace) = get_next_spot(extra);
-            ffi::lua_xmove(child, (*extra).raw_lua().ref_thread(aux_thread), 1);
-            if replace {
-                ffi::lua_replace((*extra).raw_lua().ref_thread(aux_thread), index);
-            }
-            let value = Thread((*extra).raw_lua().new_value_ref(aux_thread, index), child);
+            let value = Thread((*extra).raw_lua().pop_ref_at(child), child);
             callback_error_ext(parent, extra, move |extra, _| {
                 callback((*extra).lua(), value).map_err(|e| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), e))
             })
@@ -568,8 +562,7 @@ impl Lua {
                 // Luau GC is running.
                 // This will trigger `abort()` if dropping ThreadData panics.
                 unsafe extern "C" fn drop_threaddata(tdp: *mut c_void) {
-                    let drop_fn = unsafe { (*(tdp as *const ThreadDataHeader)).drop_fn };
-                    drop_fn(tdp);
+                    ErasedHeader::drop(tdp);
                 }
 
                 (*extra).running_gc = true;
@@ -944,19 +937,9 @@ impl Lua {
         mode: std::os::raw::c_int,
     ) -> Result<Buffer> {
         let size = buffer.len();
-        let wrapper = Box::new(crate::buffer::ExternalBufferWrapper {
-            header: crate::buffer::ExternalBufferHeader {
-                type_id: std::any::TypeId::of::<B>(),
-                drop_fn: |ptr| unsafe {
-                    let _ = Box::from_raw(ptr as *mut crate::buffer::ExternalBufferWrapper<B>);
-                },
-            },
-            buffer,
-        });
-        let userdata = Box::into_raw(wrapper) as *mut std::ffi::c_void;
+        let userdata = ErasedHeader::into_raw(buffer);
         unsafe {
             let state = self.lock();
-            (*state.extra()).external_buffers.insert(userdata);
             Ok(state
                 .create_external_buffer(size, data, userdata, Some(buffer_free_cb), mode)?
                 .1)
@@ -2084,18 +2067,12 @@ unsafe extern "C" fn buffer_free_cb(
     if !userdata.is_null() {
         let extra = crate::state::extra::ExtraData::get(state);
         if !extra.is_null() {
-            (*extra).external_buffers.remove(&userdata);
-        }
-
-        let drop_fn = unsafe { (*(userdata as *const crate::buffer::ExternalBufferHeader)).drop_fn };
-
-        if !extra.is_null() {
             let prev_gc = (*extra).running_gc;
             (*extra).running_gc = true;
-            drop_fn(userdata);
+            ErasedHeader::drop(userdata);
             (*extra).running_gc = prev_gc;
         } else {
-            drop_fn(userdata);
+            ErasedHeader::drop(userdata);
         }
     }
 }

@@ -12,10 +12,11 @@ use std::sync::Arc;
 use crate::chunk::ChunkMode;
 use crate::error::{Error, Result};
 use crate::function::Function;
+use crate::luau::ENABLED_FFLAGS;
 use crate::memory::{MemoryState, ALLOCATOR};
 #[allow(unused_imports)]
 use crate::state::util::callback_error_ext;
-use crate::state::util::{callback_error_ext_yieldable, get_next_spot};
+use crate::state::util::callback_error_ext_yieldable;
 use crate::stdlib::StdLib;
 use crate::string::String;
 use crate::table::Table;
@@ -116,20 +117,8 @@ impl RawLua {
             .unwrap_or_else(|| self.state())
     }
 
-    #[inline(always)]
-    pub fn ref_thread(&self, aux_thread: usize) -> *mut ffi::lua_State {
-        unsafe {
-            (&(*self.extra()).ref_thread)
-                .get(aux_thread)
-                .unwrap_unchecked()
-                .ref_thread
-        }
-    }
 
-    #[inline(always)]
-    pub(crate) fn ref_thread_internal(&self) -> *mut ffi::lua_State {
-        unsafe { (*self.extra.get()).ref_thread_internal.ref_thread }
-    }
+
 
     #[inline(always)]
     pub(crate) fn extra(&self) -> *mut ExtraData {
@@ -137,6 +126,16 @@ impl RawLua {
     }
 
     pub(super) unsafe fn new(libs: StdLib) -> XRc<ReentrantMutex<Self>> {
+        // init needed fflags
+        {
+            static INIT_FFLAGS: std::sync::Once = std::sync::Once::new();
+            INIT_FFLAGS.call_once(|| {
+                for fflag in ENABLED_FFLAGS {
+                    mlua_expect!(Lua::set_fflag_inner(fflag, true), "base fflag {fflag} not set",)
+                }
+            });
+        }
+
         Self::new_ext(libs, true)
     }
 
@@ -488,7 +487,7 @@ impl RawLua {
         };
 
         let thread = Thread(self.pop_ref(), thread_state);
-        ffi::lua_xpush(self.ref_thread(func.0.aux_thread), thread_state, func.0.index);
+        self.push_ref_at(&func.0, thread_state);
         Ok(thread)
     }
 
@@ -628,99 +627,44 @@ impl RawLua {
             }
 
             ffi::LUA_TSTRING => {
-                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                let ref_thread = self.ref_thread(aux_thread);
-                ffi::lua_xpush(state, ref_thread, idx);
-                if replace {
-                    ffi::lua_replace(ref_thread, idxs);
-                }
-                Ok(Value::String(String(self.new_value_ref(aux_thread, idxs))))
+                Ok(Value::String(String(self.new_value_ref_from(state, idx))))
             }
 
             ffi::LUA_TTABLE => {
-                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                let ref_thread = self.ref_thread(aux_thread);
-                ffi::lua_xpush(state, ref_thread, idx);
-                if replace {
-                    ffi::lua_replace(ref_thread, idxs);
-                }
-                Ok(Value::Table(Table(self.new_value_ref(aux_thread, idxs))))
+                Ok(Value::Table(Table(self.new_value_ref_from(state, idx))))
             }
 
             ffi::LUA_TFUNCTION => {
-                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                let ref_thread = self.ref_thread(aux_thread);
-                ffi::lua_xpush(state, ref_thread, idx);
-                if replace {
-                    ffi::lua_replace(ref_thread, idxs);
-                }
-                Ok(Value::Function(Function(self.new_value_ref(aux_thread, idxs))))
+                Ok(Value::Function(Function(self.new_value_ref_from(state, idx))))
             }
             ffi::LUA_TUSERDATA => {
-                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                let ref_thread = self.ref_thread(aux_thread);
-                ffi::lua_xpush(state, ref_thread, idx);
-                if replace {
-                    ffi::lua_replace(ref_thread, idxs);
-                }
-
-                Ok(Value::UserData(AnyUserData(self.new_value_ref(aux_thread, idxs))))
+                Ok(Value::UserData(AnyUserData(self.new_value_ref_from(state, idx))))
             }
 
             ffi::LUA_TTHREAD => {
-                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                let ref_thread = self.ref_thread(aux_thread);
-                ffi::lua_xpush(state, ref_thread, idx);
-                let thread_state = ffi::lua_tothread(ref_thread, -1);
-                if replace {
-                    ffi::lua_replace(ref_thread, idxs);
-                }
+                let thread_state = ffi::lua_tothread(state, idx);
                 Ok(Value::Thread(Thread(
-                    self.new_value_ref(aux_thread, idxs),
+                    self.new_value_ref_from(state, idx),
                     thread_state,
                 )))
             }
 
             ffi::LUA_TBUFFER => {
-                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                let ref_thread = self.ref_thread(aux_thread);
-                ffi::lua_xpush(state, ref_thread, idx);
-                if replace {
-                    ffi::lua_replace(ref_thread, idxs);
-                }
-                Ok(Value::Buffer(crate::Buffer(self.new_value_ref(aux_thread, idxs))))
+                Ok(Value::Buffer(crate::Buffer(self.new_value_ref_from(state, idx))))
             }
 
             #[cfg(feature = "luau-classes")]
             ffi::LUA_TCLASS => {
-                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                let ref_thread = self.ref_thread(aux_thread);
-                ffi::lua_xpush(state, ref_thread, idx);
-                if replace {
-                    ffi::lua_replace(ref_thread, idxs);
-                }
-                Ok(Value::Class(crate::Class(self.new_value_ref(aux_thread, idxs))))
+                Ok(Value::Class(crate::Class(self.new_value_ref_from(state, idx))))
             }
 
             #[cfg(feature = "luau-classes")]
             ffi::LUA_TOBJECT => {
-                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                let ref_thread = self.ref_thread(aux_thread);
-                ffi::lua_xpush(state, ref_thread, idx);
-                if replace {
-                    ffi::lua_replace(ref_thread, idxs);
-                }
-                Ok(Value::Object(crate::Object(self.new_value_ref(aux_thread, idxs))))
+                Ok(Value::Object(crate::Object(self.new_value_ref_from(state, idx))))
             }
 
             _ => {
-                let (aux_thread, idxs, replace) = get_next_spot(self.extra.get());
-                let ref_thread = self.ref_thread(aux_thread);
-                ffi::lua_xpush(state, ref_thread, idx);
-                if replace {
-                    ffi::lua_replace(ref_thread, idxs);
-                }
-                Ok(Value::Other(self.new_value_ref(aux_thread, idxs)))
+                Ok(Value::Other(self.new_value_ref_from(state, idx)))
             }
         }
     }
@@ -733,7 +677,7 @@ impl RawLua {
             self.weak() == &vref.lua,
             "Lua instance passed Value created from a different main Lua state"
         );
-        ffi::lua_xpush(self.ref_thread(vref.aux_thread), state, vref.index);
+        ffi::lua_getrefpool(state, vref.ref_id);
     }
 
     // Pops the topmost element of the stack and stores a reference to it. This pins the object,
@@ -750,37 +694,24 @@ impl RawLua {
 
     /// Same as pop_ref but allows specifying state
     pub(crate) unsafe fn pop_ref_at(&self, state: *mut ffi::lua_State) -> ValueRef {
-        let (aux_thread, idx, replace) = get_next_spot(self.extra.get());
-        ffi::lua_xmove(state, self.ref_thread(aux_thread), 1);
-        if replace {
-            ffi::lua_replace(self.ref_thread(aux_thread), idx);
-        }
-
-        ValueRef::new(self, aux_thread, idx)
+        let ref_id = ffi::lua_refpool(state, -1);
+        ffi::lua_pop(state, 1);
+        ValueRef::new(self, ref_id)
     }
 
-    // Given a known aux_thread and index, creates a ValueRef.
-    #[inline]
-    pub(crate) unsafe fn new_value_ref(&self, aux_thread: usize, index: c_int) -> ValueRef {
-        ValueRef::new(self, aux_thread, index)
+    pub(crate) unsafe fn new_value_ref_from(&self, state: *mut ffi::lua_State, idx: c_int) -> ValueRef {
+        ffi::lua_pushvalue(state, idx);
+        let ref_id = ffi::lua_refpool(state, -1);
+        ffi::lua_pop(state, 1);
+        ValueRef::new(self, ref_id)
     }
 
     pub(crate) unsafe fn drop_ref(&self, vref: &ValueRef) {
-        let ref_thread = self.ref_thread(vref.aux_thread);
-        mlua_debug_assert!(
-            ffi::lua_gettop(ref_thread) >= vref.index,
-            "GC finalizer is not allowed in ref_thread"
-        );
-        ffi::lua_pushnil(ref_thread);
-        ffi::lua_replace(ref_thread, vref.index);
-        (&mut (*self.extra.get()).ref_thread)[vref.aux_thread]
-            .free
-            .push(vref.index);
+        ffi::lua_unrefpool(self.state(), vref.ref_id);
     }
 
-    #[inline]
     pub(crate) unsafe fn push_error_traceback_at(&self, state: *mut ffi::lua_State) {
-        ffi::lua_xpush(self.ref_thread_internal(), state, ExtraData::ERROR_TRACEBACK_IDX);
+        ffi::lua_getrefpool(state, (*self.extra.get()).error_traceback_ref);
     }
 
     pub(crate) unsafe fn make_userdata<T>(&self, data: UserDataStorage<T>) -> Result<AnyUserData>
@@ -1063,7 +994,12 @@ impl RawLua {
     // Returns `None` if the userdata is registered but non-static.
     #[inline(always)]
     pub(crate) fn get_userdata_ref_type_id(&self, vref: &ValueRef) -> Result<Option<TypeId>> {
-        unsafe { self.get_userdata_type_id_inner(self.ref_thread(vref.aux_thread), vref.index) }
+        unsafe { 
+            let state = self.state();
+            let _sg = StackGuard::new(state);
+            self.push_ref_at(vref, state);
+            self.get_userdata_type_id_inner(state, -1) 
+        }
     }
 
     // Same as `get_userdata_ref_type_id` but assumes the userdata is already on the stack.
@@ -1123,8 +1059,8 @@ impl RawLua {
         vref: &ValueRef,
         state: *mut ffi::lua_State,
     ) -> Result<Option<TypeId>> {
-        let type_id = self.get_userdata_type_id_inner(self.ref_thread(vref.aux_thread), vref.index)?;
         self.push_ref_at(vref, state);
+        let type_id = self.get_userdata_type_id_inner(state, -1)?;
         Ok(type_id)
     }
 

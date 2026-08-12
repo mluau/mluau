@@ -60,26 +60,23 @@ impl Buffer {
     }
 
     /// Downcasts the external buffer to the specified backing store type.
+    /// 
+    /// # Safety:
+    /// 
+    /// Assumes the external buffer was created by mluau's create_external_buffer
     pub fn downcast_ref<T: ExternalBuffer>(&self) -> Option<&T> {
         let lua = self.0.lua.lock();
-        let state = lua.ref_thread(self.0.aux_thread);
-        let userdata = unsafe { ffi::lua_getbufferuserdata(state, self.0.index) };
+        let state = lua.state();
+        let userdata = unsafe { 
+            let _sg = crate::util::StackGuard::new(state);
+            lua.push_ref_at(&self.0, state);
+            ffi::lua_getbufferuserdata(state, -1) 
+        };
         if userdata.is_null() {
             return None;
         }
 
-        let extra = unsafe { crate::state::extra::ExtraData::get(state) };
-        if extra.is_null() || !unsafe { (*extra).external_buffers.contains(&userdata) } {
-            return None;
-        }
-
-        let type_id = unsafe { (*(userdata as *const ExternalBufferHeader)).type_id };
-        if type_id == std::any::TypeId::of::<T>() {
-            let wrapper = unsafe { &*(userdata as *const ExternalBufferWrapper<T>) };
-            Some(&wrapper.buffer)
-        } else {
-            None
-        }
+        unsafe { crate::types::ErasedHeader::downcast_ref(userdata) }
     }
 
     /// Reads given number of bytes from the buffer at the given offset.
@@ -144,7 +141,10 @@ impl Buffer {
 
     unsafe fn as_raw_parts(&self, lua: &RawLua) -> (*mut u8, usize) {
         let mut size = 0usize;
-        let buf = ffi::lua_tobuffer(lua.ref_thread(self.0.aux_thread), self.0.index, &mut size);
+        let state = lua.state();
+        let _sg = crate::util::StackGuard::new(state);
+        lua.push_ref_at(&self.0, state);
+        let buf = ffi::lua_tobuffer(state, -1, &mut size);
         mlua_assert!(!buf.is_null(), "invalid Luau buffer");
         (buf as *mut u8, size)
     }
@@ -275,19 +275,7 @@ unsafe impl Primitive for i128 {}
 unsafe impl Primitive for f32 {}
 unsafe impl Primitive for f64 {}
 
-#[doc(hidden)]
-#[repr(C)]
-pub struct ExternalBufferHeader {
-    pub type_id: std::any::TypeId,
-    pub drop_fn: unsafe fn(*mut std::ffi::c_void),
-}
 
-#[doc(hidden)]
-#[repr(C)]
-pub struct ExternalBufferWrapper<T> {
-    pub header: ExternalBufferHeader,
-    pub buffer: T,
-}
 
 // SAFETY: `Vec<T>` manages a heap allocation that will not move or be deallocated
 // as long as the `Vec` itself is alive. The pointer and length returned are valid

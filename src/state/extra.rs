@@ -23,54 +23,9 @@ use crate::MultiValue;
 
 use super::{Lua, WeakLua};
 
-pub const REF_STACK_RESERVE: c_int = 3;
 
-pub(crate) struct RefThread {
-    pub(crate) ref_thread: *mut ffi::lua_State,
-    pub(super) stack_size: c_int,
-    pub(super) stack_top: c_int,
-    pub(super) free: Vec<c_int>,
-}
 
-impl RefThread {
-    #[inline(always)]
-    pub(crate) unsafe fn new(state: *mut ffi::lua_State) -> Self {
-        // Create ref stack thread and place it in the registry to prevent it
-        // from being garbage collected.
-        
-        // We do not use protect_lua! here because ExtraData is currently being built.
-        let thread = ffi::lua_newthread(state);
-        ffi::luaL_ref(state, ffi::LUA_REGISTRYINDEX);
-        let ref_thread = thread;
 
-        // Store `error_traceback` function on the ref stack
-        {
-            ffi::lua_pushcfunction(ref_thread, crate::util::error_traceback);
-            assert_eq!(ffi::lua_gettop(ref_thread), ExtraData::ERROR_TRACEBACK_IDX);
-        }
-
-        // Store fallback memory error string on the ref stack
-        {
-            let s = "memory error";
-            ffi::lua_pushlstring(ref_thread, s.as_ptr() as *const std::os::raw::c_char, s.len());
-            assert_eq!(ffi::lua_gettop(ref_thread), ExtraData::MEMORY_ERROR_IDX);
-        }
-
-        // Store `call_trampoline` function on the ref stack
-        {
-            ffi::lua_pushcfunction(ref_thread, crate::util::call_trampoline);
-            assert_eq!(ffi::lua_gettop(ref_thread), ExtraData::CALL_TRAMPOLINE_IDX);
-        }
-
-        RefThread {
-            ref_thread,
-            // We need some reserved stack space to move values in and out of the ref stack.
-            stack_size: ffi::LUA_MINSTACK - REF_STACK_RESERVE,
-            stack_top: ffi::lua_gettop(ref_thread),
-            free: Vec::new(),
-        }
-    }
-}
 
 /// Data associated with the Lua state.
 pub(crate) struct ExtraData {
@@ -87,9 +42,6 @@ pub(crate) struct ExtraData {
     #[cfg(feature = "dynamic-userdata")]
     pub(crate) dyn_userdata_set: FxHashSet<*mut c_void>,
 
-    #[cfg(any(feature = "luau", doc))]
-    pub(crate) external_buffers: rustc_hash::FxHashSet<*mut c_void>,
-
     // When Lua instance dropped, setting `None` would prevent collecting `RegistryKey`s
     pub(super) registry_unref_list: Arc<Mutex<Option<Vec<c_int>>>>,
 
@@ -100,11 +52,10 @@ pub(crate) struct ExtraData {
     pub(super) safe: bool,
     pub(super) libs: StdLib,
 
-    // Auxiliary threads to store references
-    pub(super) ref_thread: Vec<RefThread>,
-    // Special auxiliary thread for mlua internal use
-    pub(crate) ref_thread_internal: RefThread,
-
+    pub(crate) error_traceback_ref: c_int,
+    pub(crate) memory_error_ref: c_int,
+    pub(crate) call_trampoline_ref: c_int,
+    pub(crate) original_globals_ref: c_int,
 
     pub(super) interrupt_callback: Option<crate::types::InterruptCallback>,
 
@@ -150,10 +101,6 @@ impl Drop for ExtraData {
 }
 
 impl ExtraData {
-    // Index of `error_traceback` function in auxiliary thread stack
-    pub(crate) const ERROR_TRACEBACK_IDX: c_int = 1;
-    pub(crate) const MEMORY_ERROR_IDX: c_int = 2;
-    pub(crate) const CALL_TRAMPOLINE_IDX: c_int = 3;
 
     pub(super) unsafe fn init(state: *mut ffi::lua_State, owned: bool) -> XRc<UnsafeCell<Self>> {
         #[allow(clippy::arc_with_non_send_sync)]
@@ -168,16 +115,36 @@ impl ExtraData {
             last_checked_userdata_mt: (ptr::null(), None),
             #[cfg(feature = "dynamic-userdata")]
             dyn_userdata_set: rustc_hash::FxHashSet::default(),
-            #[cfg(any(feature = "luau", doc))]
-            external_buffers: rustc_hash::FxHashSet::default(),
             registry_unref_list: Arc::new(Mutex::new(Some(Vec::new()))),
             app_data: AppData::default(),
             app_data_priv: AppData::default(),
             safe: false,
             libs: StdLib::NONE,
-            ref_thread: vec![RefThread::new(state)],
-            ref_thread_internal: RefThread::new(state),
-
+            error_traceback_ref: {
+                ffi::lua_pushcfunction(state, crate::util::error_traceback);
+                let r = ffi::lua_refpool(state, -1);
+                ffi::lua_pop(state, 1);
+                r
+            },
+            memory_error_ref: {
+                let s = "memory error";
+                ffi::lua_pushlstring(state, s.as_ptr() as *const std::os::raw::c_char, s.len());
+                let r = ffi::lua_refpool(state, -1);
+                ffi::lua_pop(state, 1);
+                r
+            },
+            call_trampoline_ref: {
+                ffi::lua_pushcfunction(state, crate::util::call_trampoline);
+                let r = ffi::lua_refpool(state, -1);
+                ffi::lua_pop(state, 1);
+                r
+            },
+            original_globals_ref: {
+                ffi::lua_pushvalue(state, ffi::LUA_GLOBALSINDEX);
+                let r = ffi::lua_refpool(state, -1);
+                ffi::lua_pop(state, 1);
+                r
+            },
             interrupt_callback: None,
 
             gc_interrupt_callback: None,

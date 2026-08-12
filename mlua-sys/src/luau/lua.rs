@@ -364,6 +364,9 @@ pub const LUA_REFNIL: c_int = 0;
 unsafe extern "C-unwind" {
     pub fn lua_ref(L: *mut lua_State, idx: c_int) -> c_int;
     pub fn lua_unref(L: *mut lua_State, r#ref: c_int);
+    pub fn lua_refpool(L: *mut lua_State, idx: c_int) -> c_int;
+    pub fn lua_unrefpool(L: *mut lua_State, r#ref: c_int);
+    pub fn lua_getrefpool(L: *mut lua_State, r#ref: c_int) -> c_int;
 }
 
 //

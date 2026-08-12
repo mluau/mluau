@@ -153,7 +153,12 @@ impl Value {
                 // In Lua < 5.4 (excluding Luau), string pointers are NULL
                 // Use alternative approach
                 let lua = vref.lua.lock();
-                unsafe { ffi::lua_tostring(lua.ref_thread(vref.aux_thread), vref.index) as *const c_void }
+                unsafe { 
+                    let state = lua.state();
+                    let _sg = crate::util::StackGuard::new(state);
+                    lua.push_ref_at(vref, state);
+                    ffi::lua_tostring(state, -1) as *const c_void 
+                }
             }
             Value::LightUserData(ud) => ud.0,
             Value::Table(Table(vref))

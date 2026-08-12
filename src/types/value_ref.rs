@@ -2,16 +2,13 @@ use std::fmt;
 use std::os::raw::{c_int, c_void};
 
 use super::XRc;
-use crate::state::util::compare_refs;
 use crate::state::{RawLua, WeakLua};
 
 /// A reference to a Lua (complex) value stored in the Lua auxiliary thread.
 #[derive(Clone)]
 pub struct ValueRef {
     pub(crate) lua: WeakLua,
-    pub(crate) aux_thread: usize,
-    /// Keep index separate to avoid additional indirection when accessing it.
-    pub(crate) index: c_int,
+    pub(crate) ref_id: c_int,
     /// If `index_count` is `None`, the value does not need to be destroyed.
     pub(crate) index_count: Option<ValueRefIndex>,
 }
@@ -30,20 +27,24 @@ impl From<c_int> for ValueRefIndex {
 
 impl ValueRef {
     #[inline]
-    pub(crate) fn new(lua: &RawLua, aux_thread: usize, index: impl Into<ValueRefIndex>) -> Self {
-        let index = index.into();
+    pub(crate) fn new(lua: &RawLua, ref_id: c_int) -> Self {
+        let index_count = ValueRefIndex::from(ref_id);
         ValueRef {
             lua: lua.weak().clone(),
-            aux_thread,
-            index: *index.0,
-            index_count: Some(index),
+            ref_id,
+            index_count: Some(index_count),
         }
     }
 
     #[inline]
     pub(crate) fn to_pointer(&self) -> *const c_void {
         let lua = self.lua.lock();
-        unsafe { ffi::lua_topointer(lua.ref_thread(self.aux_thread), self.index) }
+        unsafe {
+            ffi::lua_getrefpool(lua.state(), self.ref_id);
+            let ptr = ffi::lua_topointer(lua.state(), -1);
+            ffi::lua_pop(lua.state(), 1);
+            ptr
+        }
     }
 }
 
@@ -76,14 +77,11 @@ impl PartialEq for ValueRef {
         let lua = self.lua.lock();
 
         unsafe {
-            compare_refs(
-                lua.extra(),
-                self.aux_thread,
-                self.index,
-                other.aux_thread,
-                other.index,
-                |state, a, b| ffi::lua_rawequal(state, a, b) == 1,
-            )
+            let state = lua.state();
+            let _guard = crate::util::StackGuard::new(state);
+            ffi::lua_getrefpool(state, self.ref_id);
+            ffi::lua_getrefpool(state, other.ref_id);
+            ffi::lua_rawequal(state, -1, -2) == 1
         }
     }
 }

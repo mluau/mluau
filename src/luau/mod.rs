@@ -24,7 +24,8 @@ pub static ENABLED_FFLAGS: &[&str] = &[
     #[cfg(feature = "none-primitive")]
     "LuauNonePrimitive",
     "LuauAutoStack", // lets mluau avoid calls to lua_checkstack (avoids ffi calls)
-    "LuauFatCClosure"
+    "LuauFatCClosure",
+    "LuauManagedReferences2"
 ];
 
 pub static RESTRICTED_FFLAGS: &[&str] = &[
@@ -40,7 +41,8 @@ pub static RESTRICTED_FFLAGS: &[&str] = &[
     "LuauNonePrimitive",
     // internally needed
     "LuauAutoStack",
-    "LuauFatCClosure"
+    "LuauFatCClosure",
+    "LuauManagedReferences2"
 ];
 
 // Since Luau has some missing standard functions, we re-implement them here
@@ -104,17 +106,7 @@ impl Lua {
         unsafe { heap_dump::HeapDump::new(lua.state()).ok_or_else(|| Error::runtime("unable to dump heap")) }
     }
 
-    pub(crate) unsafe fn configure_luau(&self) -> Result<()> {
-        // init needed fflags
-        {
-            static INIT_FFLAGS: std::sync::Once = std::sync::Once::new();
-            INIT_FFLAGS.call_once(|| {
-                for fflag in ENABLED_FFLAGS {
-                    mlua_expect!(Self::set_fflag_inner(fflag, true), "base fflag {fflag} not set",)
-                }
-            });
-        }
-        
+    pub(crate) unsafe fn configure_luau(&self) -> Result<()> {        
         let globals = self.globals();
 
         globals.raw_set("collectgarbage", self.create_c_function(lua_collectgarbage)?)?;

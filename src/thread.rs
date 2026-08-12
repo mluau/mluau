@@ -118,13 +118,7 @@ impl Thread {
             if current.is_null() {
                 return None;
             }
-            let type_id = (*(current as *const crate::types::ThreadDataHeader)).type_id;
-            if type_id == std::any::TypeId::of::<T>() {
-                let wrapper = &*(current as *const crate::types::ThreadDataWrapper<T>);
-                Some(&wrapper.data)
-            } else {
-                None
-            }
+            crate::types::ErasedHeader::downcast_ref(current)
         }
     }
 
@@ -143,16 +137,8 @@ impl Thread {
             if !current.is_null() {
                 return Err(Error::runtime("thread data was already set for this thread"));
             }
-            let boxed = Box::new(crate::types::ThreadDataWrapper {
-                header: crate::types::ThreadDataHeader {
-                    type_id: std::any::TypeId::of::<T>(),
-                    drop_fn: |ptr| {
-                        let _ = Box::from_raw(ptr as *mut crate::types::ThreadDataWrapper<T>);
-                    },
-                },
-                data,
-            });
-            ffi::lua_setthreaddata(thread_state, Box::into_raw(boxed) as *mut c_void);
+            let raw = crate::types::ErasedHeader::into_raw(data);
+            ffi::lua_setthreaddata(thread_state, raw);
             let extra = lua.extra();
             if !(*extra).have_thread_data {
                 (*extra).have_thread_data = true;
@@ -366,7 +352,7 @@ impl Thread {
             self.reset_inner(status)?;
 
             // Push function to the top of the thread stack
-            ffi::lua_xpush(lua.ref_thread(func.0.aux_thread), thread_state, func.0.index);
+            lua.push_ref_at(&func.0, thread_state);
 
             {
                 // Inherit `LUA_GLOBALSINDEX` from the main thread

@@ -114,8 +114,8 @@ where
     mlua_debug_assert!(!extra.is_null(), "ExtraData is null in protect_lua_closure");
 
     MemoryState::relax_limit_with(state, || {
-        ffi::lua_xpush((*extra).ref_thread_internal.ref_thread, state, crate::state::ExtraData::ERROR_TRACEBACK_IDX);
-        ffi::lua_xpush((*extra).ref_thread_internal.ref_thread, state, crate::state::ExtraData::CALL_TRAMPOLINE_IDX);
+        ffi::lua_getrefpool(state, (*extra).error_traceback_ref);
+        ffi::lua_getrefpool(state, (*extra).call_trampoline_ref);
     });
     if nargs > 0 {
         ffi::lua_rotate(state, stack_start + 1, 2);

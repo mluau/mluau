@@ -545,7 +545,12 @@ impl AnyUserData {
     #[inline]
     pub fn borrow<T: 'static>(&self) -> Result<UserDataRef<T>> {
         let lua = self.0.lua.lock();
-        unsafe { UserDataRef::borrow_from_stack(&lua, lua.ref_thread(self.0.aux_thread), self.0.index) }
+        unsafe { 
+            let state = lua.state();
+            let _sg = crate::util::StackGuard::new(state);
+            lua.push_ref_at(&self.0, state);
+            UserDataRef::borrow_from_stack(&lua, state, -1) 
+        }
     }
 
 
@@ -563,7 +568,12 @@ impl AnyUserData {
     #[inline]
     pub fn borrow_mut<T: 'static>(&self) -> Result<UserDataRefMut<T>> {
         let lua = self.0.lua.lock();
-        unsafe { UserDataRefMut::borrow_from_stack(&lua, lua.ref_thread(self.0.aux_thread), self.0.index) }
+        unsafe { 
+            let state = lua.state();
+            let _sg = crate::util::StackGuard::new(state);
+            lua.push_ref_at(&self.0, state);
+            UserDataRefMut::borrow_from_stack(&lua, state, -1) 
+        }
     }
 
 
@@ -580,9 +590,11 @@ impl AnyUserData {
         let lua = self.0.lua.lock();
         match lua.get_userdata_ref_type_id(&self.0)? {
             Some(type_id) if type_id == TypeId::of::<T>() => unsafe {
-                let ref_thread = lua.ref_thread(self.0.aux_thread);
-                if (*get_userdata::<UserDataStorage<T>>(ref_thread, self.0.index)).has_exclusive_access() {
-                    take_userdata::<UserDataStorage<T>>(ref_thread, self.0.index).into_inner()
+                let state = lua.state();
+                let _sg = StackGuard::new(state);
+                lua.push_ref_at(&self.0, state);
+                if (*get_userdata::<UserDataStorage<T>>(state, -1)).has_exclusive_access() {
+                    take_userdata::<UserDataStorage<T>>(state, -1).into_inner()
                 } else {
                     Err(Error::UserDataBorrowMutError)
                 }
@@ -637,15 +649,17 @@ impl AnyUserData {
     #[cfg(feature = "dynamic-userdata")]
     pub fn dynamic_data<T: 'static>(&self) -> Result<&T> {
         let lua = self.0.lua.lock();
-        // Get the metatable pointer
-        let ud_ptr = unsafe { ffi::lua_topointer(lua.ref_thread(self.0.aux_thread), self.0.index) };
-
+        let state = lua.state();
         unsafe {
+            let _sg = crate::util::StackGuard::new(state);
+            lua.push_ref_at(&self.0, state);
+
+            let ud_ptr = ffi::lua_topointer(state, -1);
             if !(&(*lua.extra())).is_userdata_dynamic(ud_ptr as *mut c_void) {
                 return Err(Error::UserDataTypeMismatch);
             }
 
-            let ud = get_userdata::<DynamicUserDataPtr>(lua.ref_thread(self.0.aux_thread), self.0.index);
+            let ud = get_userdata::<DynamicUserDataPtr>(state, -1);
 
             match (&*ud).data.downcast_ref::<T>() {
                 Some(data) => Ok(data),
@@ -710,14 +724,17 @@ impl AnyUserData {
     /// Returns a raw metatable of this [`AnyUserData`].
     fn raw_metatable(&self) -> Result<Table> {
         let lua = self.0.lua.lock();
-        let ref_thread = lua.ref_thread(self.0.aux_thread);
+        let state = lua.state();
         unsafe {
+            let _sg = StackGuard::new(state);
+            lua.push_ref_at(&self.0, state);
+
             // Check that userdata is registered and not destructed
             // All registered userdata types have a non-empty metatable
             let _type_id = lua.get_userdata_ref_type_id(&self.0)?;
 
-            ffi::lua_getmetatable(ref_thread, self.0.index);
-            Ok(Table(lua.pop_ref_at(ref_thread)))
+            ffi::lua_getmetatable(state, -1);
+            Ok(Table(lua.pop_ref_at(state)))
         }
     }
 

@@ -119,17 +119,19 @@ impl String {
         let lua = self.0.lua.upgrade();
         let slice = {
             let rawlua = lua.lock();
-            let ref_thread = rawlua.ref_thread(self.0.aux_thread);
+            let state = rawlua.state();
+            let _sg = crate::util::StackGuard::new(state);
+            rawlua.push_ref_at(&self.0, state);
 
             mlua_debug_assert!(
-                ffi::lua_type(ref_thread, self.0.index) == ffi::LUA_TSTRING,
+                ffi::lua_type(state, -1) == ffi::LUA_TSTRING,
                 "string ref is not string type"
             );
 
             // This will not trigger a 'm' error, because the reference is guaranteed to be of
             // string type
             let mut size = 0;
-            let data = ffi::lua_tolstring(ref_thread, self.0.index, &mut size);
+            let data = ffi::lua_tolstring(state, -1, &mut size);
             slice::from_raw_parts(data as *const u8, size)
         };
         (slice, lua)

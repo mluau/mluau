@@ -20,15 +20,54 @@ pub type Integer = ffi::lua_Integer;
 pub type Number = ffi::lua_Number;
 
 #[repr(C)]
-pub(crate) struct ThreadDataHeader {
-    pub(crate) type_id: std::any::TypeId,
-    pub(crate) drop_fn: unsafe fn(*mut c_void),
+pub(crate) struct ErasedHeader {
+    type_id: std::any::TypeId,
+    drop_fn: unsafe fn(*mut std::ffi::c_void),
 }
 
 #[repr(C)]
-pub(crate) struct ThreadDataWrapper<T> {
-    pub(crate) header: ThreadDataHeader,
-    pub(crate) data: T,
+struct ErasedWrapper<T> {
+    header: ErasedHeader,
+    data: T,
+}
+
+impl ErasedHeader {
+    #[inline]
+    /// Converts T into a ErasedWrapper pointer to ErasedWrapper<T>
+    pub(crate) fn into_raw<T: 'static>(data: T) -> *mut std::ffi::c_void {
+        let wrapper = Box::new(ErasedWrapper {
+            header: ErasedHeader {
+                type_id: std::any::TypeId::of::<T>(),
+                drop_fn: |ptr| unsafe {
+                    let _ = Box::from_raw(ptr as *mut ErasedWrapper<T>);
+                },
+            },
+            data,
+        });
+        Box::into_raw(wrapper) as *mut std::ffi::c_void
+    }
+
+    #[inline]
+    pub(crate) unsafe fn downcast_ref<'a, T: 'static>(ptr: *const std::ffi::c_void) -> Option<&'a T> {
+        if ptr.is_null() {
+            return None;
+        }
+        let header = &*(ptr as *const ErasedHeader);
+        if header.type_id == std::any::TypeId::of::<T>() {
+            let wrapper = &*(ptr as *const ErasedWrapper<T>);
+            Some(&wrapper.data)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub(crate) unsafe fn drop(ptr: *mut std::ffi::c_void) {
+        if !ptr.is_null() {
+            let drop_fn = (*(ptr as *const ErasedHeader)).drop_fn;
+            drop_fn(ptr);
+        }
+    }
 }
 
 /// A "light" userdata value. Equivalent to an unmanaged raw pointer.

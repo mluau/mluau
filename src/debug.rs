@@ -4,7 +4,6 @@ use std::os::raw::c_int;
 use ffi::{lua_Debug, lua_State};
 
 use crate::function::Function;
-use crate::state::util::get_next_spot;
 use crate::state::RawLua;
 use crate::util::{assert_stack, linenumber_to_usize, ptr_to_lossy_str, ptr_to_str, StackGuard};
 
@@ -52,13 +51,7 @@ impl<'a> Debug<'a> {
                 "lua_getinfo failed with `f`"
             );
 
-            let (aux_thread, index, replace) = get_next_spot(self.lua.extra());
-            ffi::lua_xmove(self.state, self.lua.ref_thread(aux_thread), 1);
-            if replace {
-                ffi::lua_replace(self.lua.ref_thread(aux_thread), index);
-            }
-
-            Function(self.lua.new_value_ref(aux_thread, index))
+            Function(self.lua.pop_ref_at(self.state))
         }
     }
 
