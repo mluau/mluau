@@ -107,7 +107,7 @@ pub use crate::traits::{
     FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, IntoLuaErr, IntoLuaResult, IntoLuaResultMulti, LuaNativeFn, LuaNativeFnMut,
 };
 pub use crate::types::{
-    AppDataRef, AppDataRefMut, Either, Integer, LightUserData, MaybeSend, Number, RegistryKey, VmState,
+    AppDataRef, AppDataRefMut, Either, Integer, LightUserData, MaybeSend, Number, VmState,
 };
 pub use crate::userdata::{
     AnyUserData, MetaMethod, UserData, UserDataFields, UserDataMetatable, UserDataMethods, UserDataRef,

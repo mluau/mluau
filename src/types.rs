@@ -9,7 +9,6 @@ pub(crate) use sync::{ArcReentrantMutexGuard, ReentrantMutex, ReentrantMutexGuar
 
 pub use app_data::{AppData, AppDataRef, AppDataRefMut};
 pub use either::Either;
-pub use registry_key::RegistryKey;
 pub(crate) use value_ref::ValueRef;
 
 use std::collections::HashMap;
@@ -181,7 +180,6 @@ impl LuaType for LightUserData {
 }
 
 mod app_data;
-mod registry_key;
 mod sync;
 mod value_ref;
 

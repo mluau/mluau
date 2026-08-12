@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use bstr::BString;
 use maplit::{btreemap, btreeset, hashmap, hashset};
 use mluau::{
-    AnyUserData, BorrowedBytes, BorrowedStr, Either, Error, Function, IntoLua, Lua, RegistryKey, Result,
+    AnyUserData, BorrowedBytes, BorrowedStr, Either, Error, Function, IntoLua, Lua, Result,
     Table, Thread, UserDataRef, Value,
 };
 
@@ -229,51 +229,6 @@ fn test_anyuserdata_from_lua() -> Result<()> {
         }
         _ => panic!("expected `Error::FromLuaConversionError`"),
     }
-
-    Ok(())
-}
-
-#[test]
-fn test_registry_value_into_lua() -> Result<()> {
-    let lua = Lua::new();
-
-    // Direct conversion
-    let s = lua.create_string("hello, world")?;
-    let r = lua.create_registry_value(&s)?;
-    let value1 = lua.pack(&r)?;
-    let value2 = lua.pack(r)?;
-    assert_eq!(value1.to_string()?, "hello, world");
-    assert_eq!(value1.to_pointer(), value2.to_pointer());
-
-    // Push into stack
-    let t = lua.create_table()?;
-    let r = lua.create_registry_value(&t)?;
-    let f = lua.create_function(|_, (t, k, v): (Table, Value, Value)| t.set(k, v))?;
-    f.call::<()>((&r, "hello", "world"))?;
-    f.call::<()>((r, "welcome", "to the jungle"))?;
-    assert_eq!(t.get::<String>("hello")?, "world");
-    assert_eq!(t.get::<String>("welcome")?, "to the jungle");
-
-    // Try to set nil registry key
-    let r_nil = lua.create_registry_value(Value::Nil)?;
-    t.set("hello", &r_nil)?;
-    assert_eq!(t.get::<Value>("hello")?, Value::Nil);
-
-    // Check non-owned registry key
-    let lua2 = Lua::new();
-    let r2 = lua2.create_registry_value("abc")?;
-    assert!(matches!(f.call::<()>(&r2), Err(Error::MismatchedRegistryKey)));
-
-    Ok(())
-}
-
-#[test]
-fn test_registry_key_from_lua() -> Result<()> {
-    let lua = Lua::new();
-
-    let fkey = lua.load("function() return 1 end").eval::<RegistryKey>()?;
-    let f = lua.registry_value::<Function>(&fkey)?;
-    assert_eq!(f.call::<i32>(())?, 1);
 
     Ok(())
 }

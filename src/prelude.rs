@@ -7,7 +7,7 @@ pub use crate::{
     FromLua, FromLuaMulti, Function as LuaFunction, FunctionInfo as LuaFunctionInfo, GCMode as LuaGCMode,
     Integer as LuaInteger, IntoLua, IntoLuaMulti, IntoLuaErr, IntoLuaResult, IntoLuaResultMulti, LightUserData as LuaLightUserData, Lua, LuaNativeFn,
     LuaNativeFnMut, MetaMethod as LuaMetaMethod, MultiValue as LuaMultiValue, Nil as LuaNil,
-    Number as LuaNumber, RegistryKey as LuaRegistryKey, Result as LuaResult,
+    Number as LuaNumber, Result as LuaResult,
     StdLib as LuaStdLib, String as LuaString, Table as LuaTable, TablePairs as LuaTablePairs,
     TablePairsOwned as LuaTablePairsOwned, TableSequence as LuaTableSequence, Thread as LuaThread,
     ThreadStatus as LuaThreadStatus, UserData as LuaUserData, UserDataFields as LuaUserDataFields,

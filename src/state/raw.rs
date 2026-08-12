@@ -7,7 +7,6 @@ use std::mem;
 use std::os::raw::{c_char, c_int, c_void};
 use std::ptr::{self, NonNull};
 use std::string::String as StdString;
-use std::sync::Arc;
 
 use crate::chunk::ChunkMode;
 use crate::error::{Error, Result};
@@ -24,7 +23,7 @@ use crate::thread::Thread;
 use crate::traits::IntoLua;
 use crate::types::{
     AppDataRef, AppDataRefMut, Callback, DestructedUserdata, Integer, LightUserData,
-    LuaType, MaybeSend, ReentrantMutex, RegistryKey, ValueRef, XRc,
+    LuaType, MaybeSend, ReentrantMutex, ValueRef, XRc,
 };
 
 use crate::types::{NamecallCallback, NamecallMap};
@@ -289,13 +288,6 @@ impl RawLua {
     pub(crate) fn priv_app_data_mut<T: 'static>(&self) -> Option<AppDataRefMut<'_, T>> {
         let extra = unsafe { &*self.extra.get() };
         extra.app_data_priv.borrow_mut(None)
-    }
-
-    /// See [`Lua::create_registry_value`]
-    #[inline]
-    pub(crate) fn owns_registry_value(&self, key: &RegistryKey) -> bool {
-        let registry_unref_list = unsafe { &(*self.extra.get()).registry_unref_list };
-        Arc::ptr_eq(&key.unref_list, registry_unref_list)
     }
 
     pub(crate) fn load_chunk(

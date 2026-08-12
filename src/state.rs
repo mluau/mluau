@@ -27,10 +27,10 @@ use crate::thread::ContinuationStatus;
 use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaResultMulti, IntoLuaMulti};
 use crate::types::{
     AppDataRef, AppDataRefMut, ArcReentrantMutexGuard, Integer, LuaType, MaybeSend, MaybeSync, Number,
-    ReentrantMutex, ReentrantMutexGuard, RegistryKey, VmState, XRc, XWeak,
+    ReentrantMutex, ReentrantMutexGuard, VmState, XRc, XWeak,
 };
 use crate::userdata::{AnyUserData, UserData, UserDataRegistry, UserDataStorage};
-use crate::util::{assert_stack, check_stack, protect_lua_closure, push_string, rawset_field, StackGuard};
+use crate::util::{assert_stack, check_stack, protect_lua_closure, StackGuard};
 use crate::value::{Nil, Value};
 
 use crate::types::ErasedHeader;
@@ -1364,6 +1364,18 @@ impl Lua {
         }
     }
 
+    /// Returns a handle to the registry.
+    pub fn registry(&self) -> Table {
+        let lua = self.lock();
+        let state = lua.state();
+        unsafe {
+            let _sg = StackGuard::new(state);
+            assert_stack(state, 1);
+            ffi::lua_pushvalue(state, ffi::LUA_REGISTRYINDEX);
+            Table(lua.pop_ref())
+        }
+    }
+
     /// Sets the global environment.
     ///
     /// This will replace the current global environment with the provided `globals` table.
@@ -1515,200 +1527,6 @@ impl Lua {
     #[inline]
     pub fn unpack_multi<T: FromLuaMulti>(&self, value: MultiValue) -> Result<T> {
         T::from_lua_multi(value, self)
-    }
-
-    /// Set a value in the Lua registry based on a string key.
-    ///
-    /// This value will be available to Rust from all Lua instances which share the same main
-    /// state.
-    pub fn set_named_registry_value(&self, key: &str, t: impl IntoLua) -> Result<()> {
-        let lua = self.lock();
-        let state = lua.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            check_stack(state, 5)?;
-
-            lua.push_at(state, t)?;
-            rawset_field(state, ffi::LUA_REGISTRYINDEX, key)
-        }
-    }
-
-    /// Get a value from the Lua registry based on a string key.
-    ///
-    /// Any Lua instance which shares the underlying main state may call this method to
-    /// get a value previously set by [`Lua::set_named_registry_value`].
-    pub fn named_registry_value<T>(&self, key: &str) -> Result<T>
-    where
-        T: FromLua,
-    {
-        let lua = self.lock();
-        let state = lua.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            check_stack(state, 3)?;
-
-            push_string(state, key.as_bytes())?;
-            ffi::lua_rawget(state, ffi::LUA_REGISTRYINDEX);
-
-            T::from_specified_stack(-1, &lua, state)
-        }
-    }
-
-    /// Removes a named value in the Lua registry.
-    ///
-    /// Equivalent to calling [`Lua::set_named_registry_value`] with a value of [`Nil`].
-    #[inline]
-    pub fn unset_named_registry_value(&self, key: &str) -> Result<()> {
-        self.set_named_registry_value(key, Nil)
-    }
-
-    /// Place a value in the Lua registry with an auto-generated key.
-    ///
-    /// This value will be available to Rust from all Lua instances which share the same main
-    /// state.
-    ///
-    /// Be warned, garbage collection of values held inside the registry is not automatic, see
-    /// [`RegistryKey`] for more details.
-    /// However, dropped [`RegistryKey`]s automatically reused to store new values.
-    pub fn create_registry_value(&self, t: impl IntoLua) -> Result<RegistryKey> {
-        let lua = self.lock();
-        let state = lua.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            check_stack(state, 4)?;
-
-            lua.push_at(state, t)?;
-
-            let unref_list = (*lua.extra.get()).registry_unref_list.clone();
-
-            // Check if the value is nil (no need to store it in the registry)
-            if ffi::lua_isnil(state, -1) != 0 {
-                return Ok(RegistryKey::new(ffi::LUA_REFNIL, unref_list));
-            }
-
-            // Try to reuse previously allocated slot
-            let free_registry_id = unref_list.lock().as_mut().and_then(|x| x.pop());
-            if let Some(registry_id) = free_registry_id {
-                // It must be safe to replace the value without triggering memory error
-                ffi::lua_rawseti(state, ffi::LUA_REGISTRYINDEX, registry_id as Integer);
-                return Ok(RegistryKey::new(registry_id, unref_list));
-            }
-
-            // Allocate a new RegistryKey slot
-            let registry_id = protect_lua!(state, 1, 0, |state| {
-                ffi::luaL_ref(state, ffi::LUA_REGISTRYINDEX)
-            })?;
-            Ok(RegistryKey::new(registry_id, unref_list))
-        }
-    }
-
-    /// Get a value from the Lua registry by its [`RegistryKey`]
-    ///
-    /// Any Lua instance which shares the underlying main state may call this method to get a value
-    /// previously placed by [`Lua::create_registry_value`].
-    pub fn registry_value<T: FromLua>(&self, key: &RegistryKey) -> Result<T> {
-        let lua = self.lock();
-        if !lua.owns_registry_value(key) {
-            return Err(Error::MismatchedRegistryKey);
-        }
-
-        let state = lua.state();
-        match key.id() {
-            ffi::LUA_REFNIL => T::from_lua(Value::Nil, self),
-            registry_id => unsafe {
-                let _sg = StackGuard::new(state);
-                check_stack(state, 1)?;
-
-                ffi::lua_rawgeti(state, ffi::LUA_REGISTRYINDEX, registry_id as Integer);
-                T::from_specified_stack(-1, &lua, state)
-            },
-        }
-    }
-
-    /// Removes a value from the Lua registry.
-    ///
-    /// You may call this function to manually remove a value placed in the registry with
-    /// [`Lua::create_registry_value`]. In addition to manual [`RegistryKey`] removal, you can also
-    /// call [`Lua::expire_registry_values`] to automatically remove values from the registry
-    /// whose [`RegistryKey`]s have been dropped.
-    pub fn remove_registry_value(&self, key: RegistryKey) -> Result<()> {
-        let lua = self.lock();
-        if !lua.owns_registry_value(&key) {
-            return Err(Error::MismatchedRegistryKey);
-        }
-
-        unsafe { ffi::luaL_unref(lua.state(), ffi::LUA_REGISTRYINDEX, key.take()) };
-        Ok(())
-    }
-
-    /// Replaces a value in the Lua registry by its [`RegistryKey`].
-    ///
-    /// An identifier used in [`RegistryKey`] may possibly be changed to a new value.
-    ///
-    /// See [`Lua::create_registry_value`] for more details.
-    pub fn replace_registry_value(&self, key: &mut RegistryKey, t: impl IntoLua) -> Result<()> {
-        let lua = self.lock();
-        if !lua.owns_registry_value(key) {
-            return Err(Error::MismatchedRegistryKey);
-        }
-
-        let t = t.into_lua(self)?;
-
-        let state = lua.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            check_stack(state, 2)?;
-
-            match (t, key.id()) {
-                (Value::Nil, ffi::LUA_REFNIL) => {
-                    // Do nothing, no need to replace nil with nil
-                }
-                (Value::Nil, registry_id) => {
-                    // Remove the value
-                    ffi::luaL_unref(state, ffi::LUA_REGISTRYINDEX, registry_id);
-                    key.set_id(ffi::LUA_REFNIL);
-                }
-                (value, ffi::LUA_REFNIL) => {
-                    // Allocate a new `RegistryKey`
-                    let new_key = self.create_registry_value(value)?;
-                    key.set_id(new_key.take());
-                }
-                (value, registry_id) => {
-                    // It must be safe to replace the value without triggering memory error
-                    lua.push_value_at(&value, state);
-                    ffi::lua_rawseti(state, ffi::LUA_REGISTRYINDEX, registry_id as Integer);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Returns true if the given [`RegistryKey`] was created by a Lua which shares the
-    /// underlying main state with this Lua instance.
-    ///
-    /// Other than this, methods that accept a [`RegistryKey`] will return
-    /// [`Error::MismatchedRegistryKey`] if passed a [`RegistryKey`] that was not created with a
-    /// matching [`Lua`] state.
-    #[inline]
-    pub fn owns_registry_value(&self, key: &RegistryKey) -> bool {
-        self.lock().owns_registry_value(key)
-    }
-
-    /// Remove any registry values whose [`RegistryKey`]s have all been dropped.
-    ///
-    /// Unlike normal handle values, [`RegistryKey`]s do not automatically remove themselves on
-    /// Drop, but you can call this method to remove any unreachable registry values not
-    /// manually removed by [`Lua::remove_registry_value`].
-    pub fn expire_registry_values(&self) {
-        let lua = self.lock();
-        let state = lua.state();
-        unsafe {
-            let mut unref_list = (*lua.extra.get()).registry_unref_list.lock();
-            let unref_list = unref_list.replace(Vec::new());
-            for id in mlua_expect!(unref_list, "unref list is not set") {
-                ffi::luaL_unref(state, ffi::LUA_REGISTRYINDEX, id);
-            }
-        }
     }
 
     /// Sets or replaces an application data object of type `T`.

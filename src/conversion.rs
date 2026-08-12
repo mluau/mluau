@@ -17,7 +17,7 @@ use crate::string::{BorrowedBytes, BorrowedStr, String};
 use crate::table::Table;
 use crate::thread::Thread;
 use crate::traits::{FromLua, IntoLua, ShortTypeName as _};
-use crate::types::{Either, LightUserData, MaybeSend, MaybeSync, RegistryKey};
+use crate::types::{Either, LightUserData, MaybeSend, MaybeSync};
 use crate::userdata::{AnyUserData, UserData};
 use crate::value::{Nil, Value};
 
@@ -318,46 +318,6 @@ impl<T: UserData + MaybeSend + MaybeSync + 'static> IntoLua for T {
     #[inline]
     fn into_lua(self, lua: &Lua) -> Result<Value> {
         Ok(Value::UserData(lua.create_userdata(self)?))
-    }
-}
-
-impl IntoLua for RegistryKey {
-    #[inline]
-    fn into_lua(self, lua: &Lua) -> Result<Value> {
-        lua.registry_value(&self)
-    }
-
-    #[inline]
-    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
-        <&RegistryKey>::push_into_specified_stack(&self, lua, state)
-    }
-}
-
-impl IntoLua for &RegistryKey {
-    #[inline]
-    fn into_lua(self, lua: &Lua) -> Result<Value> {
-        lua.registry_value(self)
-    }
-
-    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
-        if !lua.owns_registry_value(self) {
-            return Err(Error::MismatchedRegistryKey);
-        }
-
-        match self.id() {
-            ffi::LUA_REFNIL => ffi::lua_pushnil(state),
-            id => {
-                ffi::lua_rawgeti(state, ffi::LUA_REGISTRYINDEX, id as _);
-            }
-        }
-        Ok(())
-    }
-}
-
-impl FromLua for RegistryKey {
-    #[inline]
-    fn from_lua(value: Value, lua: &Lua) -> Result<RegistryKey> {
-        lua.create_registry_value(value)
     }
 }
 
