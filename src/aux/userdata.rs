@@ -153,6 +153,17 @@ pub trait UserDataMethods<T> {
         M: Fn(&Lua, &T, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti;
+
+    /// Add a metamethod which accepts generic arguments.
+    ///
+    /// Metamethods for binary operators can be triggered if either the left or right argument to
+    /// the binary operator has a metatable, so the first argument here is not necessarily a
+    /// userdata of type `T`.
+    fn add_meta_function<F, A, R>(&mut self, name: &'static str, function: F)
+    where
+        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
+        A: FromLuaMulti,
+        R: IntoLuaResultMulti;
 }
 
 /// Field registry for [`UserData`] implementors.
@@ -235,6 +246,7 @@ struct UserDataRegistry<'a, T: UserData> {
     
     // Methods
     functions: Vec<(&'static str, FnCb)>,
+    meta_functions: Vec<(&'static str, FnCb)>,
     methods: Vec<(&'static str, MethodCb<T>)>,
     meta_methods: Vec<(&'static str, MethodCb<T>)>,
 }
@@ -246,6 +258,7 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
             fields: Vec::new(),
             meta_fields: Vec::new(),
             functions: Vec::new(),
+            meta_functions: Vec::new(),
             methods: Vec::new(),
             meta_methods: Vec::new(),
         };
@@ -333,12 +346,16 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
             indexmt.push((k, Value::Function(func)));
         }
 
-        // Metafields, metamethods into metatable directly
+        // Metafields, metafunctions, metamethods into metatable directly
         for (k, v) in self.meta_fields {
             if k == "__index" {
                 return Err(crate::Error::external("__index metamethod cannot be set with userdata aux api"));
             }
             mt.push((k, v?));
+        }
+        for (k, v) in self.meta_functions {
+            let func = lua.create_function(v)?;
+            mt.push((k, Value::Function(func)));
         }
         for (k, v) in self.meta_methods {
             if k == "__index" {
@@ -418,6 +435,15 @@ impl<T: UserData> UserDataMethods<T> for UserDataRegistry<'_, T> {
     {
         let wrapped = Self::wrap_method(method);
         self.methods.push((name, wrapped)) 
+    }
+
+    fn add_meta_function<F, A, R>(&mut self, name: &'static str, function: F) where
+    F: Fn(&Lua, A) -> R + MaybeSend + 'static,
+    A: FromLuaMulti,
+    R: IntoLuaResultMulti 
+    {
+        let wrapped = Self::wrap_function(function);
+        self.meta_functions.push((name, wrapped))
     }
 
     fn add_meta_method<M, A, R>(&mut self, name: &'static str, method: M)

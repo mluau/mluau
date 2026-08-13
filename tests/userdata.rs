@@ -8,8 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use mluau::{
-    AnyUserData, Error, Function, Lua, MetaMethod, Nil, Result, String, UserData,
-    UserDataFields, UserDataMethods, UserDataRef, Value, Variadic,
+    AnyUserData, Error, Function, Lua, LuaUserDataExt, MetaMethod, Nil, Result, String, UserData, UserDataFields, UserDataMethods, UserDataRef, Value, Variadic
 };
 
 #[test]
