@@ -1241,58 +1241,6 @@ impl Lua {
         }
     }
 
-    /// Creates a userdata method that is designed to be performant
-    pub fn create_userdata_method<F, T, A, R>(
-        &self, 
-        func: F, 
-        debugname: Option<&'static CStr>, 
-        typname: &'static str, 
-        methodname: &'static str
-    ) -> Result<Function>
-    where
-        T: 'static + MaybeSend + MaybeSync,
-        F: Fn(&Lua, crate::types::LuaRef<'_, T>, A) -> R + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaResultMulti,
-    {
-        (self.lock()).create_callback(
-            Box::new(move |rawlua, nargs| unsafe {
-                let state = rawlua.state();
-                
-                if nargs == 0 {
-                    return Err(crate::state::util::map_err_to_value(
-                        rawlua.lua(), 
-                        crate::Error::RuntimeError(format!("{typname}:{methodname}(): expected method call, found 0 arguments"))
-                    ));
-                }
-
-                let ud = ffi::lua_touserdatatagged(state, 1, crate::state::extra::USERDATA2_TAG);
-                let ptr = crate::types::ErasedHeader::downcast_ref::<T>(ud).ok_or_else(|| {
-                    crate::state::util::map_err_to_value(
-                        rawlua.lua(),
-                        crate::Error::RuntimeError(format!("{typname}:{methodname}(): argument 1 not of type `{typname}`"))
-                    )
-                })?;
-
-                let ud_ref = crate::types::LuaRef::new(rawlua.lua().clone(), ptr);
-
-                // Extract the remaining arguments (starting at stack index 2)
-                let args = A::from_specified_stack_args(nargs - 1, 2, None, rawlua, state)
-                    .map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?;
-
-                func(rawlua.lua(), ud_ref, args)
-                    .into_result()
-                    .map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))?
-                    .push_into_specified_stack_multi(rawlua, state)
-                    .map_err(|e| crate::state::util::map_err_to_value(rawlua.lua(), e))
-            }),
-            match debugname {
-                Some(v) => v.as_ptr(),
-                None => std::ptr::null()
-            }
-        )
-    }
-
     /// Executes `f` with the CStr of the method name within a `__namecall` callback. 
     /// 
     /// For example: inside a `ud:method()` callback in Rust, this will execute f with a CStr of "method"

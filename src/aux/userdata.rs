@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::fmt;
 
 use crate::types::MaybeSync;
-use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaErr, IntoLuaMulti, IntoLuaResultMulti, Lua, MaybeSend, MultiValue, Table, Value, XRc};
+use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaErr, IntoLuaMulti, IntoLuaResultMulti, Lua, MaybeSend, MultiValue, Table, TypedUserData, Value, XRc};
 
 /// Kinds of metamethods that can be overridden.
 ///
@@ -224,7 +224,7 @@ impl IntoLuaResultMulti for Result<MultiValue, UdError> {
 }
 
 type FnCb = Box<dyn Fn(&Lua, MultiValue) -> Result<MultiValue, UdError> + 'static>;
-type MethodCb<T> = XRc<dyn Fn(&Lua, crate::LuaRef<'_, T>, MultiValue) -> Result<MultiValue, UdError> + 'static>;
+type MethodCb<T> = XRc<dyn Fn(&Lua, TypedUserData<T>, MultiValue) -> Result<MultiValue, UdError> + 'static>;
 
 struct UserDataRegistry<'a, T: UserData> {
     lua: &'a Lua,
@@ -327,9 +327,9 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
             indexmt.push((k, Value::Function(func)));
         }
         for (k, v) in self.methods {
-            let func = lua.create_userdata_method(move |lua: &Lua, this: crate::LuaRef<'_, T>, args: MultiValue| {
-                v(lua, this, args)
-            }, None, T::type_name(), k)?;
+            let func = lua.create_function(move |lua: &Lua, (ud, args): (TypedUserData<T>, MultiValue)| {
+                v(lua, ud, args)
+            })?;
             indexmt.push((k, Value::Function(func)));
         }
 
@@ -344,9 +344,9 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
             if k == "__index" {
                 return Err(crate::Error::external("__index metamethod cannot be set with userdata aux api"));
             }
-            let func = lua.create_userdata_method(move |lua: &Lua, this: crate::LuaRef<'_, T>, args: MultiValue| {
-                v(lua, this, args)
-            }, None, T::type_name(), k)?;
+            let func = lua.create_function(move |lua: &Lua, (ud, args): (TypedUserData<T>, MultiValue)| {
+                v(lua, ud, args)
+            })?;
             mt.push((k, Value::Function(func)));
         }
 
