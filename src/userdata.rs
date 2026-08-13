@@ -141,6 +141,35 @@ pub struct TypedUserData<T: 'static + MaybeSend + MaybeSync> {
     _lua: Lua, // hold a strong ref to VM
 }
 
+impl<T: 'static + MaybeSend + MaybeSync> Clone for TypedUserData<T> {
+    fn clone(&self) -> Self {
+        Self {
+            // new valueref refcount
+            ud: self.ud.clone(), 
+            ptr: self.ptr, // we can keep same ptr   
+            _lua: self._lua.clone(), // one new vm ref
+        }
+    }
+}
+
+impl<T: 'static + MaybeSend + MaybeSync> PartialEq for TypedUserData<T> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.ud.lua != other.ud.lua {
+            return false;
+        }
+
+        self.ptr == other.ptr
+    }
+}
+
+impl<T: 'static + std::fmt::Debug + MaybeSend + MaybeSync> std::fmt::Debug for TypedUserData<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("TypedUserData")
+            .field(&**self)
+            .finish()
+    }
+}
+
 #[cfg(feature = "send")]
 unsafe impl<T: 'static + MaybeSend + MaybeSync> Send for TypedUserData<T> {}
 #[cfg(feature = "send")]
