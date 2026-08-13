@@ -110,8 +110,8 @@ pub use crate::types::{
     AppDataRef, AppDataRefMut, Either, Integer, LightUserData, MaybeSend, Number, VmState,
 };
 pub use crate::userdata::{
-    AnyUserData, MetaMethod, UserData, UserDataFields, UserDataMetatable, UserDataMethods, UserDataRef,
-    UserDataRefMut, UserDataRegistry,
+    AnyUserData, /*MetaMethod, UserData, UserDataFields, UserDataMetatable, UserDataMethods, UserDataRef,
+    UserDataRefMut, UserDataRegistry,*/
 };
 
 pub use crate::value::{Nil, Value};

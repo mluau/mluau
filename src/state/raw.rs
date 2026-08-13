@@ -1,9 +1,5 @@
-#[cfg(feature = "dynamic-userdata")]
-use std::any::Any;
-use std::any::TypeId;
 use std::cell::{Cell, UnsafeCell};
 use std::ffi::CStr;
-use std::mem;
 use std::os::raw::{c_char, c_int, c_void};
 use std::ptr::{self, NonNull};
 use std::string::String as StdString;
@@ -22,23 +18,18 @@ use crate::table::Table;
 use crate::thread::Thread;
 use crate::traits::IntoLua;
 use crate::types::{
-    AppDataRef, AppDataRefMut, Callback, DestructedUserdata, Integer, LightUserData,
+    AppDataRef, AppDataRefMut, Callback, Integer, LightUserData,
     LuaType, MaybeSend, ReentrantMutex, ValueRef, XRc,
 };
 
-use crate::types::{NamecallCallback, NamecallMap};
-
 use crate::types::Continuation;
 
-use crate::userdata::{
-    init_userdata_metatable, AnyUserData, MetaMethod, RawUserDataRegistry, UserData, UserDataRegistry,
-    UserDataStorage,
-};
+use crate::userdata::AnyUserData;
 use crate::util::{
-    assert_stack, check_stack, get_destructed_userdata_metatable, get_main_state,
-    get_metatable_ptr, init_destructed_userdata_registry, pop_error,
-    push_string, push_table, push_userdata, rawset_field,
-    short_type_name, to_string, StackGuard,
+    assert_stack, check_stack, get_main_state,
+    pop_error,
+    push_string, push_table,
+    to_string, StackGuard,
 };
 use crate::value::{Nil, Value};
 
@@ -186,8 +177,6 @@ impl RawLua {
 
         mlua_expect!(
             (|state| {
-                init_destructed_userdata_registry(state)?;
-
                 // Init serde metatables
                 #[cfg(feature = "serde")]
                 crate::serde::init_metatables(state)?;
@@ -196,15 +185,6 @@ impl RawLua {
             })(main_state),
             "Error during Lua initialization",
         );
-
-        // Register `DestructedUserdata` type
-        get_destructed_userdata_metatable(main_state);
-        let destructed_mt_ptr = ffi::lua_topointer(main_state, -1);
-        let destructed_ud_typeid = TypeId::of::<DestructedUserdata>();
-        (*extra.get())
-            .registered_userdata_mt
-            .insert(destructed_mt_ptr, Some(destructed_ud_typeid));
-        ffi::lua_pop(main_state, 1);
 
         mlua_debug_assert!(
             ffi::lua_gettop(main_state) == main_state_top,
@@ -704,356 +684,6 @@ impl RawLua {
         ffi::lua_getrefpool(state, (*self.extra.get()).error_traceback_ref);
     }
 
-    pub(crate) unsafe fn make_userdata<T>(&self, data: UserDataStorage<T>) -> Result<AnyUserData>
-    where
-        T: UserData + 'static,
-    {
-        self.make_userdata_with_metatable(data, || {
-            // Check if userdata/metatable is already registered
-            let type_id = TypeId::of::<T>();
-            if let Some(&table_id) = (*self.extra.get()).registered_userdata_t.get(&type_id) {
-                return Ok(table_id as Integer);
-            }
-
-            // Create a new metatable from `UserData` definition
-            let mut registry = UserDataRegistry::new(self.lua());
-            T::register(&mut registry);
-
-            self.create_userdata_metatable_at(registry.into_raw(), self.state())
-        })
-    }
-
-    pub(crate) unsafe fn make_any_userdata<T>(&self, data: UserDataStorage<T>) -> Result<AnyUserData>
-    where
-        T: 'static,
-    {
-        self.make_userdata_with_metatable(data, || {
-            // Check if userdata/metatable is already registered
-            let type_id = TypeId::of::<T>();
-            if let Some(&table_id) = (*self.extra.get()).registered_userdata_t.get(&type_id) {
-                return Ok(table_id as Integer);
-            }
-
-            // Check if metatable creation is pending or create an empty metatable otherwise
-            let registry = match (*self.extra.get()).pending_userdata_reg.remove(&type_id) {
-                Some(registry) => registry,
-                None => UserDataRegistry::<T>::new(self.lua()).into_raw(),
-            };
-            self.create_userdata_metatable_at(registry, self.state())
-        })
-    }
-
-    unsafe fn make_userdata_with_metatable<T>(
-        &self,
-        data: UserDataStorage<T>,
-        get_metatable_id: impl FnOnce() -> Result<Integer>,
-    ) -> Result<AnyUserData> {
-        let state = self.state();
-        let _sg = StackGuard::new(state);
-        check_stack(state, 3)?;
-
-        // We generate metatable first to make sure it *always* available when userdata pushed
-        let mt_id = get_metatable_id()?;
-        push_userdata(state, data)?;
-        ffi::lua_rawgeti(state, ffi::LUA_REGISTRYINDEX, mt_id);
-        ffi::lua_setmetatable(state, -2);
-        Ok(AnyUserData(self.pop_ref()))
-    }
-
-    #[cfg(feature = "dynamic-userdata")]
-    pub(crate) unsafe fn make_dyn_userdata(
-        &self,
-        mt: &Table,
-        data: Box<dyn Any + Send + Sync>,
-    ) -> Result<AnyUserData> {
-        let state = self.state();
-        let _sg = StackGuard::new(state);
-        check_stack(state, 3)?;
-
-        crate::util::push_userdata_dyn(state, data)?;
-        let ud_ptr = ffi::lua_topointer(state, -1);
-        (*self.extra.get()).dyn_userdata_set.insert(ud_ptr as *mut c_void);
-
-        self.push_ref_at(&mt.0, state);
-        ffi::lua_setmetatable(state, -2);
-
-        Ok(AnyUserData(self.pop_ref()))
-    }
-
-    pub(crate) unsafe fn create_userdata_metatable_at(
-        &self,
-        registry: RawUserDataRegistry,
-        state: *mut ffi::lua_State,
-    ) -> Result<Integer> {
-        let type_id = registry.type_id;
-
-        if let Some(type_id) = type_id {
-            (*self.extra.get())
-                .registered_userdata_dtors
-                .insert(type_id, registry.destructor);
-        }
-
-        self.push_userdata_metatable_at(registry, state)?;
-
-        let mt_ptr = ffi::lua_topointer(state, -1);
-        let id = protect_lua!(state, 1, 0, |state| {
-            ffi::luaL_ref(state, ffi::LUA_REGISTRYINDEX)
-        })?;
-
-        if let Some(type_id) = type_id {
-            (*self.extra.get()).registered_userdata_t.insert(type_id, id);
-        }
-        self.register_userdata_metatable(mt_ptr, type_id);
-
-        Ok(id as Integer)
-    }
-
-    pub(crate) unsafe fn push_userdata_metatable_at(
-        &self,
-        mut registry: RawUserDataRegistry,
-        state: *mut ffi::lua_State,
-    ) -> Result<()> {
-        let mut stack_guard = StackGuard::new(state);
-        check_stack(state, 13)?;
-
-        // Prepare metatable, add meta methods first and then meta fields
-        let metatable_nrec = registry.meta_methods.len() + registry.meta_fields.len();
-        push_table(state, 0, metatable_nrec)?;
-        for (k, m) in registry.meta_methods {
-            self.push_at(state, self.create_callback(m, std::ptr::null())?)?;
-            rawset_field(state, -2, MetaMethod::validate(&k)?)?;
-        }
-        let mut has_name = false;
-        for (k, v) in registry.meta_fields {
-            has_name = has_name || k == MetaMethod::Type;
-            v?.push_into_specified_stack(self, state)?;
-            rawset_field(state, -2, MetaMethod::validate(&k)?)?;
-        }
-        // Set `__name/__type` if not provided
-        if !has_name {
-            let type_name = registry.type_name;
-            push_string(state, type_name.as_bytes())?;
-            rawset_field(state, -2, MetaMethod::Type.name())?;
-        }
-        let metatable_index = ffi::lua_absindex(state, -1);
-
-        let fields_nrec = registry.fields.len();
-        if fields_nrec > 0 {
-            // If `__index` is a table then update it in-place
-            let index_type = ffi::lua_getfield(state, metatable_index, cstr!("__index"));
-            match index_type {
-                ffi::LUA_TNIL | ffi::LUA_TTABLE => {
-                    if index_type == ffi::LUA_TNIL {
-                        // Create a new table
-                        ffi::lua_pop(state, 1);
-                        push_table(state, 0, fields_nrec)?;
-                    }
-                    for (k, v) in mem::take(&mut registry.fields) {
-                        v?.push_into_specified_stack(self, state)?;
-                        rawset_field(state, -2, &k)?;
-                    }
-                    rawset_field(state, metatable_index, "__index")?;
-                }
-                _ => {
-                    ffi::lua_pop(state, 1);
-                    // Fields will be converted to functions and added to field getters
-                }
-            }
-        }
-
-        let mut field_getters_index = None;
-        let field_getters_nrec = registry.field_getters.len() + registry.fields.len();
-        if field_getters_nrec > 0 {
-            push_table(state, 0, field_getters_nrec)?;
-            for (k, m) in registry.field_getters {
-                self.push_at(state, self.create_callback(m, std::ptr::null())?)?;
-                rawset_field(state, -2, &k)?;
-            }
-            for (k, v) in registry.fields {
-                unsafe extern "C-unwind" fn return_field(state: *mut ffi::lua_State) -> c_int {
-                    ffi::lua_pushvalue(state, ffi::lua_upvalueindex(1));
-                    1
-                }
-                v?.push_into_specified_stack(self, state)?;
-                protect_lua!(state, 1, 1, fn(state) {
-                    ffi::lua_pushcclosure(state, return_field, 1);
-                })?;
-                rawset_field(state, -2, &k)?;
-            }
-            field_getters_index = Some(ffi::lua_absindex(state, -1));
-        }
-
-        let mut field_setters_index = None;
-        let field_setters_nrec = registry.field_setters.len();
-        if field_setters_nrec > 0 {
-            push_table(state, 0, field_setters_nrec)?;
-            for (k, m) in registry.field_setters {
-                self.push_at(state, self.create_callback(m, std::ptr::null())?)?;
-                rawset_field(state, -2, &k)?;
-            }
-            field_setters_index = Some(ffi::lua_absindex(state, -1));
-        }
-
-        {
-            if (!registry.namecalls.is_empty() || registry.dynamic_method.is_some())
-                && !registry.disable_namecall_optimization
-            {
-                // OPTIMIZATION: ``__namecall`` metamethod on the metatable
-                self.push_at(
-                    state,
-                    self.create_namecall_map(NamecallMap {
-                        map: registry.namecalls,
-                        dynamic: registry.dynamic_method,
-                    })?,
-                )?;
-                rawset_field(state, -2, "__namecall")?;
-            }
-        }
-
-        let mut methods_index = None;
-        let methods_nrec = registry.methods.len() + registry.functions.len();
-        if methods_nrec > 0 {
-            // If `__index` is a table then update it in-place
-            let index_type = ffi::lua_getfield(state, metatable_index, cstr!("__index"));
-            match index_type {
-                ffi::LUA_TTABLE => {} // Update the existing table
-                _ => {
-                    // Create a new table
-                    ffi::lua_pop(state, 1);
-                    push_table(state, 0, methods_nrec)?;
-                }
-            }
-
-            for (k, m, dbgname) in registry.methods {
-                self.push_at(
-                    state,
-                    self.create_callback_namecall(
-                        m,
-                        dbgname.map(|x| x.as_ptr()).unwrap_or(std::ptr::null()),
-                    )?,
-                )?; // with namecall support
-                rawset_field(state, -2, &k)?;
-            }
-
-            for (k, m, dbgname) in registry.functions {
-                self.push_at(
-                    state,
-                    self.create_callback_namecall(
-                        m,
-                        dbgname.map(|x| x.as_ptr()).unwrap_or(std::ptr::null()),
-                    )?,
-                )?; // with namecall support
-                rawset_field(state, -2, &k)?;
-            }
-
-            match index_type {
-                ffi::LUA_TTABLE => {
-                    ffi::lua_pop(state, 1); // All done
-                }
-                ffi::LUA_TNIL => {
-                    // Set the new table as `__index`
-                    rawset_field(state, metatable_index, "__index")?;
-                }
-                _ => {
-                    methods_index = Some(ffi::lua_absindex(state, -1));
-                }
-            }
-        }
-
-        init_userdata_metatable(
-            state,
-            metatable_index,
-            field_getters_index,
-            field_setters_index,
-            methods_index,
-        )?;
-
-        // Update stack guard to keep metatable after return
-        stack_guard.keep(1);
-
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub(crate) unsafe fn register_userdata_metatable(&self, mt_ptr: *const c_void, type_id: Option<TypeId>) {
-        (*self.extra.get()).registered_userdata_mt.insert(mt_ptr, type_id);
-    }
-
-    // Returns `TypeId` for the userdata ref, checking that it's registered and not destructed.
-    //
-    // Returns `None` if the userdata is registered but non-static.
-    #[inline(always)]
-    pub(crate) fn get_userdata_ref_type_id(&self, vref: &ValueRef) -> Result<Option<TypeId>> {
-        unsafe { 
-            let state = self.state();
-            let _sg = StackGuard::new(state);
-            self.push_ref_at(vref, state);
-            self.get_userdata_type_id_inner(state, -1) 
-        }
-    }
-
-    // Same as `get_userdata_ref_type_id` but assumes the userdata is already on the stack.
-    pub(crate) unsafe fn get_userdata_type_id<T>(
-        &self,
-        state: *mut ffi::lua_State,
-        idx: c_int,
-    ) -> Result<Option<TypeId>> {
-        match self.get_userdata_type_id_inner(state, idx) {
-            Ok(type_id) => Ok(type_id),
-            Err(Error::UserDataTypeMismatch) if ffi::lua_type(state, idx) != ffi::LUA_TUSERDATA => {
-                // Report `FromLuaConversionError` instead
-                // In Luau `luaL_typename` return heap-allocated string that is valid only for
-                // the `state` lifetime.
-                // `lua_typename` is used instead to get a truly static string.
-                let idx_type_name = CStr::from_ptr(ffi::lua_typename(state, ffi::lua_type(state, idx)));
-                let idx_type_name = idx_type_name.to_str().unwrap();
-                let message = format!("expected userdata of type '{}'", short_type_name::<T>());
-                Err(Error::from_lua_conversion(idx_type_name, "userdata", message))
-            }
-            Err(err) => Err(err),
-        }
-    }
-
-    unsafe fn get_userdata_type_id_inner(
-        &self,
-        state: *mut ffi::lua_State,
-        idx: c_int,
-    ) -> Result<Option<TypeId>> {
-        let mt_ptr = get_metatable_ptr(state, idx);
-        if mt_ptr.is_null() {
-            return Err(Error::UserDataTypeMismatch);
-        }
-
-        // Fast path to skip looking up the metatable in the map
-        let (last_mt, last_type_id) = (*self.extra.get()).last_checked_userdata_mt;
-        if last_mt == mt_ptr {
-            return Ok(last_type_id);
-        }
-
-        match (*self.extra.get()).registered_userdata_mt.get(&mt_ptr) {
-            Some(&type_id) if type_id == Some(TypeId::of::<DestructedUserdata>()) => {
-                Err(Error::UserDataDestructed)
-            }
-            Some(&type_id) => {
-                (*self.extra.get()).last_checked_userdata_mt = (mt_ptr, type_id);
-                Ok(type_id)
-            }
-            None => Err(Error::UserDataTypeMismatch),
-        }
-    }
-
-    // Pushes a ValueRef (userdata) value onto the stack, returning their `TypeId`.
-    // Uses 1 stack space, does not call checkstack.
-    pub(crate) unsafe fn push_userdata_ref_at(
-        &self,
-        vref: &ValueRef,
-        state: *mut ffi::lua_State,
-    ) -> Result<Option<TypeId>> {
-        self.push_ref_at(vref, state);
-        let type_id = self.get_userdata_type_id_inner(state, -1)?;
-        Ok(type_id)
-    }
-
     // Creates a Function out of a Callback containing a 'static Fn.
     pub(crate) fn create_callback(&self, func: Callback, debugname: *const c_char) -> Result<Function> {
         unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
@@ -1082,107 +712,6 @@ impl RawLua {
                 func,
                 call_callback,
                 debugname,
-                None,
-            )?;
-
-            Ok(Function(self.pop_ref()))
-        }
-    }
-
-    // Creates a Function out of a NamecallCallback containing a 'static Fn.
-    pub(crate) fn create_callback_namecall(
-        &self,
-        func: NamecallCallback,
-        debugname: *const c_char,
-    ) -> Result<Function> {
-        unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
-            let upvalue = ffi::lua_getcclosuredata(state) as *mut NamecallCallback;
-            let extra = crate::state::extra::ExtraData::get(state);
-            callback_error_ext_yieldable(
-                state,
-                extra,
-                |extra, nargs| {
-                    // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
-                    // The lock must be already held as the callback is executed
-                    let rawlua = (*extra).raw_lua();
-                    (*upvalue)(rawlua, nargs)
-                },
-                false,
-            )
-        }
-
-        let state = self.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            check_stack(state, 4)?;
-
-            crate::util::push_fat_cclosure(
-                state,
-                func,
-                call_callback,
-                debugname,
-                None,
-            )?;
-
-            Ok(Function(self.pop_ref()))
-        }
-    }
-
-    // Handles namecalls in userdata
-    pub(crate) fn create_namecall_map(&self, map: NamecallMap) -> Result<Function> {
-        unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
-            let upvalue = ffi::lua_getcclosuredata(state) as *mut NamecallMap;
-            let extra = crate::state::extra::ExtraData::get(state);
-            callback_error_ext_yieldable(
-                state,
-                extra,
-                |extra, nargs| {
-                    // Get namecall method name
-                    let method = unsafe {
-                        let name = ffi::lua_namecallatom(state, std::ptr::null_mut());
-                        if name.is_null() {
-                            return Err(crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::runtime("Namecall method is not set")));
-                        }
-
-                        let name = CStr::from_ptr(name);
-                    let name = name
-                        .to_str()
-                        .map_err(|_| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::runtime("Invalid namecall method")))?;
-                    if name.is_empty() {
-                        return Err(crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::runtime("Namecall method is empty")));
-                    }
-
-                    name
-                };
-
-                if let Some(func) = (*upvalue).map.get(method) {
-                        // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
-                        // arguments) The lock must be already held as the callback is
-                        // executed
-                        let rawlua = (*extra).raw_lua();
-                        (func)(rawlua, nargs)
-                    } else if let Some(dynamic_method) = &(*upvalue).dynamic {
-                    // If dynamic method is set, call it
-                    let rawlua = (*extra).raw_lua();
-                    (dynamic_method)(rawlua, method, nargs)
-                } else {
-                        Err(crate::state::util::map_err_to_value((*extra).raw_lua().lua(), Error::runtime(format!("Method `{}` not found", method))))
-                    }
-                },
-                false,
-            )
-        }
-
-        let state = self.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            check_stack(state, 4)?;
-
-            crate::util::push_fat_cclosure(
-                state,
-                map,
-                call_callback,
-                c"__namecall".as_ptr(),
                 None,
             )?;
 

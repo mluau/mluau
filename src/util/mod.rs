@@ -6,16 +6,11 @@ use std::{slice, str};
 use crate::error::{Error, Result};
 
 pub(crate) use error::{
-    error_traceback, error_traceback_thread, init_destructed_userdata_registry, pop_error,
+    error_traceback, error_traceback_thread, pop_error,
     protect_lua_closure, call_trampoline,
 };
 pub(crate) use short_names::short_type_name;
-#[cfg(feature = "dynamic-userdata")]
-pub(crate) use userdata::push_userdata_dyn;
-pub(crate) use userdata::{
-    get_destructed_userdata_metatable, get_userdata, push_fat_cclosure, push_userdata,
-    take_userdata, DESTRUCTED_USERDATA_METATABLE,
-};
+pub(crate) use userdata::{push_fat_cclosure};
 
 // Checks that Lua has enough free stack space for future stack operations. On failure, this will
 // panic with an internal error message.
@@ -58,11 +53,6 @@ impl StackGuard {
     #[inline]
     pub(crate) fn with_top(state: *mut ffi::lua_State, top: c_int) -> StackGuard {
         StackGuard { state, top }
-    }
-
-    #[inline]
-    pub(crate) fn keep(&mut self, n: c_int) {
-        self.top += n;
     }
 }
 
@@ -138,30 +128,8 @@ pub(crate) unsafe fn push_table(state: *mut ffi::lua_State, narr: usize, nrec: u
     protect_lua!(state, 0, 1, |state| ffi::lua_createtable(state, narr, nrec))
 }
 
-// Uses 4 stack spaces, does not call checkstack.
-pub(crate) unsafe fn rawget_field(state: *mut ffi::lua_State, table: c_int, field: &str) -> Result<c_int> {
-    ffi::lua_pushvalue(state, table);
-    protect_lua!(state, 1, 1, |state| {
-        ffi::lua_pushlstring(state, field.as_ptr() as *const c_char, field.len());
-        ffi::lua_rawget(state, -2)
-    })
-}
-
-// Uses 4 stack spaces, does not call checkstack.
-pub(crate) unsafe fn rawset_field(state: *mut ffi::lua_State, table: c_int, field: &str) -> Result<()> {
-    ffi::lua_pushvalue(state, table);
-    protect_lua!(state, 2, 0, |state| {
-        ffi::lua_pushlstring(state, field.as_ptr() as *const c_char, field.len());
-        ffi::lua_rotate(state, -3, 2);
-        ffi::lua_rawset(state, -3);
-    })
-}
-
 // Returns Lua main thread for Lua >= 5.2 or checks that the passed thread is main for Lua 5.1.
-// Does not call lua_checkstack, uses 1 stack space.
 pub(crate) unsafe fn get_main_state(state: *mut ffi::lua_State) -> Option<*mut ffi::lua_State> {
-
-
     Some(ffi::lua_mainthread(state))
 }
 

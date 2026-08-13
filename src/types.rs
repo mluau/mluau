@@ -2,7 +2,7 @@ use std::os::raw::{c_int, c_void};
 
 use crate::error::Result;
 use crate::state::{Lua, RawLua};
-
+use std::ops::Deref;
 // Re-export mutex wrappers
 pub use sync::XRc;
 pub(crate) use sync::{ArcReentrantMutexGuard, ReentrantMutex, ReentrantMutexGuard, XWeak};
@@ -11,12 +11,45 @@ pub use app_data::{AppData, AppDataRef, AppDataRefMut};
 pub use either::Either;
 pub(crate) use value_ref::ValueRef;
 
-use std::collections::HashMap;
-
 /// Type of Lua integer numbers.
 pub type Integer = ffi::lua_Integer;
 /// Type of Lua floating point numbers.
 pub type Number = ffi::lua_Number;
+
+/// A reference to a value `T`
+/// 
+/// Required to hold the underlying Luau VM alive until reference is dropped
+pub struct LuaRef<'a, T: 'static> {
+    lua: Lua,     
+    data: &'a T,
+}
+
+impl<'a, T: 'static> LuaRef<'a, T> {
+    pub(crate) fn new(lua: Lua, data: &'a T) -> Self {
+        Self { lua: lua, data }
+    }
+
+    pub(crate) fn new_opt(lua: Lua, data: Option<&'a T>) -> Option<Self> {
+        match data {
+            Some(data) => Some(Self::new(lua, data)),
+            None => None
+        }
+    }
+
+    /// Returns a reference to the Lua reference backing `T`
+    pub fn lua(&self) -> &Lua {
+        &self.lua
+    }
+}
+
+impl<'a, T: 'static> Deref for LuaRef<'a, T> {
+    type Target = T;
+
+    #[inline]
+    fn deref(&self) -> &T {
+        self.data
+    }
+}
 
 #[repr(C)]
 pub(crate) struct ErasedHeader {
@@ -44,6 +77,29 @@ impl ErasedHeader {
             data,
         });
         Box::into_raw(wrapper) as *mut std::ffi::c_void
+    }
+
+    /// Returns the exact number of bytes needed to store the wrapper in the GC heap.
+    #[inline]
+    pub(crate) const fn wrapper_size<T: 'static>() -> usize {
+        std::mem::size_of::<ErasedWrapper<T>>()
+    }
+
+    /// Initializes uninitialized memory allocated by the Luau GC.
+    /// 
+    /// Note: Luau GC blocks are deallocated by GC itself so we use std::ptr::drop_in_place instead and avoid manual boxing
+    #[inline]
+    pub(crate) unsafe fn place_into_gc_memory<T: 'static>(ptr: *mut std::ffi::c_void, data: T) {
+        std::ptr::write(ptr as *mut ErasedWrapper<T>, ErasedWrapper {
+            header: ErasedHeader {
+                type_id: std::any::TypeId::of::<T>(),
+                drop_fn: |p| unsafe {
+                    // SAFETY: Luau GC will handle freeing the actual memory block, we just need to drop_in_place
+                    std::ptr::drop_in_place(p as *mut ErasedWrapper<T>);
+                },
+            },
+            data,
+        });
     }
 
     #[inline]
@@ -90,21 +146,6 @@ pub(crate) type Callback = Box<CallbackFn<'static>>;
 pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> std::result::Result<c_int, crate::Value> + Send + 'static>;
 #[cfg(not(feature = "send"))]
 pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> std::result::Result<c_int, crate::Value> + 'static>;
-
-#[cfg(all(feature = "luau", feature = "send"))]
-pub(crate) type NamecallCallback = XRc<dyn Fn(&RawLua, c_int) -> std::result::Result<c_int, crate::Value> + Send + 'static>;
-#[cfg(all(feature = "luau", not(feature = "send")))]
-pub(crate) type NamecallCallback = XRc<dyn Fn(&RawLua, c_int) -> std::result::Result<c_int, crate::Value> + 'static>;
-
-#[cfg(all(feature = "luau", feature = "send"))]
-pub(crate) type DynamicCallback = XRc<dyn Fn(&RawLua, &str, c_int) -> std::result::Result<c_int, crate::Value> + Send + 'static>;
-#[cfg(all(feature = "luau", not(feature = "send")))]
-pub(crate) type DynamicCallback = XRc<dyn Fn(&RawLua, &str, c_int) -> std::result::Result<c_int, crate::Value> + 'static>;
-
-pub struct NamecallMap {
-    pub(crate) map: HashMap<String, NamecallCallback>,
-    pub(crate) dynamic: Option<DynamicCallback>,
-}
 
 /// Type to set next Lua VM action after executing interrupt or hook function.
 pub enum VmState {
@@ -160,8 +201,6 @@ impl<T: Sync> MaybeSync for T {}
 pub trait MaybeSync {}
 #[cfg(not(feature = "send"))]
 impl<T> MaybeSync for T {}
-
-pub(crate) struct DestructedUserdata;
 
 pub(crate) trait LuaType {
     const TYPE_ID: c_int;

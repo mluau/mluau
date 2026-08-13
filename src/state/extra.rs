@@ -1,21 +1,11 @@
-use std::any::TypeId;
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
-use std::os::raw::{c_int, c_void};
-use std::ptr;
-use std::sync::Arc;
-
-use parking_lot::Mutex;
-use rustc_hash::FxHashMap;
-#[cfg(feature = "dynamic-userdata")]
-use rustc_hash::FxHashSet;
+use std::os::raw::c_int;
 
 use crate::error::Result;
 use crate::state::RawLua;
 use crate::stdlib::StdLib;
-use crate::types::{AppData, ReentrantMutex, XRc};
-
-use crate::userdata::RawUserDataRegistry;
+use crate::types::{AppData, ErasedHeader, ReentrantMutex, XRc};
 
 #[cfg(any(feature = "luau", doc))]
 use crate::chunk::Compiler;
@@ -23,27 +13,19 @@ use crate::MultiValue;
 
 use super::{Lua, WeakLua};
 
-
-
-
+// userdata (v2) tag
+//
+// we use 254 as the tag here to try and avoid conflicts with other embedders although other embedders *should*
+// be using the dedicated lua_findunuseduserdatatag to find unused tags
+//
+// We use a const here though for performance purposes
+pub(crate) const USERDATA2_TAG: c_int = 254;
 
 /// Data associated with the Lua state.
 pub(crate) struct ExtraData {
     pub(super) lua: MaybeUninit<Lua>,
     pub(super) weak: MaybeUninit<WeakLua>,
     pub(super) owned: bool,
-
-    pub(super) pending_userdata_reg: FxHashMap<TypeId, RawUserDataRegistry>,
-    pub(super) registered_userdata_dtors: FxHashMap<TypeId, ffi::lua_CFunction>,
-    pub(super) registered_userdata_t: FxHashMap<TypeId, c_int>,
-    pub(super) registered_userdata_mt: FxHashMap<*const c_void, Option<TypeId>>,
-    pub(super) last_checked_userdata_mt: (*const c_void, Option<TypeId>),
-
-    #[cfg(feature = "dynamic-userdata")]
-    pub(crate) dyn_userdata_set: FxHashSet<*mut c_void>,
-
-    // When Lua instance dropped, setting `None` would prevent collecting `RegistryKey`s
-    pub(super) registry_unref_list: Arc<Mutex<Option<Vec<c_int>>>>,
 
     // Containers to store arbitrary data (extensions)
     pub(super) app_data: AppData,
@@ -96,26 +78,33 @@ impl Drop for ExtraData {
 
             self.weak.assume_init_drop();
         }
-        *self.registry_unref_list.lock() = None;
     }
 }
 
 impl ExtraData {
-
     pub(super) unsafe fn init(state: *mut ffi::lua_State, owned: bool) -> XRc<UnsafeCell<Self>> {
+        // Set global dtor for userdata v2, the data `ud` is guaranteed to be a ErasedHeader vtable
+        //
+        // All mluau owned userdata v2 will use this dtor for cleanup
+        unsafe extern "C" fn userdata2_dtor(
+            state: *mut ffi::lua_State,
+            ud: *mut std::os::raw::c_void,
+        ) {
+            // Almost none Lua operations are allowed when destructor is running,
+            // so we need to set a flag to prevent calling any Lua functions
+            let extra = ExtraData::get(state);
+            let prev_gc = (*extra).running_gc;
+            (*extra).running_gc = true;
+            ErasedHeader::drop(ud); // Note: panicking in the dtor for a userdata is not allowed and will call abort() bc this is a extern "C"
+            (*extra).running_gc = prev_gc;
+        }
+        ffi::lua_setuserdatadtor(state, USERDATA2_TAG, Some(userdata2_dtor));
+
         #[allow(clippy::arc_with_non_send_sync)]
         let extra = XRc::new(UnsafeCell::new(ExtraData {
             lua: MaybeUninit::uninit(),
             weak: MaybeUninit::uninit(),
             owned,
-            pending_userdata_reg: FxHashMap::default(),
-            registered_userdata_dtors: FxHashMap::default(),
-            registered_userdata_t: FxHashMap::default(),
-            registered_userdata_mt: FxHashMap::default(),
-            last_checked_userdata_mt: (ptr::null(), None),
-            #[cfg(feature = "dynamic-userdata")]
-            dyn_userdata_set: rustc_hash::FxHashSet::default(),
-            registry_unref_list: Arc::new(Mutex::new(Some(Vec::new()))),
             app_data: AppData::default(),
             app_data_priv: AppData::default(),
             safe: false,
@@ -204,17 +193,5 @@ impl ExtraData {
     #[inline(always)]
     pub(super) unsafe fn weak(&self) -> &WeakLua {
         self.weak.assume_init_ref()
-    }
-
-    #[inline(always)]
-
-    pub(crate) unsafe fn get_userdata_dtor(&self, type_id: TypeId) -> Option<ffi::lua_CFunction> {
-        self.registered_userdata_dtors.get(&type_id).copied()
-    }
-
-    #[inline(always)]
-    #[cfg(feature = "dynamic-userdata")]
-    pub(crate) fn is_userdata_dynamic(&self, ptr: *mut c_void) -> bool {
-        self.dyn_userdata_set.contains(&ptr)
     }
 }

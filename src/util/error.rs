@@ -4,19 +4,7 @@ use std::ptr;
 
 use crate::error::{Error, Result};
 use crate::memory::MemoryState;
-use crate::state::{ExtraData, callback_error_ext};
-use crate::util::{
-    check_stack, push_table, rawset_field, to_string, DESTRUCTED_USERDATA_METATABLE,
-};
-
-// Alias to `callback_error_ext`
-unsafe fn callback_error<F, R>(state: *mut ffi::lua_State, f: F) -> R
-where
-    F: FnOnce(c_int) -> Result<R>,
-{
-    let extra = ExtraData::get(state);
-    callback_error_ext(state, extra, |extra, status| f(status).map_err(|e| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), e)))
-}
+use crate::util::to_string;
 
 // Pops an error off of the stack and returns it. The specific behavior depends on the type of the
 // error at the top of the stack:
@@ -179,29 +167,4 @@ pub(crate) unsafe fn error_traceback_thread(state: *mut ffi::lua_State, thread: 
         ffi::luaL_traceback(state, thread, s, 0);
         ffi::lua_remove(state, -2);
     }
-}
-
-// Initialize the destructed userdata metatables.
-pub(crate) unsafe fn init_destructed_userdata_registry(state: *mut ffi::lua_State) -> Result<()> {
-    check_stack(state, 3)?;
-
-    // Create destructed userdata metatable
-    unsafe extern "C-unwind" fn destructed_error(state: *mut ffi::lua_State) -> c_int {
-        callback_error(state, |_| Err(Error::UserDataDestructed))
-    }
-
-    push_table(state, 0, 2)?;
-    ffi::lua_pushcfunction(state, destructed_error);
-    for &method in &["__index", "__newindex"] {
-        ffi::lua_pushvalue(state, -1);
-        rawset_field(state, -3, method)?;
-    }
-    ffi::lua_pop(state, 1);
-
-    protect_lua!(state, 1, 0, fn(state) {
-        let destructed_mt_key = &DESTRUCTED_USERDATA_METATABLE as *const u8 as *const c_void;
-        ffi::lua_rawsetp(state, ffi::LUA_REGISTRYINDEX, destructed_mt_key);
-    })?;
-
-    Ok(())
 }

@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 use crate::function::Function;
 use crate::state::RawLua;
 use crate::traits::{FromLuaMulti, IntoLuaMulti};
-use crate::types::{LuaType, ValueRef};
+use crate::types::{LuaRef, LuaType, ValueRef};
 
 use crate::types::MaybeSync;
 use crate::util::{check_stack, error_traceback_thread, pop_error, StackGuard};
@@ -108,18 +108,18 @@ impl Thread {
     /// does not match the stored data type.
     ///
     /// This is a Luau specific extension.
-
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn thread_data<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<&T> {
-        let _lua = self.0.lua.lock();
+    pub fn thread_data<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<LuaRef<'_, T>> {
+        let lua = self.0.lua.lock();
         let thread_state = self.state();
-        unsafe {
+        let ptr = unsafe {
             let current = ffi::lua_getthreaddata(thread_state);
             if current.is_null() {
                 return None;
             }
             crate::types::ErasedHeader::downcast_ref(current)
-        }
+        };
+        LuaRef::new_opt(lua.lua().clone(), ptr)
     }
 
     /// Sets the thread data. The set thread data will automatically be dropped upon Luau GC
@@ -127,7 +127,6 @@ impl Thread {
     /// Errors if thread data was already set for the current lua thread.
     ///
     /// This is a Luau specific extension.
-
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_thread_data<T: 'static + MaybeSend + MaybeSync>(&self, data: T) -> Result<()> {
         let lua = self.0.lua.lock();

@@ -7,11 +7,12 @@ use crate::function::Function;
 use crate::luau::RESTRICTED_FFLAGS;
 use crate::memory::MemoryState;
 use crate::multi::MultiValue;
+use crate::state::extra::USERDATA2_TAG;
 use crate::stdlib::StdLib;
 use crate::string::String;
 use crate::table::Table;
 use crate::thread::Thread;
-use std::any::TypeId;
+use crate::userdata::AnyUserData;
 use std::cell::{BorrowError, BorrowMutError, RefCell};
 use std::ffi::CStr;
 
@@ -29,7 +30,6 @@ use crate::types::{
     AppDataRef, AppDataRefMut, ArcReentrantMutexGuard, Integer, LuaType, MaybeSend, MaybeSync, Number,
     ReentrantMutex, ReentrantMutexGuard, VmState, XRc, XWeak,
 };
-use crate::userdata::{AnyUserData, UserData, UserDataRegistry, UserDataStorage};
 use crate::util::{assert_stack, check_stack, protect_lua_closure, StackGuard};
 use crate::value::{Nil, Value};
 
@@ -1219,76 +1219,50 @@ impl Lua {
         unsafe { self.lock().create_thread(&func) }
     }
 
-    /// Creates a Lua userdata object from a custom userdata type.
-    ///
-    /// All userdata instances of the same type `T` shares the same metatable.
-    #[inline]
-    pub fn create_userdata<T>(&self, data: T) -> Result<AnyUserData>
-    where
-        T: UserData + MaybeSend + MaybeSync + 'static,
-    {
-        unsafe { self.lock().make_userdata(UserDataStorage::new(data)) }
-    }
-
-
-    /// Creates a Lua userdata object from a custom Rust type.
-    ///
-    /// You can register the type using [`Lua::register_userdata_type`] to add fields or methods
-    /// _before_ calling this method.
-    /// Otherwise, the userdata object will have an empty metatable.
-    ///
-    /// All userdata instances of the same type `T` shares the same metatable.
-    #[inline]
-    pub fn create_any_userdata<T>(&self, data: T) -> Result<AnyUserData>
-    where
-        T: MaybeSend + MaybeSync + 'static,
-    {
-        unsafe { self.lock().make_any_userdata(UserDataStorage::new(data)) }
-    }
-
-
-    /// Registers a custom Rust type in Lua to use in userdata objects.
-    ///
-    /// This methods provides a way to add fields or methods to userdata objects of a type `T`.
-    pub fn register_userdata_type<T: 'static>(&self, f: impl FnOnce(&mut UserDataRegistry<T>)) -> Result<()> {
-        let type_id = TypeId::of::<T>();
-        let mut registry = UserDataRegistry::new(self);
-        f(&mut registry);
-
-        let lua = self.lock();
-        unsafe {
-            // Deregister the type if it already registered
-            if let Some(table_id) = (*lua.extra.get()).registered_userdata_t.remove(&type_id) {
-                ffi::luaL_unref(lua.state(), ffi::LUA_REGISTRYINDEX, table_id);
-            }
-
-            // Add to "pending" registration map
-            ((*lua.extra.get()).pending_userdata_reg).insert(type_id, registry.into_raw());
-        }
-        Ok(())
-    }
-
-    /// Creates a new dynamic userdata type.
-    ///
-    /// This is useful for when you do not have a type `T` known at compile time,
-    /// but you want to create a userdata object with a metatable that has fields and methods
-    /// defined at runtime.
-    ///
-    /// Additionally, a dynamic userdata type can also have a associated data object
-    /// that can be accessed within methods via `AnyUserData::dynamic_data`.
-    #[cfg(feature = "dynamic-userdata")]
-    pub fn create_dynamic_userdata<T>(&self, data: T, metatable: &Table) -> Result<AnyUserData>
-    where
-        T: Send + Sync + 'static,
-    {
+    /// Creates a userdata with data and optional metatable.
+    pub fn create_userdata<T: 'static + MaybeSend + MaybeSync>(&self, data: T, metatable: Option<&Table>) -> Result<AnyUserData> {
         let lua = self.lock();
         let state = lua.state();
         unsafe {
             let _sg = StackGuard::new(state);
             check_stack(state, 3)?;
-            let ud_ref = lua.make_dyn_userdata(metatable, Box::new(data))?;
-            Ok(ud_ref)
+
+            // Create ud_ptr, then use place_into_gc_memory to write data onto the GC allocated memory
+            let ud_ptr = protect_lua!(state, 0, 1, |state| {
+                ffi::lua_newuserdatatagged(state, crate::types::ErasedHeader::wrapper_size::<T>(), USERDATA2_TAG)
+            })?;
+            crate::types::ErasedHeader::place_into_gc_memory(ud_ptr, data);
+
+            // Set metatable if we have one
+            if let Some(mt) = metatable {
+                lua.push_ref_at(&mt.0, state);
+                ffi::lua_setmetatable(state, -2);
+            }
+
+            Ok(AnyUserData(lua.pop_ref()))
         }
+    }
+
+    /// Executes `f` with the CStr of the method name within a `__namecall` callback. 
+    /// 
+    /// For example: inside a `ud:method()` callback in Rust, this will execute f with a CStr of "method"
+    pub fn with_namecall<R, F>(&self, f: F) -> R
+    where
+        F: for<'a> FnOnce(Option<&'a CStr>) -> R,
+    {
+        let lua = self.lock();
+        let state = lua.state();
+        
+        let atom_slice = unsafe {
+            let ptr = ffi::lua_namecallatom(state, std::ptr::null_mut());
+            if ptr.is_null() {
+                None
+            } else {
+                Some(std::ffi::CStr::from_ptr(ptr))
+            }
+        };
+        
+        f(atom_slice)
     }
 
     /// Create a Lua userdata "proxy" object from a custom userdata type.

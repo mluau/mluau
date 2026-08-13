@@ -312,7 +312,7 @@ fn test_external_buffer_downcast() -> Result<()> {
     // Downcast to Vec<u8>
     let vec_ref = buf.downcast_ref::<Vec<u8>>();
     assert!(vec_ref.is_some());
-    assert_eq!(vec_ref.unwrap(), b"hello, world");
+    assert_eq!(*vec_ref.unwrap(), b"hello, world");
 
     // Try downcasting to wrong type
     let wrong_ref = buf.downcast_ref::<Vec<u16>>();
@@ -347,7 +347,7 @@ fn test_external_buffer_arc() -> Result<()> {
 
     let arc_ref = buf.downcast_ref::<Arc<Vec<u8>>>();
     assert!(arc_ref.is_some());
-    assert!(Arc::ptr_eq(arc_ref.unwrap(), &data));
+    assert!(Arc::ptr_eq(&arc_ref.unwrap(), &data));
 
     // Ensure memory lifecycle works on GC
     assert_eq!(Arc::strong_count(&data), 2);

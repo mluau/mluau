@@ -233,6 +233,7 @@ unsafe extern "C-unwind" {
     pub fn lua_newuserdatatagged(L: *mut lua_State, sz: usize, tag: c_int) -> *mut c_void;
     pub fn lua_newuserdatataggedwithmetatable(L: *mut lua_State, sz: usize, tag: c_int) -> *mut c_void;
     pub fn lua_newuserdatadtor(L: *mut lua_State, sz: usize, dtor: lua_Destructor) -> *mut c_void;
+    pub fn lua_findunuseduserdatatag(L: *mut lua_State) -> c_int;
 
     pub fn lua_newbuffer(L: *mut lua_State, sz: usize) -> *mut c_void;
     pub fn lua_newexternalbuffer(
@@ -365,8 +366,8 @@ unsafe extern "C-unwind" {
     pub fn lua_ref(L: *mut lua_State, idx: c_int) -> c_int;
     pub fn lua_unref(L: *mut lua_State, r#ref: c_int);
     pub fn lua_refpool(L: *mut lua_State, idx: c_int) -> c_int;
-    pub fn lua_unrefpool(L: *mut lua_State, r#ref: c_int);
-    pub fn lua_getrefpool(L: *mut lua_State, r#ref: c_int) -> c_int;
+    pub fn lua_unrefpool(L: *mut lua_State, ref_: c_int);
+    pub fn lua_getrefpool(L: *mut lua_State, ref_: c_int) -> c_int;
 }
 
 //

@@ -261,27 +261,6 @@ impl Error {
     pub fn external<T: Into<Box<dyn StdError + Send + Sync>>>(err: T) -> Self {
         Error::ExternalError(err.into().to_string())
     }
-
-    pub(crate) fn bad_self_argument(to: &str, cause: Error) -> Self {
-        Error::BadArgument {
-            to: Some(to.to_string()),
-            pos: 1,
-            name: Some("self".to_string()),
-            cause: Arc::new(cause),
-        }
-    }
-
-    pub(crate) fn from_lua_conversion(
-        from: &'static str,
-        to: impl ToString,
-        message: impl Into<Option<String>>,
-    ) -> Self {
-        Error::FromLuaConversionError {
-            from,
-            to: to.to_string(),
-            message: message.into(),
-        }
-    }
 }
 
 impl From<std::io::Error> for Error {

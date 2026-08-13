@@ -4,8 +4,9 @@ use std::os::raw::c_void;
 #[cfg(feature = "serde")]
 use serde::ser::{Serialize, Serializer};
 
+use crate::MaybeSend;
 use crate::state::RawLua;
-use crate::types::ValueRef;
+use crate::types::{LuaRef, MaybeSync, ValueRef};
 
 /// A Luau buffer type.
 ///
@@ -64,19 +65,16 @@ impl Buffer {
     /// # Safety:
     /// 
     /// Assumes the external buffer was created by mluau's create_external_buffer
-    pub fn downcast_ref<T: ExternalBuffer>(&self) -> Option<&T> {
+    pub fn downcast_ref<T: ExternalBuffer>(&self) -> Option<LuaRef<'_, T>> {
         let lua = self.0.lua.lock();
         let state = lua.state();
-        let userdata = unsafe { 
+        let ptr = unsafe { 
             let _sg = crate::util::StackGuard::new(state);
             lua.push_ref_at(&self.0, state);
-            ffi::lua_getbufferuserdata(state, -1) 
+            let ud = ffi::lua_getbufferuserdata(state, -1);
+            crate::types::ErasedHeader::downcast_ref(ud)
         };
-        if userdata.is_null() {
-            return None;
-        }
-
-        unsafe { crate::types::ErasedHeader::downcast_ref(userdata) }
+        LuaRef::new_opt(lua.lua().clone(), ptr)
     }
 
     /// Reads given number of bytes from the buffer at the given offset.
@@ -239,7 +237,7 @@ impl crate::types::LuaType for Buffer {
 /// and safe to be read by the Luau VM for the lifetime of this object. Note that implementing
 /// this trait by itself does not require the memory to be safe for mutation by the Luau VM;
 /// mutability safety is only a concern if the type also implements `ExternalBufferMut`.
-pub unsafe trait ExternalBuffer: 'static {
+pub unsafe trait ExternalBuffer: 'static + MaybeSend + MaybeSync {
     /// Returns a pointer to the buffer data.
     fn as_ptr(&self) -> *const u8;
     /// Returns the length of the buffer.
