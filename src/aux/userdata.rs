@@ -439,3 +439,14 @@ impl<T: UserData> IntoLua for T {
         Ok(Value::UserData(ud))
     }
 }
+
+pub trait LuaUserDataExt {
+    fn create_userdata<T: UserData>(&self, data: T) -> crate::Result<AnyUserData>;
+}
+
+impl LuaUserDataExt for Lua {
+    fn create_userdata<T: UserData>(&self, data: T) -> crate::Result<AnyUserData> {
+        let ud = UserDataRegistry::create_userdata(self, data)?;
+        Ok(ud)
+    }
+}
