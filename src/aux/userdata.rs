@@ -1,6 +1,8 @@
 use std::marker::PhantomData;
 use std::fmt;
 
+use rustc_hash::FxHashMap;
+
 use crate::types::MaybeSync;
 use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaErr, IntoLuaMulti, IntoLuaResultMulti, Lua, MaybeSend, MultiValue, Table, TypedUserData, Value, XRc};
 
@@ -114,6 +116,12 @@ impl AsRef<str> for MetaMethod {
     }
 }
 
+impl Into<&'static str> for MetaMethod {
+    fn into(self) -> &'static str {
+        self.name()
+    }
+}
+
 impl From<MetaMethod> for String {
     #[inline]
     fn from(method: MetaMethod) -> Self {
@@ -130,7 +138,7 @@ pub trait UserDataMethods<T> {
     ///
     /// If `add_meta_method` is used to set the `__index` metamethod, the `__index` metamethod will
     /// be used as a fall-back if no regular method is found.
-    fn add_method<M, A, R>(&mut self, name: &'static str, method: M)
+    fn add_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
         M: Fn(&Lua, &T, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
@@ -140,7 +148,7 @@ pub trait UserDataMethods<T> {
     ///
     /// The first argument will be a [`AnyUserData`] of type `T` if the method if it is passed in as 
     /// the first argument: `my_userdata.my_method(my_userdata, arg1, arg2)`.
-    fn add_function<F, A, R>(&mut self, name: &'static str, function: F) where
+    fn add_function<F, A, R>(&mut self, name: impl Into<&'static str>, function: F) where
         F: Fn(&Lua, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti;
@@ -148,7 +156,7 @@ pub trait UserDataMethods<T> {
     /// Add a metamethod which accepts a `&T` as the first parameter.
     /// 
     /// Note: __index is not an allowed name here for performance purposes, use userdata v2 low-level API instead for that
-    fn add_meta_method<M, A, R>(&mut self, name: &'static str, method: M)
+    fn add_meta_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
         M: Fn(&Lua, &T, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
@@ -159,7 +167,7 @@ pub trait UserDataMethods<T> {
     /// Metamethods for binary operators can be triggered if either the left or right argument to
     /// the binary operator has a metatable, so the first argument here is not necessarily a
     /// userdata of type `T`.
-    fn add_meta_function<F, A, R>(&mut self, name: &'static str, function: F)
+    fn add_meta_function<F, A, R>(&mut self, name: impl Into<&'static str>, function: F)
     where
         F: Fn(&Lua, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
@@ -176,7 +184,7 @@ pub trait UserDataFields<T> {
     /// Static fields are usually shared between all instances of the [`UserData`] of the same type.
     /// 
     /// Note: __index is not an allowed name here for performance purposes, use userdata v2 low-level API instead for that
-    fn add_field<V>(&mut self, name: &'static str, value: V)
+    fn add_field<V>(&mut self, name: impl Into<&'static str>, value: V)
     where
         V: IntoLua + 'static;
 
@@ -185,7 +193,7 @@ pub trait UserDataFields<T> {
     /// This will initialize the metatable field with `value` on [`UserData`] creation.
     /// 
     /// Note: __index is not an allowed name here for performance purposes, use userdata v2 low-level API instead for that
-    fn add_meta_field<V>(&mut self, name: &'static str, value: V)
+    fn add_meta_field<V>(&mut self, name: impl Into<&'static str>, value: V)
     where
         V: IntoLua + 'static;
 }
@@ -212,7 +220,6 @@ pub trait UserData: 'static + Sized + MaybeSend + MaybeSync {
 }
 
 // Internal impl
-
 enum UdError {
     Value(Value),
     Error(crate::Error)
@@ -326,10 +333,21 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
         })
     }
 
+    fn validate_metakey(k: &str) -> crate::Result<()> {
+        if k == "__index" {
+            return Err(crate::Error::external("__index metamethod cannot be set with userdata aux api"));
+        }
+        if k == "__namecall" {
+            return Err(crate::Error::external("__namecall metamethod cannot be set with userdata aux api"));
+        }
+        Ok(())
+    }
+
     fn finalize_metatable(self, lua: &Lua) -> crate::Result<Table> {
-        // __index mt
+        // Metatable vecs, we can then build the 2 tables for __index and main mt in one shot later
         let mut indexmt = Vec::with_capacity(self.len());
         let mut mt = Vec::with_capacity(self.len());
+        let mut namecall_cbs = FxHashMap::default(); // __namecall cbs
 
         // Fields, functions go into __index
         for (k, v) in self.fields {
@@ -340,27 +358,29 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
             indexmt.push((k, Value::Function(func)));
         }
         for (k, v) in self.methods {
+            let v_idx = v.clone(); // Clone for __index and keep one for __namecall
             let func = lua.create_function(move |lua: &Lua, (ud, args): (TypedUserData<T>, MultiValue)| {
-                v(lua, ud, args)
+                v_idx(lua, ud, args)
             })?;
             indexmt.push((k, Value::Function(func)));
+            namecall_cbs.insert(k, v);
         }
 
         // Metafields, metafunctions, metamethods into metatable directly
         for (k, v) in self.meta_fields {
+            Self::validate_metakey(k)?;
             if k == "__index" {
                 return Err(crate::Error::external("__index metamethod cannot be set with userdata aux api"));
             }
             mt.push((k, v?));
         }
         for (k, v) in self.meta_functions {
+            Self::validate_metakey(k)?;
             let func = lua.create_function(v)?;
             mt.push((k, Value::Function(func)));
         }
         for (k, v) in self.meta_methods {
-            if k == "__index" {
-                return Err(crate::Error::external("__index metamethod cannot be set with userdata aux api"));
-            }
+            Self::validate_metakey(k)?;
             let func = lua.create_function(move |lua: &Lua, (ud, args): (TypedUserData<T>, MultiValue)| {
                 v(lua, ud, args)
             })?;
@@ -375,6 +395,25 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
         let mt = lua.create_table_from(mt)?;
         
         mt.set("__index", indextab)?;
+        
+        // Inject __type if not explicitly set
+        if !mt.raw_get("__type")? {
+            mt.set("__type", T::type_name())?;
+        }
+
+        let namecall_cbs = XRc::new(namecall_cbs);
+        mt.set("__namecall", lua.create_function(move |lua, (ud, args): (TypedUserData<T>, MultiValue)| {
+            let cbs = namecall_cbs.clone();
+            let func = lua.with_namecall(move |method| -> Result<_, crate::Error> {
+                let s = method.ok_or_else(|| crate::Error::external("internal error: no method set for namecall"))?.to_str().map_err(crate::Error::external)?;
+                match cbs.get(s) {
+                    Some(s) => Ok(s.clone()),
+                    None => Err(crate::Error::runtime(format!("{}: cannot find method `{s}`", T::type_name())))
+                }
+            }).map_err(UdError::Error)?;
+            func(lua, ud, args)
+        })?)?;
+
         mt.set_readonly(true);
 
         Ok(mt)
@@ -403,57 +442,57 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
 }
 
 impl<T: UserData> UserDataFields<T> for UserDataRegistry<'_, T> {
-    fn add_field<V>(&mut self, name: &'static str, value: V)
+    fn add_field<V>(&mut self, name: impl Into<&'static str>, value: V)
     where V: IntoLua + 'static 
     {
-        self.fields.push((name, value.into_lua(self.lua)))
+        self.fields.push((name.into(), value.into_lua(self.lua)))
     }
 
-    fn add_meta_field<V>(&mut self, name: &'static str, value: V)
+    fn add_meta_field<V>(&mut self, name: impl Into<&'static str>, value: V)
     where
     V: IntoLua + 'static 
     {
-        self.meta_fields.push((name, value.into_lua(self.lua)))
+        self.meta_fields.push((name.into(), value.into_lua(self.lua)))
     }
 }
 
 impl<T: UserData> UserDataMethods<T> for UserDataRegistry<'_, T> {
-    fn add_function<F, A, R>(&mut self, name: &'static str, function: F) where
+    fn add_function<F, A, R>(&mut self, name: impl Into<&'static str>, function: F) where
     F: Fn(&Lua, A) -> R + MaybeSend + 'static,
     A: FromLuaMulti,
     R: IntoLuaResultMulti 
     {
         let wrapped = Self::wrap_function(function);
-        self.functions.push((name, wrapped))
+        self.functions.push((name.into(), wrapped))
     }
 
-    fn add_method<M, A, R>(&mut self, name: &'static str, method: M)
+    fn add_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
         M: Fn(&Lua, &T, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti 
     {
         let wrapped = Self::wrap_method(method);
-        self.methods.push((name, wrapped)) 
+        self.methods.push((name.into(), wrapped)) 
     }
 
-    fn add_meta_function<F, A, R>(&mut self, name: &'static str, function: F) where
+    fn add_meta_function<F, A, R>(&mut self, name: impl Into<&'static str>, function: F) where
     F: Fn(&Lua, A) -> R + MaybeSend + 'static,
     A: FromLuaMulti,
     R: IntoLuaResultMulti 
     {
         let wrapped = Self::wrap_function(function);
-        self.meta_functions.push((name, wrapped))
+        self.meta_functions.push((name.into(), wrapped))
     }
 
-    fn add_meta_method<M, A, R>(&mut self, name: &'static str, method: M)
+    fn add_meta_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
         M: Fn(&Lua, &T, A) -> R + MaybeSend + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti 
     {
         let wrapped = Self::wrap_method(method);
-        self.meta_methods.push((name, wrapped)) 
+        self.meta_methods.push((name.into(), wrapped)) 
     }
 }
 

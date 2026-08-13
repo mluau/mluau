@@ -1,6 +1,6 @@
-use std::ptr::NonNull;
+use std::{ffi::c_void, ptr::NonNull};
 
-use crate::{FromLua, FromLuaMulti, Function, IntoLua, IntoLuaMulti, Lua, MaybeSend, Result, Table, Value, WeakLua, state::extra::USERDATA2_TAG, types::{LuaRef, MaybeSync, ValueRef}, util::{StackGuard, assert_stack, check_stack}};
+use crate::{FromLua, FromLuaMulti, Function, IntoLua, IntoLuaMulti, Lua, MaybeSend, Result, Table, Value, WeakLua, state::{LuaGuard, extra::USERDATA2_TAG}, types::{LuaRef, MaybeSync, ValueRef}, util::{StackGuard, assert_stack, check_stack, short_type_name}};
 
 /// Handle to an internal Lua userdata
 #[derive(Clone, Debug, PartialEq)]
@@ -43,20 +43,39 @@ impl AnyUserData {
         }
     }
 
-    /// Borrow this userdata immutably if it is of type `T`.
-    pub fn borrow<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<LuaRef<'_, T>> {
+    #[inline(always)]
+    fn borrow_to_ptr<T: 'static + MaybeSend + MaybeSync>(&self) -> (Option<&T>, LuaGuard) {
         let lua = self.0.lua.lock();
         let state = lua.state();
-        let ptr = unsafe {
+        unsafe {
             let _sg = StackGuard::new(state);
 
             // Push the userdata onto the stack
             lua.push_ref_at(&self.0, state);
 
             let res = ffi::lua_touserdatatagged(state, -1, USERDATA2_TAG);
-            crate::types::ErasedHeader::downcast_ref(res)
-        };
+            (crate::types::ErasedHeader::downcast_ref(res), lua)
+        }
+    }
+
+    /// Borrow this userdata immutably if it is of type `T`.
+    pub fn borrow_ref<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<LuaRef<'_, T>> {
+        let (ptr, lua) = self.borrow_to_ptr();
         LuaRef::new_opt(lua.lua().clone(), ptr)
+    }
+
+    /// Borrow this userdata immutably into a TypedUserData handle if it is of type `T`.
+    #[inline(always)]
+    pub fn borrow<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<TypedUserData<T>> {
+        let ud_ref = self.0.clone();
+        let (ptr, lua) = self.borrow_to_ptr::<T>();
+        ptr.map(|ptr| {
+            TypedUserData {
+                ud: ud_ref,
+                ptr: std::ptr::NonNull::from(ptr),
+                _lua: lua.lua().clone(),
+            }
+        })
     }
 
     #[inline]
@@ -131,6 +150,17 @@ impl AnyUserData {
             }
         }
     }
+
+
+    /// Converts this thread to a generic C pointer.
+    ///
+    /// There is no way to convert the pointer back to its original value.
+    ///
+    /// Typically this function is used only for hashing and debug information.
+    #[inline]
+    pub fn to_pointer(&self) -> *const c_void {
+        self.0.to_pointer()
+    }
 }
 
 /// A typed (and optimized) version of `AnyUserData`
@@ -188,8 +218,8 @@ impl<T: 'static + MaybeSend + MaybeSync> crate::FromLua for TypedUserData<T> {
             _ => {
                 return Err(crate::Error::FromLuaConversionError {
                     from: value.type_name(),
-                    to: std::any::type_name::<T>().to_string(),
-                    message: Some(format!("expected userdata of type {}", std::any::type_name::<T>())),
+                    to: short_type_name::<T>().to_string(),
+                    message: Some(format!("expected userdata of type {}", short_type_name::<T>())),
                 })
             }
         };
@@ -214,8 +244,8 @@ impl<T: 'static + MaybeSend + MaybeSync> crate::FromLua for TypedUserData<T> {
             }),
             None => Err(crate::Error::FromLuaConversionError {
                 from: "userdata",
-                to: std::any::type_name::<T>().to_string(),
-                message: Some(format!("expected userdata of type {}", std::any::type_name::<T>())),
+                to: short_type_name::<T>().to_string(),
+                message: Some(format!("expected userdata of type {}", short_type_name::<T>())),
             })
         }
     }
@@ -226,8 +256,8 @@ impl<T: 'static + MaybeSend + MaybeSync> crate::FromLua for TypedUserData<T> {
         if ud_ptr.is_null() {
             return Err(crate::Error::FromLuaConversionError {
                 from: "<unknown>", // TODO: Use lua_type etc to fill this in
-                to: std::any::type_name::<T>().to_string(),
-                message: Some(format!("expected userdata of type {}", std::any::type_name::<T>())),
+                to: short_type_name::<T>().to_string(),
+                message: Some(format!("expected userdata of type {}", short_type_name::<T>())),
             })
         }
 
@@ -241,8 +271,8 @@ impl<T: 'static + MaybeSend + MaybeSync> crate::FromLua for TypedUserData<T> {
 
         Err(crate::Error::FromLuaConversionError {
             from: "userdata",
-            to: std::any::type_name::<T>().to_string(),
-            message: Some(format!("expected userdata of type {}", std::any::type_name::<T>())),
+            to: short_type_name::<T>().to_string(),
+            message: Some(format!("expected userdata of type {}", short_type_name::<T>())),
         })
     }   
 }

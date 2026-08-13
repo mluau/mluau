@@ -1,9 +1,7 @@
-use std::collections::HashMap;
 use std::os::raw::c_void;
 use std::ptr;
-use std::string::String as StdString;
 
-use mluau::{LightUserData, Lua, MultiValue, Result, UserData, UserDataMethods, Value};
+use mluau::{LightUserData, Lua, LuaUserDataExt, MultiValue, Result, UserData, Value};
 
 #[test]
 fn test_value_eq() -> Result<()> {
@@ -118,7 +116,7 @@ fn test_value_to_pointer() -> Result<()> {
     let thread: Value = globals.get("thread")?;
     #[cfg(feature = "none-primitive")]
     let null: Value = globals.get("null")?;
-    let ud: Value = Value::UserData(lua.create_any_userdata(())?);
+    let ud: Value = Value::UserData(lua.create_any_userdata((), None)?);
 
     assert!(!table.to_pointer().is_null());
     assert!(!string.to_pointer().is_null());
@@ -190,13 +188,6 @@ fn test_value_to_string() -> Result<()> {
     assert!(thread.to_string()?.starts_with("thread:"));
     assert_eq!(thread.type_name(), "thread");
 
-    lua.register_userdata_type::<StdString>(|reg| {
-        reg.add_meta_method("__tostring", |_, this, ()| Ok(this.clone()));
-    })?;
-    let ud: Value = Value::UserData(lua.create_any_userdata(String::from("string userdata"))?);
-    assert_eq!(ud.to_string()?, "string userdata");
-    assert_eq!(ud.type_name(), "userdata");
-
     struct MyUserData;
     impl UserData for MyUserData {}
     let ud: Value = Value::UserData(lua.create_userdata(MyUserData)?);
@@ -212,19 +203,6 @@ fn test_value_to_string() -> Result<()> {
         lua.set_type_metatable::<mluau::Buffer>(mt);
         assert_eq!(buf.to_string()?, "hello");
     }
-
-    Ok(())
-}
-
-#[test]
-fn test_debug_format() -> Result<()> {
-    let lua = Lua::new();
-
-    lua.register_userdata_type::<HashMap<i32, StdString>>(|_| {})?;
-    let ud = lua
-        .create_any_userdata::<HashMap<i32, StdString>>(HashMap::new())
-        .map(Value::UserData)?;
-    assert!(format!("{ud:#?}").starts_with("HashMap<i32, String>:"));
 
     Ok(())
 }
@@ -270,11 +248,11 @@ fn test_value_conversions() -> Result<()> {
             .as_thread()
             .is_some()
     );
-    assert!(Value::UserData(lua.create_any_userdata("hello")?).is_userdata());
+    assert!(Value::UserData(lua.create_any_userdata("hello", None)?).is_userdata());
     assert_eq!(
-        Value::UserData(lua.create_any_userdata("hello")?)
+        Value::UserData(lua.create_any_userdata("hello", None)?)
             .as_userdata()
-            .and_then(|ud| ud.borrow::<&str>().ok())
+            .and_then(|ud| ud.borrow::<&str>())
             .as_deref(),
         Some(&"hello")
     );

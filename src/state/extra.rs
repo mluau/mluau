@@ -19,7 +19,7 @@ use super::{Lua, WeakLua};
 // be using the dedicated lua_findunuseduserdatatag to find unused tags
 //
 // We use a const here though for performance purposes
-pub(crate) const USERDATA2_TAG: c_int = 126;
+pub const USERDATA2_TAG: c_int = 2;
 
 /// Data associated with the Lua state.
 pub(crate) struct ExtraData {

@@ -11,8 +11,8 @@ pub use crate::{
     Number as LuaNumber, Result as LuaResult,
     StdLib as LuaStdLib, String as LuaString, Table as LuaTable, TablePairs as LuaTablePairs,
     TablePairsOwned as LuaTablePairsOwned, TableSequence as LuaTableSequence, Thread as LuaThread,
-    ThreadStatus as LuaThreadStatus, UserData as LuaUserData, TypedUserData as LuaTypedUserData, UserDataFields as LuaUserDataFields, 
-    UserDataMethods as LuaUserDataMethods, Value as LuaValue, Variadic as LuaVariadic,
+    ThreadStatus as LuaThreadStatus, UserData as LuaUserData, TypedUserData as LuaTypedUserData, TypedUserData as LuaUserDataRef, 
+    UserDataFields as LuaUserDataFields, UserDataMethods as LuaUserDataMethods, Value as LuaValue, Variadic as LuaVariadic,
     VmState as LuaVmState, WeakLua,
 };
 

@@ -5,7 +5,7 @@ use std::error::Error as StdError;
 
 use bstr::BString;
 use mluau::{
-    DeserializeOptions, Error, Lua, LuaSerdeExt, Result as LuaResult, SerializeOptions, UserData, Value,
+    DeserializeOptions, Error, Lua, LuaSerdeExt, LuaUserDataExt, Result as LuaResult, SerializeOptions, UserData, Value
 };
 use serde::{Deserialize, Serialize};
 

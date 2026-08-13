@@ -110,8 +110,9 @@ pub use crate::traits::{
 pub use crate::types::{
     AppDataRef, AppDataRefMut, Either, Integer, LightUserData, LuaRef, MaybeSend, Number, VmState,
 };
+pub use crate::state::extra::USERDATA2_TAG; // embedders should not use this tag
 pub use crate::aux::*;
-pub use crate::userdata::{AnyUserData, TypedUserData};
+pub use crate::userdata::{AnyUserData, TypedUserData, TypedUserData as UserDataRef};
 
 pub use crate::value::{Nil, Value};
 
@@ -140,11 +141,6 @@ pub use crate::{
 #[cfg(feature = "serde")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub mod serde;
-
-
-
-
-
 
 pub(crate) mod private {
     use super::*;
