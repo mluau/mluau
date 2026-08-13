@@ -314,14 +314,6 @@ impl FromLua for AnyUserData {
     }
 }
 
-/*
-impl<T: UserData + MaybeSend + MaybeSync + 'static> IntoLua for T {
-    #[inline]
-    fn into_lua(self, lua: &Lua) -> Result<Value> {
-        Ok(Value::UserData(lua.create_userdata(self)?))
-    }
-}*/
-
 impl IntoLua for bool {
     #[inline]
     fn into_lua(self, _: &Lua) -> Result<Value> {

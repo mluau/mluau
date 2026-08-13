@@ -38,6 +38,7 @@ pub(crate) struct ExtraData {
     pub(crate) memory_error_ref: c_int,
     pub(crate) call_trampoline_ref: c_int,
     pub(crate) original_globals_ref: c_int,
+    pub(crate) array_metatable_ref: c_int,
 
     pub(super) interrupt_callback: Option<crate::types::InterruptCallback>,
 
@@ -130,6 +131,17 @@ impl ExtraData {
             },
             original_globals_ref: {
                 ffi::lua_pushvalue(state, ffi::LUA_GLOBALSINDEX);
+                let r = ffi::lua_refpool(state, -1);
+                ffi::lua_pop(state, 1);
+                r
+            },
+            array_metatable_ref: {
+                // Create array metatable
+                ffi::lua_createtable(state, 0, 1);
+                ffi::lua_pushstring(state, cstr!("__metatable"));
+                ffi::lua_pushboolean(state, 0);
+                ffi::lua_rawset(state, -3);
+
                 let r = ffi::lua_refpool(state, -1);
                 ffi::lua_pop(state, 1);
                 r

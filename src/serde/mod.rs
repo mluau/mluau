@@ -1,49 +1,16 @@
 //! (De)Serialization support using serde.
 
-use std::os::raw::c_void;
-
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
 use crate::error::Result;
 use crate::private::Sealed;
 use crate::state::Lua;
-use crate::table::Table;
-use crate::util::check_stack;
 use crate::value::Value;
 
 /// Trait for serializing/deserializing Lua values using Serde.
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub trait LuaSerdeExt: Sealed {
-    /// A metatable attachable to a Lua table to systematically encode it as Array (instead of Map).
-    /// As result, encoded Array will contain only sequence part of the table, with the same length
-    /// as the `#` operator on that table.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use mluau::{Lua, Result, LuaSerdeExt};
-    /// use serde_json::Value as JsonValue;
-    ///
-    /// fn main() -> Result<()> {
-    ///     let lua = Lua::new();
-    ///     lua.globals().set("array_mt", lua.array_metatable())?;
-    ///
-    ///     // Encode as an empty array (no sequence part in the lua table)
-    ///     let val = lua.load("setmetatable({a = 5}, array_mt)").eval()?;
-    ///     let j: JsonValue = lua.from_value(val)?;
-    ///     assert_eq!(j.to_string(), "[]");
-    ///
-    ///     // Encode as object
-    ///     let val = lua.load("{a = 5}").eval()?;
-    ///     let j: JsonValue = lua.from_value(val)?;
-    ///     assert_eq!(j.to_string(), r#"{"a":5}"#);
-    ///
-    ///     Ok(())
-    /// }
-    /// ```
-    fn array_metatable(&self) -> Table;
-
     /// Converts `T` into a [`Value`] instance.
     ///
     /// [`Value`]: crate::Value
@@ -155,14 +122,6 @@ pub trait LuaSerdeExt: Sealed {
 }
 
 impl LuaSerdeExt for Lua {
-    fn array_metatable(&self) -> Table {
-        let lua = self.lock();
-        unsafe {
-            push_array_metatable(lua.state());
-            Table(lua.pop_ref_at(lua.state()))
-        }
-    }
-
     fn to_value<T>(&self, t: &T) -> Result<Value>
     where
         T: Serialize + ?Sized,
@@ -191,28 +150,6 @@ impl LuaSerdeExt for Lua {
         T::deserialize(de::Deserializer::new_with_options(value, options))
     }
 }
-
-// Uses 2 stack spaces and calls checkstack.
-pub(crate) unsafe fn init_metatables(state: *mut ffi::lua_State) -> Result<()> {
-    check_stack(state, 2)?;
-    protect_lua!(state, 0, 0, fn(state) {
-        ffi::lua_createtable(state, 0, 1);
-
-        ffi::lua_pushstring(state, cstr!("__metatable"));
-        ffi::lua_pushboolean(state, 0);
-        ffi::lua_rawset(state, -3);
-
-        let array_metatable_key = &ARRAY_METATABLE_REGISTRY_KEY as *const u8 as *const c_void;
-        ffi::lua_rawsetp(state, ffi::LUA_REGISTRYINDEX, array_metatable_key);
-    })
-}
-
-pub(crate) unsafe fn push_array_metatable(state: *mut ffi::lua_State) {
-    let array_metatable_key = &ARRAY_METATABLE_REGISTRY_KEY as *const u8 as *const c_void;
-    ffi::lua_rawgetp(state, ffi::LUA_REGISTRYINDEX, array_metatable_key);
-}
-
-static ARRAY_METATABLE_REGISTRY_KEY: u8 = 0;
 
 pub mod de;
 pub mod ser;

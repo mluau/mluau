@@ -87,6 +87,7 @@ mod userdata;
 mod util;
 mod value;
 mod vector;
+mod aux;
 
 pub mod prelude;
 
@@ -107,8 +108,9 @@ pub use crate::traits::{
     FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, IntoLuaErr, IntoLuaResult, IntoLuaResultMulti, LuaNativeFn, LuaNativeFnMut,
 };
 pub use crate::types::{
-    AppDataRef, AppDataRefMut, Either, Integer, LightUserData, MaybeSend, Number, VmState,
+    AppDataRef, AppDataRefMut, Either, Integer, LightUserData, LuaRef, MaybeSend, Number, VmState,
 };
+pub use crate::aux::*;
 pub use crate::userdata::{
     AnyUserData, /*MetaMethod, UserData, UserDataFields, UserDataMetatable, UserDataMethods, UserDataRef,
     UserDataRefMut, UserDataRegistry,*/

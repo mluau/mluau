@@ -5,7 +5,7 @@ use std::ptr::{self, NonNull};
 use std::string::String as StdString;
 
 use crate::chunk::ChunkMode;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::function::Function;
 use crate::luau::ENABLED_FFLAGS;
 use crate::memory::{MemoryState, ALLOCATOR};
@@ -174,17 +174,6 @@ impl RawLua {
 
         // Init ExtraData first so protect_lua can use it for error_traceback
         let extra = ExtraData::init(main_state, owned);
-
-        mlua_expect!(
-            (|state| {
-                // Init serde metatables
-                #[cfg(feature = "serde")]
-                crate::serde::init_metatables(state)?;
-
-                Ok::<_, Error>(())
-            })(main_state),
-            "Error during Lua initialization",
-        );
 
         mlua_debug_assert!(
             ffi::lua_gettop(main_state) == main_state_top,

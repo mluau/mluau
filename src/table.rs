@@ -737,7 +737,6 @@ impl Table {
     }
 
     /// Checks if the table has the array metatable attached.
-    #[cfg(feature = "serde")]
     fn has_array_metatable(&self) -> bool {
         let lua = self.0.lua.lock();
         let state = lua.state();
@@ -749,7 +748,7 @@ impl Table {
             if ffi::lua_getmetatable(state, -1) == 0 {
                 return false;
             }
-            crate::serde::push_array_metatable(state);
+            ffi::lua_getrefpool(state, (*lua.extra()).array_metatable_ref);
             ffi::lua_rawequal(state, -1, -2) != 0
         }
     }

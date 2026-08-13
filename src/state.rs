@@ -1145,7 +1145,6 @@ impl Lua {
     }
 
     /// Same as ``create_function`` but with an added ``debugname``
-
     pub fn create_function_with_debug<F, A, R>(
         &self,
         func: F,
@@ -1170,7 +1169,6 @@ impl Lua {
     }
 
     /// Same as ``create_function_mut`` but with an added ``debugname``
-
     pub fn create_function_mut_with_debug<F, A, R>(
         &self,
         func: F,
@@ -1244,7 +1242,13 @@ impl Lua {
     }
 
     /// Creates a userdata method that is designed to be performant
-    pub fn create_userdata_method<F, T, A, R>(&self, func: F, debugname: Option<&'static CStr>) -> Result<Function>
+    pub fn create_userdata_method<F, T, A, R>(
+        &self, 
+        func: F, 
+        debugname: Option<&'static CStr>, 
+        typname: &'static str, 
+        methodname: &'static str
+    ) -> Result<Function>
     where
         T: 'static + MaybeSend + MaybeSync,
         F: Fn(&Lua, crate::types::LuaRef<'_, T>, A) -> R + MaybeSend + 'static,
@@ -1258,7 +1262,7 @@ impl Lua {
                 if nargs == 0 {
                     return Err(crate::state::util::map_err_to_value(
                         rawlua.lua(), 
-                        crate::Error::RuntimeError("Expected method call, found 0 arguments".to_string())
+                        crate::Error::RuntimeError(format!("{typname}:{methodname}(): expected method call, found 0 arguments"))
                     ));
                 }
 
@@ -1266,7 +1270,7 @@ impl Lua {
                 let ptr = crate::types::ErasedHeader::downcast_ref::<T>(ud).ok_or_else(|| {
                     crate::state::util::map_err_to_value(
                         rawlua.lua(),
-                        crate::Error::RuntimeError("Invalid method call: self is not of the correct userdata type".to_string())
+                        crate::Error::RuntimeError(format!("{typname}:{methodname}(): argument 1 not of type `{typname}`"))
                     )
                 })?;
 
@@ -1392,6 +1396,44 @@ impl Lua {
             let _sg = StackGuard::new(state);
             assert_stack(state, 1);
             ffi::lua_pushvalue(state, ffi::LUA_REGISTRYINDEX);
+            Table(lua.pop_ref())
+        }
+    }
+
+    /// A metatable attachable to a Lua table to systematically encode it as Array (instead of Map).
+    /// As result, encoded Array will contain only sequence part of the table, with the same length
+    /// as the `#` operator on that table.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mluau::{Lua, Result, LuaSerdeExt};
+    /// use serde_json::Value as JsonValue;
+    ///
+    /// fn main() -> Result<()> {
+    ///     let lua = Lua::new();
+    ///     lua.globals().set("array_mt", lua.array_metatable())?;
+    ///
+    ///     // Encode as an empty array (no sequence part in the lua table)
+    ///     let val = lua.load("setmetatable({a = 5}, array_mt)").eval()?;
+    ///     let j: JsonValue = lua.from_value(val)?;
+    ///     assert_eq!(j.to_string(), "[]");
+    ///
+    ///     // Encode as object
+    ///     let val = lua.load("{a = 5}").eval()?;
+    ///     let j: JsonValue = lua.from_value(val)?;
+    ///     assert_eq!(j.to_string(), r#"{"a":5}"#);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn array_metatable(&self) -> Table {
+        let lua = self.lock();
+        let state = lua.state();
+        unsafe {
+            let _sg = StackGuard::new(state);
+            assert_stack(state, 1);
+            ffi::lua_getrefpool(state, (*lua.extra()).array_metatable_ref);
             Table(lua.pop_ref())
         }
     }

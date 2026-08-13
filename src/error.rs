@@ -94,58 +94,6 @@ pub enum Error {
     /// [`Thread::resume`]: crate::Thread::resume
     /// [`Thread::status`]: crate::Thread::status
     CoroutineUnresumable,
-    /// An [`AnyUserData`] is not the expected type in a borrow.
-    ///
-    /// This error can only happen when manually using [`AnyUserData`], or when implementing
-    /// metamethods for binary operators. Refer to the documentation of [`UserDataMethods`] for
-    /// details.
-    ///
-    /// [`AnyUserData`]: crate::AnyUserData
-    /// [`UserDataMethods`]: crate::UserDataMethods
-    UserDataTypeMismatch,
-    /// An [`AnyUserData`] borrow failed because it has been destructed.
-    ///
-    /// This error can happen due to to being destructed in a previous __gc
-    ///
-    /// [`AnyUserData`]: crate::AnyUserData
-    UserDataDestructed,
-    /// An [`AnyUserData`] immutable borrow failed.
-    ///
-    /// This error can occur when a method on a [`UserData`] type calls back into Lua, which then
-    /// tries to call a method on the same [`UserData`] type. Consider restructuring your API to
-    /// prevent these errors.
-    ///
-    /// [`AnyUserData`]: crate::AnyUserData
-    /// [`UserData`]: crate::UserData
-    UserDataBorrowError,
-    /// An [`AnyUserData`] mutable borrow failed.
-    ///
-    /// This error can occur when a method on a [`UserData`] type calls back into Lua, which then
-    /// tries to call a method on the same [`UserData`] type. Consider restructuring your API to
-    /// prevent these errors.
-    ///
-    /// [`AnyUserData`]: crate::AnyUserData
-    /// [`UserData`]: crate::UserData
-    UserDataBorrowMutError,
-    /// A [`MetaMethod`] operation is restricted (typically for `__gc` or `__metatable`).
-    ///
-    /// [`MetaMethod`]: crate::MetaMethod
-    MetaMethodRestricted(StdString),
-    /// A [`MetaMethod`] (eg. `__index` or `__newindex`) has invalid type.
-    ///
-    /// [`MetaMethod`]: crate::MetaMethod
-    MetaMethodTypeError {
-        /// Name of the metamethod.
-        method: StdString,
-        /// Passed value type.
-        type_name: &'static str,
-        /// A string containing more detailed error information.
-        message: Option<StdString>,
-    },
-    /// A [`RegistryKey`] produced from a different Lua state was used.
-    ///
-    /// [`RegistryKey`]: crate::RegistryKey
-    MismatchedRegistryKey,
 
     /// Serialization error.
     #[cfg(feature = "serde")]
@@ -217,22 +165,6 @@ impl fmt::Display for Error {
                 }
             }
             Error::CoroutineUnresumable => write!(fmt, "coroutine is non-resumable"),
-            Error::UserDataTypeMismatch => write!(fmt, "userdata is not expected type"),
-            Error::UserDataDestructed => write!(fmt, "userdata has been destructed"),
-            Error::UserDataBorrowError => write!(fmt, "error borrowing userdata"),
-            Error::UserDataBorrowMutError => write!(fmt, "error mutably borrowing userdata"),
-            Error::MetaMethodRestricted(method) => write!(fmt, "metamethod {method} is restricted"),
-            Error::MetaMethodTypeError { method, type_name, message } => {
-                write!(fmt, "metamethod {method} has unsupported type {type_name}")?;
-                match message {
-                    None => Ok(()),
-                    Some(message) => write!(fmt, " ({message})"),
-                }
-            }
-            Error::MismatchedRegistryKey => {
-                write!(fmt, "RegistryKey used from different Lua state")
-            }
-
             #[cfg(feature = "serde")]
             Error::SerializeError(err) => {
                 write!(fmt, "serialize error: {err}")
