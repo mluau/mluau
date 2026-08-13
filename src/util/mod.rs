@@ -212,3 +212,21 @@ pub(crate) fn linenumber_to_usize(n: c_int) -> Option<usize> {
 mod error;
 mod short_names;
 mod userdata;
+
+#[inline]
+pub(crate) fn lua_type_to_str(type_id: c_int) -> &'static str {
+    match type_id {
+        ffi::LUA_TNIL => "nil",
+        ffi::LUA_TBOOLEAN => "boolean",
+        ffi::LUA_TLIGHTUSERDATA => "lightuserdata",
+        ffi::LUA_TNUMBER => "number",
+        ffi::LUA_TSTRING => "string",
+        ffi::LUA_TTABLE => "table",
+        ffi::LUA_TFUNCTION => "function",
+        ffi::LUA_TUSERDATA => "userdata",
+        ffi::LUA_TTHREAD => "thread",
+        ffi::LUA_TBUFFER => "buffer",
+        ffi::LUA_TVECTOR => "vector",
+        _ => "<unknown>",
+    }
+}

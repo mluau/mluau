@@ -260,8 +260,8 @@ fn test_userdata_method_errors() -> Result<()> {
     let res = ud.get::<Function>("get_value")?.call::<()>("not a userdata");
     match res {
         Err(Error::RuntimeError(msg)) => {
-            assert!(msg.contains("bad argument `self` to `MyUserData.get_value`"));
-            assert!(msg.contains("error converting Lua string to userdata"));
+            assert!(msg.contains("bad argument #1: error converting Lua"));
+            assert!(msg.contains("expected userdata of type"));
         }
         r => panic!("expected RuntimeError, got {r:?}"),
     }
@@ -299,5 +299,48 @@ fn test_nested_userdata_gc() -> Result<()> {
     lua.gc_collect()?;
     assert_eq!(Arc::strong_count(&counter), 1);
 
+    Ok(())
+}
+
+#[test]
+fn test_userdata_meta_function() -> Result<()> {
+    struct MyAddUserData(i32);
+    
+    impl UserData for MyAddUserData {
+        fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+            methods.add_meta_function(MetaMethod::Add, |_lua, (left, right): (crate::Value, crate::Value)| {
+                // Determine which one is the userdata and which is the number
+                let mut total = 0;
+                
+                if let crate::Value::UserData(ud) = &left {
+                    total += ud.borrow::<MyAddUserData>().unwrap().0;
+                } else if let crate::Value::Number(n) = &left {
+                    total += *n as i32;
+                } else if let crate::Value::Integer(n) = &left {
+                    total += *n as i32;
+                }
+                
+                if let crate::Value::UserData(ud) = &right {
+                    total += ud.borrow::<MyAddUserData>().unwrap().0;
+                } else if let crate::Value::Number(n) = &right {
+                    total += *n as i32;
+                } else if let crate::Value::Integer(n) = &right {
+                    total += *n as i32;
+                }
+                
+                Ok(total)
+            });
+        }
+    }
+    
+    let lua = Lua::new();
+    lua.globals().set("my_obj", lua.create_userdata(MyAddUserData(10))?)?;
+    
+    let res: i32 = lua.load("return my_obj + 5").eval()?;
+    assert_eq!(res, 15);
+    
+    let res2: i32 = lua.load("return 5 + my_obj").eval()?;
+    assert_eq!(res2, 15);
+    
     Ok(())
 }

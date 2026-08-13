@@ -254,8 +254,9 @@ impl<T: 'static + MaybeSend + MaybeSync> crate::FromLua for TypedUserData<T> {
     unsafe fn from_specified_stack(idx: std::os::raw::c_int, lua: &crate::state::RawLua, state: *mut ffi::lua_State) -> Result<Self> {
         let ud_ptr = ffi::lua_touserdatatagged(state, idx, USERDATA2_TAG); // returns nullptr if not ud or incorrect tag
         if ud_ptr.is_null() {
+            let from = crate::util::lua_type_to_str(ffi::lua_type(state, idx));
             return Err(crate::Error::FromLuaConversionError {
-                from: "<unknown>", // TODO: Use lua_type etc to fill this in
+                from,
                 to: short_type_name::<T>().to_string(),
                 message: Some(format!("expected userdata of type {}", short_type_name::<T>())),
             })
