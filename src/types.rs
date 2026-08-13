@@ -20,7 +20,7 @@ pub type Number = ffi::lua_Number;
 /// 
 /// Required to hold the underlying Luau VM alive until reference is dropped
 pub struct LuaRef<'a, T: 'static> {
-    lua: Lua,     
+    lua: Lua,
     data: &'a T,
 }
 

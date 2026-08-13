@@ -730,6 +730,7 @@ fn test_memory_category() -> Result<()> {
     Ok(())
 }
 
+// TODO: Fix this test
 #[test]
 fn test_heap_dump() -> Result<()> {
     let lua = Lua::new();
@@ -737,7 +738,7 @@ fn test_heap_dump() -> Result<()> {
     // Assign a new memory category and create few objects
     lua.set_memory_category("test_category")?;
     let _t = lua.create_table()?;
-    let _ud = lua.create_any_userdata("hello, world")?;
+    let _ud = lua.create_any_userdata("hello, world", None)?;
 
     let dump = lua.heap_dump()?;
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mluau::{Error, GCMode, Lua, Result, UserData};
+use mluau::{Error, GCMode, Lua, LuaUserDataExt, Result, UserData};
 
 #[test]
 fn test_memory_limit() -> Result<()> {

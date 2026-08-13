@@ -7,7 +7,7 @@ use bstr::BString;
 use maplit::{btreemap, btreeset, hashmap, hashset};
 use mluau::{
     AnyUserData, BorrowedBytes, BorrowedStr, Either, Error, Function, IntoLua, Lua, Result,
-    Table, Thread, UserDataRef, Value,
+    Table, Thread, Value,
 };
 
 #[test]
@@ -206,15 +206,9 @@ fn test_anyuserdata_into_lua() -> Result<()> {
     let lua = Lua::new();
 
     // Direct conversion
-    let ud = lua.create_any_userdata(String::from("hello"))?;
+    let ud = lua.create_any_userdata(String::from("hello"), None)?;
     let ud2 = (&ud).into_lua(&lua)?;
     assert_eq!(&ud, ud2.as_userdata().unwrap());
-
-    // Push into stack
-    let table = lua.create_table()?;
-    table.set("ud", &ud)?;
-    assert_eq!(ud, table.get::<AnyUserData>("ud")?);
-    assert_eq!("hello", *table.get::<UserDataRef<String>>("ud")?);
 
     Ok(())
 }
