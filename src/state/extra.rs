@@ -15,11 +15,11 @@ use super::{Lua, WeakLua};
 
 // userdata (v2) tag
 //
-// we use 254 as the tag here to try and avoid conflicts with other embedders although other embedders *should*
+// we use 126 as the tag here to try and avoid conflicts with other embedders although other embedders *should*
 // be using the dedicated lua_findunuseduserdatatag to find unused tags
 //
 // We use a const here though for performance purposes
-pub(crate) const USERDATA2_TAG: c_int = 254;
+pub(crate) const USERDATA2_TAG: c_int = 126;
 
 /// Data associated with the Lua state.
 pub(crate) struct ExtraData {
