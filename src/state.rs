@@ -1220,7 +1220,7 @@ impl Lua {
     }
 
     /// Creates a userdata with data and optional metatable.
-    pub fn create_userdata<T: 'static + MaybeSend + MaybeSync>(&self, data: T, metatable: Option<&Table>) -> Result<AnyUserData> {
+    pub fn create_any_userdata<T: 'static + MaybeSend + MaybeSync>(&self, data: T, metatable: Option<&Table>) -> Result<AnyUserData> {
         let lua = self.lock();
         let state = lua.state();
         unsafe {
