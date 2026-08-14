@@ -5,7 +5,7 @@ use std::fmt;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::types::MaybeSync;
-use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaErr, IntoLuaMulti, IntoLuaResultMulti, Lua, MaybeSend, MultiValue, Table, TypedUserData, Value, XRc};
+use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaErr, IntoLuaMulti, IntoLuaResult, IntoLuaResultMulti, Lua, MaybeSend, MultiValue, Table, TypedUserData, Value, XRc};
 
 /// Kinds of metamethods that can be overridden.
 ///
@@ -195,6 +195,18 @@ pub trait UserDataFields<T> {
     fn add_meta_field<V>(&mut self, name: impl Into<&'static str>, value: V)
     where
         V: IntoLua + 'static;
+
+    /// Add a regular field getter as a method which accepts a `&T` as the parameter.
+    ///
+    /// Regular field getters are implemented by overriding the `__index` metamethod and returning
+    /// the accessed field. This allows them to be used with the expected `userdata.field` syntax.
+    ///
+    /// If `add_meta_method` is used to set the `__index` metamethod, the `__index` metamethod will
+    /// be used as a fall-back if no regular index property is found.
+    fn add_field_method_get<M, R>(&mut self, name: impl Into<&'static str>, method: M)
+    where
+        M: Fn(&Lua, TypedUserData<T>) -> R + MaybeSend + MaybeSync + 'static,
+        R: IntoLuaResult;
 }
 
 /// Trait for custom userdata types.
@@ -277,6 +289,11 @@ type MethodCb<T> = XRc<dyn Fn(&Lua, TypedUserData<T>, MultiValue) -> Result<Mult
 #[cfg(feature = "send")]
 type MethodCb<T> = XRc<dyn Fn(&Lua, TypedUserData<T>, MultiValue) -> Result<MultiValue, UdError> + Send + Sync + 'static>;
 
+#[cfg(not(feature = "send"))]
+type FieldGetter<T> = XRc<dyn Fn(&Lua, TypedUserData<T>) -> Result<Value, UdError> + 'static>;
+#[cfg(feature = "send")]
+type FieldGetter<T> = XRc<dyn Fn(&Lua, TypedUserData<T>) -> Result<Value, UdError> + Send + Sync + 'static>;
+
 struct UserDataRegistry<'a, T: UserData> {
     lua: &'a Lua,
 
@@ -289,6 +306,7 @@ struct UserDataRegistry<'a, T: UserData> {
     namecall_methods: FxHashMap<&'static str, MethodCb<T>>, // Namecall methods (special cases that need namecall optimization)
     namecall_fb: Option<MethodCb<T>>, // a fallback namecall metamethod
     index_fb: Option<MethodCb<T>>, // a fallback index metamethod
+    field_method_get: FxHashMap<&'static str, FieldGetter<T>> // fallback index metamethod
 }
 
 impl<'a, T: UserData> UserDataRegistry<'a, T> {
@@ -300,7 +318,8 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
             mt_props: FxHashMap::default(),
             namecall_methods: FxHashMap::default(),
             namecall_fb: None,
-            index_fb: None
+            index_fb: None,
+            field_method_get: FxHashMap::default(),
         };
 
         // Collect into reg
@@ -335,12 +354,31 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
         })
     }
 
+    #[inline]
+    /// Wraps a method into a type-erased MethodCb<T>
+    fn wrap_field_getter<M, R>(method: M) -> FieldGetter<T>
+    where
+        M: Fn(&Lua, TypedUserData<T>) -> R + MaybeSend + MaybeSync + 'static,
+        R: IntoLuaResult,
+    {
+        XRc::new(move |lua, this| {
+            // Call method and normalize
+            match method(lua, this).into_result() {
+                Ok(item) => item.into_lua(lua).map_err(UdError::Error),
+                Err(err) => match err.into_lua_err(lua) {
+                    Ok(v) => Err(UdError::Value(v)),
+                    Err(e) => Err(UdError::Error(e)),
+                }
+            }
+        })
+    }
+
     fn finalize_metatable(self) -> crate::Result<Table> {
         // Metatable vecs, we can then build the 2 tables for __index and main mt in one shot later
         let mut mt = Vec::with_capacity(self.mt_props.len());
 
         // Setup __index as either table or fn
-        let index_as_fn = self.index_fb.is_some(); // TODO: Add field getters to slow path
+        let index_as_fn = self.index_fb.is_some() || !self.field_method_get.is_empty();
         let index = if index_as_fn {
             // Build up the index_mt_props hashmap with values resolved
             let index_mt_props = XRc::new({
@@ -351,11 +389,16 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
                 new_index_mt_props
             });
             let index_fb = self.index_fb;
+            let field_getters = self.field_method_get;
             let indexfn = self.lua.create_function_with_debug(move |lua, (ud, key): (TypedUserData<T>, crate::String)| {
                 let key_str = key.to_str().map_err(UdError::Error)?;
                 // Case 1: prop is in index_mt_props directly
                 if let Some(prop) = index_mt_props.get(key_str.as_ref()) {
                     return Ok(IndexResult::Value(prop.clone()))
+                }
+                // Case 2: field getter
+                if let Some(ref getter) = field_getters.get(key_str.as_ref()) {
+                    return getter(lua, ud).map(IndexResult::Value)
                 }
                 // Lastly, check for custom index
                 if let Some(ref ifb) = index_fb {
@@ -453,6 +496,14 @@ impl<T: UserData> UserDataFields<T> for UserDataRegistry<'_, T> {
     V: IntoLua + 'static 
     {
         self.mt_props.insert(name.into(), value.into_lua(self.lua));
+    }
+
+    fn add_field_method_get<M, R>(&mut self, name: impl Into<&'static str>, method: M)
+    where
+        M: Fn(&Lua, TypedUserData<T>) -> R + MaybeSend + MaybeSync + 'static,
+        R: IntoLuaResult
+    {
+        self.field_method_get.insert(name.into(), Self::wrap_field_getter(method));
     }
 }
 
