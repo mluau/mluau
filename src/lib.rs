@@ -87,7 +87,7 @@ mod userdata;
 mod util;
 mod value;
 mod vector;
-mod aux;
+mod auxlib;
 
 pub mod prelude;
 
@@ -111,7 +111,7 @@ pub use crate::types::{
     AppDataRef, AppDataRefMut, Either, Integer, LightUserData, LuaRef, MaybeSend, Number, VmState,
 };
 pub use crate::state::extra::USERDATA2_TAG; // embedders should not use this tag
-pub use crate::aux::*;
+pub use crate::auxlib::*;
 pub use crate::userdata::{AnyUserData, TypedUserData, TypedUserData as UserDataRef};
 
 pub use crate::value::{Nil, Value};
