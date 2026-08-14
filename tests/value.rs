@@ -189,7 +189,11 @@ fn test_value_to_string() -> Result<()> {
     assert_eq!(thread.type_name(), "thread");
 
     struct MyUserData;
-    impl UserData for MyUserData {}
+    impl UserData for MyUserData {
+        fn type_name() -> &'static str {
+            "MyUserData"
+        }
+    }
     let ud: Value = Value::UserData(lua.create_userdata(MyUserData)?);
     assert!(ud.to_string()?.starts_with("MyUserData:"));
 

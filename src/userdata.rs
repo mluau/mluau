@@ -58,13 +58,15 @@ impl AnyUserData {
         }
     }
 
-    /// Borrow this userdata immutably if it is of type `T`.
+    /// Borrow this userdata immutably if it is of type `T` as a `LuaRef` for compatibility etc. with buffers/thread data API
     pub fn borrow_ref<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<LuaRef<'_, T>> {
         let (ptr, lua) = self.borrow_to_ptr();
         LuaRef::new_opt(lua.lua().clone(), ptr)
     }
 
     /// Borrow this userdata immutably into a TypedUserData handle if it is of type `T`.
+    /// 
+    /// Note: This operation is basically as cheap as `borrow_ref`
     #[inline(always)]
     pub fn borrow<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<TypedUserData<T>> {
         let ud_ref = self.0.clone();

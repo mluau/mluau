@@ -2,11 +2,10 @@
 
 use std::string::String as StdString;
 
-use mluau::{AnyUserData, Error, Lua, Result, UserData, UserDataMethods, UserDataRef};
+use mluau::{AnyUserData, Error, Lua, Result, UserData, UserDataMethods, UserDataRef, Function};
 use static_assertions::{assert_impl_all, assert_not_impl_all};
 
 #[test]
-#[ignore = "rust change https://github.com/rust-lang/rust/pull/135634"]
 fn test_userdata_multithread_access_sync() -> Result<()> {
     let lua = Lua::new();
 
@@ -18,7 +17,7 @@ fn test_userdata_multithread_access_sync() -> Result<()> {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
             methods.add_method("method", |lua, this, ()| {
                 let ud = lua.globals().get::<AnyUserData>("ud")?;
-                assert!(ud.call_method::<()>("method2", ()).is_ok());
+                assert!(ud.get::<Function>("method2")?.call::<()>((ud)).is_ok());
                 Ok(this.0.clone())
             });
 

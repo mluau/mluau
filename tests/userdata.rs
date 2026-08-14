@@ -54,7 +54,10 @@ fn test_metamethods() -> Result<()> {
 
     impl UserData for MyUserData {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-            methods.add_method("get", |_, data, ()| Ok(data.0));
+            methods.add_method("get", |_, data, ()| {
+                println!("Called get!");
+                Ok(data.0)
+            });
             methods.add_meta_function(
                 MetaMethod::Add,
                 |_, (lhs, rhs): (UserDataRef<Self>, UserDataRef<Self>)| Ok(MyUserData(lhs.0 + rhs.0)),
@@ -160,6 +163,7 @@ fn test_functions() -> Result<()> {
     struct MyUserData(i64);
 
     impl UserData for MyUserData {
+        const USE_NAMECALL: bool = false;
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
             methods.add_function("get_value_fn", |_, ud: AnyUserData| {
                 Ok(ud.borrow::<MyUserData>().unwrap().0)
@@ -209,6 +213,7 @@ fn test_metatable() -> Result<()> {
     struct MyUserData;
 
     impl UserData for MyUserData {
+        const USE_NAMECALL: bool = false;
         fn type_name() -> &'static str {
             "MyUserData"
         }
@@ -239,7 +244,7 @@ fn test_metatable() -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
     methods.sort();
 
-    assert_eq!(methods, vec!["__index", "__namecall", MetaMethod::Type.name()]);
+    assert_eq!(methods, vec!["__index", "__metatable", MetaMethod::Type.name()]);
 
     Ok(())
 }

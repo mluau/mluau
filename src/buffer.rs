@@ -258,7 +258,7 @@ pub unsafe trait ExternalBufferMut: ExternalBuffer {
 /// by the Luau VM. Types implementing this must not contain references, padding bytes with
 /// undefined behavior, or complex drop logic. Crucially, any arbitrary bit pattern must
 /// represent a valid instance of the type without causing undefined behavior.
-pub unsafe trait Primitive {}
+pub unsafe trait Primitive: MaybeSend + MaybeSync {}
 
 unsafe impl Primitive for u8 {}
 unsafe impl Primitive for i8 {}
@@ -278,7 +278,7 @@ unsafe impl Primitive for f64 {}
 // SAFETY: `Vec<T>` manages a heap allocation that will not move or be deallocated
 // as long as the `Vec` itself is alive. The pointer and length returned are valid
 // to safely read from.
-unsafe impl<T: 'static> ExternalBuffer for Vec<T> {
+unsafe impl<T: MaybeSend + MaybeSync + 'static> ExternalBuffer for Vec<T> {
     fn as_ptr(&self) -> *const u8 {
         self.as_slice().as_ptr() as *const u8
     }
