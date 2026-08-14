@@ -73,7 +73,7 @@ impl Buffer {
             let ud = ffi::lua_getbufferuserdata(state, -1);
             crate::types::ErasedHeader::downcast_ref(ud)
         };
-        TypedRef::new_opt(lua.lua().clone(), ptr, self.clone())
+        TypedRef::new_opt(lua.0, ptr, self.clone())
     }
 
     /// Reads given number of bytes from the buffer at the given offset.

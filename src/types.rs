@@ -20,7 +20,7 @@ pub struct TypedRef<T: 'static, Backer: 'static + Clone> {
     pub(crate) ud: Backer,
     // cached data ptr
     pub(crate) ptr: NonNull<T>,
-    pub(crate) lua: Lua, // hold a strong ref to VM
+    pub(crate) lua: XRc<RawLua>, // hold a strong ref to VM
 }
 
 impl<T: 'static, Backer: 'static + Clone> Clone for TypedRef<T, Backer> {
@@ -63,18 +63,18 @@ impl<T: 'static, Backer: 'static + Clone> Deref for TypedRef<T, Backer> {
 }
 
 impl<T: 'static, Backer: 'static + Clone> TypedRef<T, Backer> {
-    pub(crate) fn new(lua: Lua, data: NonNull<T>, ud: Backer) -> Self {
+    pub(crate) fn new(lua: XRc<RawLua>, data: NonNull<T>, ud: Backer) -> Self {
         Self { lua, ptr: data, ud }
     }
 
-    pub(crate) fn new_opt(lua: Lua, data: Option<&T>, ud: Backer) -> Option<Self> {
+    pub(crate) fn new_opt(lua: XRc<RawLua>, data: Option<&T>, ud: Backer) -> Option<Self> {
         let ptr = data.map(|x| NonNull::from(x))?;
         Some(Self::new(lua, ptr, ud))
     }
 
     /// Returns a reference to the Lua reference backing `T`
     pub fn lua(&self) -> &Lua {
-        &self.lua
+        &self.lua.lua()
     }
 
     /// Returns the backer that backs `T` consuming the TypedRef in the process

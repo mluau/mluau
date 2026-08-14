@@ -66,14 +66,14 @@ impl AnyUserData {
     #[inline(always)]
     pub fn borrow<T: 'static>(&self) -> Option<TypedUserData<T>> {
         let (ptr, lua) = self.borrow_to_ptr::<T>();
-        ptr.map(|p| TypedRef::new(lua.lua().clone(), p, self.clone()))
+        ptr.map(|p| TypedRef::new(lua.0, p, self.clone()))
     }
 
     /// Same as `borrow` but takes ownership for performance purposes
     #[inline(always)]
     pub fn into<T: 'static>(self) -> Option<TypedUserData<T>> {
         let (ptr, lua) = self.borrow_to_ptr::<T>();
-        ptr.map(|p| TypedRef::new(lua.lua().clone(), p, self))
+        ptr.map(|p| TypedRef::new(lua.0, p, self))
     }
 
     #[inline]
@@ -202,7 +202,7 @@ impl<T: 'static> crate::FromLua for TypedUserData<T> {
         }
 
         if let Some(data_ref) = crate::types::ErasedHeader::downcast_ref::<T>(ud_ptr) {
-            return Ok(Self::new(lua.lua().clone(), NonNull::from(data_ref), AnyUserData(lua.new_value_ref_from(state, idx))))
+            return Ok(Self::new(lua.lua().guard().0, NonNull::from(data_ref), AnyUserData(lua.new_value_ref_from(state, idx))))
         }
 
         Err(crate::Error::FromLuaConversionError {

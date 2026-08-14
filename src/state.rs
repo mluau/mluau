@@ -60,7 +60,7 @@ pub struct Lua {
 #[derive(Clone)]
 pub struct WeakLua(XWeak<RawLua>);
 
-pub(crate) struct LuaGuard(XRc<RawLua>);
+pub(crate) struct LuaGuard(pub(crate) XRc<RawLua>);
 
 /// Mode of the Lua garbage collector (GC).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -110,7 +110,7 @@ impl Thread {
             }
             crate::types::ErasedHeader::downcast_ref(current)
         };
-        TypedRef::new_opt(lua.lua().clone(), ptr, self.clone())
+        TypedRef::new_opt(lua.0, ptr, self.clone())
     }
 
     /// Sets the thread data. The set thread data will automatically be dropped upon Luau GC
