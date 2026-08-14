@@ -56,12 +56,6 @@ impl AnyUserData {
         let ptr = unsafe {
             let _sg = StackGuard::new(state);
 
-            if const { TAG != USERDATA2_TAG } {
-                if !(*lua.extra()).registered_tags[TAG as usize] {
-                    return (None, lua); // we dont own this TAG
-                }
-            }
-
             // Push the userdata onto the stack
             lua.push_ref_at(&self.0, state);
 
@@ -224,13 +218,6 @@ impl<T: 'static, const TAG: c_int> crate::FromLua for TypedRef<T, AnyUserData, T
                 message: Some(format!("expected userdata of type {}", short_type_name::<T>())),
             }
         };
-
-        // Ensure the tagged is registered to *us*
-        if const { TAG != USERDATA2_TAG } {
-            if !(*lua.extra()).registered_tags[TAG as usize] {
-                return Err(err()); // we dont own this TAG
-            }
-        }
         
         let ud_ptr = ffi::lua_touserdatatagged(state, idx, TAG); // returns nullptr if not ud or incorrect tag
         if ud_ptr.is_null() {

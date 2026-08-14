@@ -1,4 +1,4 @@
-use std::cell::UnsafeCell;
+use std::cell::{Cell, UnsafeCell};
 use std::mem::MaybeUninit;
 use std::os::raw::c_int;
 
@@ -66,7 +66,7 @@ pub(crate) struct ExtraData {
 
     pub(crate) mem_categories: Vec<std::ffi::CString>,
 
-    pub(crate) registered_tags: [bool; ffi::LUA_UTAG_LIMIT as usize],
+    pub(crate) registered_tags: [Cell<bool>; ffi::LUA_UTAG_LIMIT as usize],
 }
 
 impl Drop for ExtraData {
@@ -171,8 +171,8 @@ impl ExtraData {
 
             mem_categories: vec![std::ffi::CString::new("main").unwrap()],
             registered_tags: {
-                let mut tags = [false; _];
-                tags[USERDATA2_TAG as usize] = true; // USERDATA2_TAG is a default registered tag
+                let tags = [const { Cell::new(false) }; _];
+                tags[USERDATA2_TAG as usize].set(true); // USERDATA2_TAG is a default registered tag
                 tags
             }
         }));

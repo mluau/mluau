@@ -20,6 +20,9 @@ fn test_userdata() -> Result<()> {
     assert_eq!(userdata1.borrow::<UserData1>().unwrap().0, 1);
     assert_eq!(*userdata2.borrow::<UserData2>().unwrap().0, 2);
 
+    let userdata1 = lua.create_any_userdata_with_tag::<_, 127>(1292, None)?;
+    assert_eq!(*userdata1.borrow_with_tag::<i32, 127>().unwrap(), 1292);
+
     Ok(())
 }
 

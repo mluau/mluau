@@ -1225,6 +1225,10 @@ impl Lua {
     }
 
     /// Creates a userdata with data and optional metatable using the specified custom tag
+    /// 
+    /// # Safety
+    /// 
+    /// When used in a FFI context, the tag used here must not conflict with any FFI-defined tag
     pub fn create_any_userdata_with_tag<T: 'static, const TAG: c_int>(&self, data: T, metatable: Option<&Table>) -> Result<AnyUserData> {
         const { assert_ud_tag::<TAG>(); }
 
@@ -1234,10 +1238,12 @@ impl Lua {
             let _sg = StackGuard::new(state);
             check_stack(state, 3)?;
 
+            // If not default tag, set dtor lazily
             if const { TAG != USERDATA2_TAG } {
-                if !(*lua.extra()).registered_tags[TAG as usize] {
+                let is_registered = &(*lua.extra()).registered_tags[TAG as usize];
+                if !is_registered.get() {
                     ExtraData::set_userdata_dtor(state, TAG);
-                    lua.extra.get().as_mut().unwrap_unchecked().registered_tags[TAG as usize] = true;
+                    is_registered.set(true);
                 }
             }
 
