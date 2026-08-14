@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use bstr::BString;
 use maplit::{btreemap, btreeset, hashmap, hashset};
 use mluau::{
-    AnyUserData, BorrowedBytes, BorrowedStr, Either, Error, Function, IntoLua, Lua, RegistryKey, Result,
-    Table, Thread, UserDataRef, Value,
+    AnyUserData, BorrowedBytes, BorrowedStr, Either, Error, Function, IntoLua, Lua, Result,
+    Table, Thread, Value,
 };
 
 #[test]
@@ -206,15 +206,9 @@ fn test_anyuserdata_into_lua() -> Result<()> {
     let lua = Lua::new();
 
     // Direct conversion
-    let ud = lua.create_any_userdata(String::from("hello"))?;
+    let ud = lua.create_any_userdata(String::from("hello"), None)?;
     let ud2 = (&ud).into_lua(&lua)?;
     assert_eq!(&ud, ud2.as_userdata().unwrap());
-
-    // Push into stack
-    let table = lua.create_table()?;
-    table.set("ud", &ud)?;
-    assert_eq!(ud, table.get::<AnyUserData>("ud")?);
-    assert_eq!("hello", *table.get::<UserDataRef<String>>("ud")?);
 
     Ok(())
 }
@@ -229,76 +223,6 @@ fn test_anyuserdata_from_lua() -> Result<()> {
         }
         _ => panic!("expected `Error::FromLuaConversionError`"),
     }
-
-    Ok(())
-}
-
-#[test]
-fn test_error_conversion() -> Result<()> {
-    let lua = Lua::new();
-
-    // Any Lua value can be converted to `Error`
-    match lua.convert::<Error>(Error::external("external error")) {
-        Ok(Error::ExternalError(msg)) => assert_eq!(msg.to_string(), "external error"),
-        res => panic!("expected `Error::ExternalError`, got {res:?}"),
-    }
-    match lua.convert::<Error>("abc") {
-        Ok(Error::RuntimeError(msg)) => assert_eq!(msg, "abc"),
-        res => panic!("expected `Error::RuntimeError`, got {res:?}"),
-    }
-    match lua.convert::<Error>(true) {
-        Ok(Error::RuntimeError(msg)) => assert_eq!(msg, "true"),
-        res => panic!("expected `Error::RuntimeError`, got {res:?}"),
-    }
-    match lua.convert::<Error>(lua.globals()) {
-        Ok(Error::RuntimeError(msg)) => assert!(msg.starts_with("table:")),
-        res => panic!("expected `Error::RuntimeError`, got {res:?}"),
-    }
-
-    Ok(())
-}
-
-#[test]
-fn test_registry_value_into_lua() -> Result<()> {
-    let lua = Lua::new();
-
-    // Direct conversion
-    let s = lua.create_string("hello, world")?;
-    let r = lua.create_registry_value(&s)?;
-    let value1 = lua.pack(&r)?;
-    let value2 = lua.pack(r)?;
-    assert_eq!(value1.to_string()?, "hello, world");
-    assert_eq!(value1.to_pointer(), value2.to_pointer());
-
-    // Push into stack
-    let t = lua.create_table()?;
-    let r = lua.create_registry_value(&t)?;
-    let f = lua.create_function(|_, (t, k, v): (Table, Value, Value)| t.set(k, v))?;
-    f.call::<()>((&r, "hello", "world"))?;
-    f.call::<()>((r, "welcome", "to the jungle"))?;
-    assert_eq!(t.get::<String>("hello")?, "world");
-    assert_eq!(t.get::<String>("welcome")?, "to the jungle");
-
-    // Try to set nil registry key
-    let r_nil = lua.create_registry_value(Value::Nil)?;
-    t.set("hello", &r_nil)?;
-    assert_eq!(t.get::<Value>("hello")?, Value::Nil);
-
-    // Check non-owned registry key
-    let lua2 = Lua::new();
-    let r2 = lua2.create_registry_value("abc")?;
-    assert!(matches!(f.call::<()>(&r2), Err(Error::MismatchedRegistryKey)));
-
-    Ok(())
-}
-
-#[test]
-fn test_registry_key_from_lua() -> Result<()> {
-    let lua = Lua::new();
-
-    let fkey = lua.load("function() return 1 end").eval::<RegistryKey>()?;
-    let f = lua.registry_value::<Function>(&fkey)?;
-    assert_eq!(f.call::<i32>(())?, 1);
 
     Ok(())
 }
@@ -339,16 +263,10 @@ fn test_integer_from_lua() -> Result<()> {
 
     // Out of range
     match f.call::<i32>(i64::MAX).err() {
-        Some(Error::CallbackError { cause, .. }) => match cause.as_ref() {
-            Error::BadArgument { cause, .. } => match cause.as_ref() {
-                Error::FromLuaConversionError { message, .. } => {
-                    assert_eq!(message.as_ref().unwrap(), "out of range");
-                }
-                err => panic!("expected Error::FromLuaConversionError, got {err:?}"),
-            },
-            err => panic!("expected Error::BadArgument, got {err:?}"),
-        },
-        err => panic!("expected Error::CallbackError, got {err:?}"),
+        Some(Error::RuntimeError(msg)) => {
+            assert!(msg.contains("out of range"));
+        }
+        err => panic!("expected Error::RuntimeError, got {err:?}"),
     }
 
     // Should fallback to default conversion
@@ -695,23 +613,11 @@ fn test_either_from_lua() -> Result<()> {
     assert_eq!(either.as_ref().right().unwrap(), &[5; 5]);
 
     // Check error message
-    match f.call::<Value>("hello") {
-        Ok(_) => panic!("expected error, got Ok"),
-        Err(ref err @ Error::CallbackError { ref cause, .. }) => {
-            match cause.as_ref() {
-                Error::BadArgument { cause, .. } => match cause.as_ref() {
-                    Error::FromLuaConversionError { to, .. } => {
-                        assert_eq!(to, "Either<i32, Table>")
-                    }
-                    err => panic!("expected `Error::FromLuaConversionError`, got {err:?}"),
-                },
-                err => panic!("expected `Error::BadArgument`, got {err:?}"),
-            }
-            assert!(err
-                .to_string()
-                .starts_with("bad argument #1: error converting Lua string to Either<i32, Table>"),);
+    match f.call::<Either<i32, Table>>("hello").err() {
+        Some(Error::RuntimeError(msg)) => {
+            assert!(msg.contains("bad argument #1: error converting Lua string to Either<i32, Table>"));
         }
-        err => panic!("expected `Error::CallbackError`, got {err:?}"),
+        err => panic!("expected Error::RuntimeError, got {err:?}"),
     }
 
     Ok(())

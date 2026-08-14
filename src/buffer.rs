@@ -4,8 +4,9 @@ use std::os::raw::c_void;
 #[cfg(feature = "serde")]
 use serde::ser::{Serialize, Serializer};
 
+use crate::MaybeSend;
 use crate::state::RawLua;
-use crate::types::ValueRef;
+use crate::types::{LuaRef, MaybeSync, ValueRef};
 
 /// A Luau buffer type.
 ///
@@ -16,7 +17,7 @@ use crate::types::ValueRef;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Buffer(pub(crate) ValueRef);
 
-#[cfg_attr(not(feature = "luau"), allow(unused))]
+
 impl Buffer {
     /// Copies the buffer data into a new `Vec<u8>`.
     pub fn to_vec(&self) -> Vec<u8> {
@@ -60,26 +61,20 @@ impl Buffer {
     }
 
     /// Downcasts the external buffer to the specified backing store type.
-    pub fn downcast_ref<T: ExternalBuffer>(&self) -> Option<&T> {
+    /// 
+    /// # Safety:
+    /// 
+    /// Assumes the external buffer was created by mluau's create_external_buffer
+    pub fn downcast_ref<T: ExternalBuffer>(&self) -> Option<LuaRef<'_, T>> {
         let lua = self.0.lua.lock();
-        let state = lua.ref_thread(self.0.aux_thread);
-        let userdata = unsafe { ffi::lua_getbufferuserdata(state, self.0.index) };
-        if userdata.is_null() {
-            return None;
-        }
-
-        let extra = unsafe { crate::state::extra::ExtraData::get(state) };
-        if extra.is_null() || !unsafe { (*extra).external_buffers.contains(&userdata) } {
-            return None;
-        }
-
-        let type_id = unsafe { (*(userdata as *const ExternalBufferHeader)).type_id };
-        if type_id == std::any::TypeId::of::<T>() {
-            let wrapper = unsafe { &*(userdata as *const ExternalBufferWrapper<T>) };
-            Some(&wrapper.buffer)
-        } else {
-            None
-        }
+        let state = lua.state();
+        let ptr = unsafe { 
+            let _sg = crate::util::StackGuard::new(state);
+            lua.push_ref_at(&self.0, state);
+            let ud = ffi::lua_getbufferuserdata(state, -1);
+            crate::types::ErasedHeader::downcast_ref(ud)
+        };
+        LuaRef::new_opt(lua.lua().clone(), ptr)
     }
 
     /// Reads given number of bytes from the buffer at the given offset.
@@ -144,7 +139,10 @@ impl Buffer {
 
     unsafe fn as_raw_parts(&self, lua: &RawLua) -> (*mut u8, usize) {
         let mut size = 0usize;
-        let buf = ffi::lua_tobuffer(lua.ref_thread(self.0.aux_thread), self.0.index, &mut size);
+        let state = lua.state();
+        let _sg = crate::util::StackGuard::new(state);
+        lua.push_ref_at(&self.0, state);
+        let buf = ffi::lua_tobuffer(state, -1, &mut size);
         mlua_assert!(!buf.is_null(), "invalid Luau buffer");
         (buf as *mut u8, size)
     }
@@ -239,7 +237,7 @@ impl crate::types::LuaType for Buffer {
 /// and safe to be read by the Luau VM for the lifetime of this object. Note that implementing
 /// this trait by itself does not require the memory to be safe for mutation by the Luau VM;
 /// mutability safety is only a concern if the type also implements `ExternalBufferMut`.
-pub unsafe trait ExternalBuffer: 'static {
+pub unsafe trait ExternalBuffer: 'static + MaybeSend + MaybeSync {
     /// Returns a pointer to the buffer data.
     fn as_ptr(&self) -> *const u8;
     /// Returns the length of the buffer.
@@ -260,7 +258,7 @@ pub unsafe trait ExternalBufferMut: ExternalBuffer {
 /// by the Luau VM. Types implementing this must not contain references, padding bytes with
 /// undefined behavior, or complex drop logic. Crucially, any arbitrary bit pattern must
 /// represent a valid instance of the type without causing undefined behavior.
-pub unsafe trait Primitive {}
+pub unsafe trait Primitive: MaybeSend + MaybeSync {}
 
 unsafe impl Primitive for u8 {}
 unsafe impl Primitive for i8 {}
@@ -275,24 +273,12 @@ unsafe impl Primitive for i128 {}
 unsafe impl Primitive for f32 {}
 unsafe impl Primitive for f64 {}
 
-#[doc(hidden)]
-#[repr(C)]
-pub struct ExternalBufferHeader {
-    pub type_id: std::any::TypeId,
-    pub drop_fn: unsafe fn(*mut std::ffi::c_void),
-}
 
-#[doc(hidden)]
-#[repr(C)]
-pub struct ExternalBufferWrapper<T> {
-    pub header: ExternalBufferHeader,
-    pub buffer: T,
-}
 
 // SAFETY: `Vec<T>` manages a heap allocation that will not move or be deallocated
 // as long as the `Vec` itself is alive. The pointer and length returned are valid
 // to safely read from.
-unsafe impl<T: 'static> ExternalBuffer for Vec<T> {
+unsafe impl<T: MaybeSend + MaybeSync + 'static> ExternalBuffer for Vec<T> {
     fn as_ptr(&self) -> *const u8 {
         self.as_slice().as_ptr() as *const u8
     }

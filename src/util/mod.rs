@@ -1,24 +1,16 @@
 use std::borrow::Cow;
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int, c_void};
-use std::{ptr, slice, str};
+use std::{slice, str};
 
 use crate::error::{Error, Result};
 
 pub(crate) use error::{
-    error_traceback, error_traceback_thread, init_error_registry, pop_error, protect_lua_call,
-    protect_lua_closure, WrappedFailure,
+    error_traceback, error_traceback_thread, pop_error,
+    protect_lua_closure, call_trampoline,
 };
-pub(crate) use path::parse_path as parse_lookup_path;
 pub(crate) use short_names::short_type_name;
-pub(crate) use types::TypeKey;
-#[cfg(feature = "dynamic-userdata")]
-pub(crate) use userdata::push_userdata_dyn;
-pub(crate) use userdata::{
-    get_destructed_userdata_metatable, get_internal_metatable, get_internal_userdata, get_userdata,
-    init_internal_metatable, push_internal_userdata, push_userdata, take_userdata,
-    DESTRUCTED_USERDATA_METATABLE,
-};
+pub(crate) use userdata::{push_fat_cclosure};
 
 // Checks that Lua has enough free stack space for future stack operations. On failure, this will
 // panic with an internal error message.
@@ -61,11 +53,6 @@ impl StackGuard {
     #[inline]
     pub(crate) fn with_top(state: *mut ffi::lua_State, top: c_int) -> StackGuard {
         StackGuard { state, top }
-    }
-
-    #[inline]
-    pub(crate) fn keep(&mut self, n: c_int) {
-        self.top += n;
     }
 }
 
@@ -141,116 +128,8 @@ pub(crate) unsafe fn push_table(state: *mut ffi::lua_State, narr: usize, nrec: u
     protect_lua!(state, 0, 1, |state| ffi::lua_createtable(state, narr, nrec))
 }
 
-// Uses 4 stack spaces, does not call checkstack.
-pub(crate) unsafe fn rawget_field(state: *mut ffi::lua_State, table: c_int, field: &str) -> Result<c_int> {
-    ffi::lua_pushvalue(state, table);
-    protect_lua!(state, 1, 1, |state| {
-        ffi::lua_pushlstring(state, field.as_ptr() as *const c_char, field.len());
-        ffi::lua_rawget(state, -2)
-    })
-}
-
-// Uses 4 stack spaces, does not call checkstack.
-pub(crate) unsafe fn rawset_field(state: *mut ffi::lua_State, table: c_int, field: &str) -> Result<()> {
-    ffi::lua_pushvalue(state, table);
-    protect_lua!(state, 2, 0, |state| {
-        ffi::lua_pushlstring(state, field.as_ptr() as *const c_char, field.len());
-        ffi::lua_rotate(state, -3, 2);
-        ffi::lua_rawset(state, -3);
-    })
-}
-
-// A variant of `pcall` that does not allow Lua to catch Rust panics from `callback_error`.
-pub(crate) unsafe extern "C-unwind" fn safe_pcall(state: *mut ffi::lua_State) -> c_int {
-    ffi::luaL_checkstack(state, 2, ptr::null());
-
-    let top = ffi::lua_gettop(state);
-    if top == 0 {
-        ffi::lua_pushstring(state, cstr!("not enough arguments to pcall"));
-        ffi::lua_error(state);
-    }
-
-    if ffi::lua_pcall(state, top - 1, ffi::LUA_MULTRET, 0) == ffi::LUA_OK {
-        ffi::lua_pushboolean(state, 1);
-        ffi::lua_insert(state, 1);
-        ffi::lua_gettop(state)
-    } else {
-        let wf_ud = get_internal_userdata::<WrappedFailure>(state, -1, ptr::null());
-        if let Some(WrappedFailure::Panic(_)) = wf_ud.as_ref() {
-            ffi::lua_error(state);
-        }
-        ffi::lua_pushboolean(state, 0);
-        ffi::lua_insert(state, -2);
-        2
-    }
-}
-
-// A variant of `xpcall` that does not allow Lua to catch Rust panics from `callback_error`.
-pub(crate) unsafe extern "C-unwind" fn safe_xpcall(state: *mut ffi::lua_State) -> c_int {
-    unsafe extern "C-unwind" fn xpcall_msgh(state: *mut ffi::lua_State) -> c_int {
-        ffi::luaL_checkstack(state, 2, ptr::null());
-
-        let wf_ud = get_internal_userdata::<WrappedFailure>(state, -1, ptr::null());
-        if let Some(WrappedFailure::Panic(_)) = wf_ud.as_ref() {
-            1
-        } else {
-            ffi::lua_pushvalue(state, ffi::lua_upvalueindex(1));
-            ffi::lua_insert(state, 1);
-            ffi::lua_call(state, ffi::lua_gettop(state) - 1, ffi::LUA_MULTRET);
-            ffi::lua_gettop(state)
-        }
-    }
-
-    ffi::luaL_checkstack(state, 2, ptr::null());
-
-    let top = ffi::lua_gettop(state);
-    if top < 2 {
-        ffi::lua_pushstring(state, cstr!("not enough arguments to xpcall"));
-        ffi::lua_error(state);
-    }
-
-    ffi::lua_pushvalue(state, 2);
-    ffi::lua_pushcclosure(state, xpcall_msgh, 1);
-    ffi::lua_copy(state, 1, 2);
-    ffi::lua_replace(state, 1);
-
-    if ffi::lua_pcall(state, ffi::lua_gettop(state) - 2, ffi::LUA_MULTRET, 1) == ffi::LUA_OK {
-        ffi::lua_pushboolean(state, 1);
-        ffi::lua_insert(state, 2);
-        ffi::lua_gettop(state) - 1
-    } else {
-        let wf_ud = get_internal_userdata::<WrappedFailure>(state, -1, ptr::null());
-        if let Some(WrappedFailure::Panic(_)) = wf_ud.as_ref() {
-            ffi::lua_error(state);
-        }
-        ffi::lua_pushboolean(state, 0);
-        ffi::lua_insert(state, -2);
-        2
-    }
-}
-
 // Returns Lua main thread for Lua >= 5.2 or checks that the passed thread is main for Lua 5.1.
-// Does not call lua_checkstack, uses 1 stack space.
 pub(crate) unsafe fn get_main_state(state: *mut ffi::lua_State) -> Option<*mut ffi::lua_State> {
-    #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-    {
-        ffi::lua_rawgeti(state, ffi::LUA_REGISTRYINDEX, ffi::LUA_RIDX_MAINTHREAD);
-        let main_state = ffi::lua_tothread(state, -1);
-        ffi::lua_pop(state, 1);
-        Some(main_state)
-    }
-    #[cfg(any(feature = "lua51", feature = "luajit"))]
-    {
-        // Check the current state first
-        let is_main_state = ffi::lua_pushthread(state) == 1;
-        ffi::lua_pop(state, 1);
-        if is_main_state {
-            Some(state)
-        } else {
-            None
-        }
-    }
-
     Some(ffi::lua_mainthread(state))
 }
 
@@ -307,14 +186,6 @@ pub(crate) unsafe fn to_string(state: *mut ffi::lua_State, index: c_int) -> Stri
 pub(crate) unsafe fn get_metatable_ptr(state: *mut ffi::lua_State, index: c_int) -> *const c_void {
     return ffi::lua_getmetatablepointer(state, index);
 
-    #[cfg(not(feature = "luau"))]
-    if ffi::lua_getmetatable(state, index) == 0 {
-        ptr::null()
-    } else {
-        let p = ffi::lua_topointer(state, -1);
-        ffi::lua_pop(state, 1);
-        p
-    }
 }
 
 pub(crate) unsafe fn ptr_to_str<'a>(input: *const c_char) -> Option<&'a str> {
@@ -339,7 +210,23 @@ pub(crate) fn linenumber_to_usize(n: c_int) -> Option<usize> {
 }
 
 mod error;
-mod path;
 mod short_names;
-mod types;
 mod userdata;
+
+#[inline]
+pub(crate) fn lua_type_to_str(type_id: c_int) -> &'static str {
+    match type_id {
+        ffi::LUA_TNIL => "nil",
+        ffi::LUA_TBOOLEAN => "boolean",
+        ffi::LUA_TLIGHTUSERDATA => "lightuserdata",
+        ffi::LUA_TNUMBER => "number",
+        ffi::LUA_TSTRING => "string",
+        ffi::LUA_TTABLE => "table",
+        ffi::LUA_TFUNCTION => "function",
+        ffi::LUA_TUSERDATA => "userdata",
+        ffi::LUA_TTHREAD => "thread",
+        ffi::LUA_TBUFFER => "buffer",
+        ffi::LUA_TVECTOR => "vector",
+        _ => "<unknown>",
+    }
+}

@@ -221,7 +221,7 @@ impl Require for TextRequirer {
 
     fn loader(&self, lua: &Lua) -> Result<Function> {
         let name = format!("@{}", self.rel_path.display());
-        let source = fs::read_to_string(self.resolved_path.as_deref().unwrap())?;
+        let source = fs::read_to_string(self.resolved_path.as_deref().unwrap()).map_err(crate::Error::runtime)?;
         lua.load(crate::ChunkSource::src(source))
             .set_name(name)
             .into_function()

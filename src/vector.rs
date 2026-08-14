@@ -21,7 +21,7 @@ impl fmt::Display for Vector {
     }
 }
 
-#[cfg_attr(not(feature = "luau"), allow(unused))]
+
 impl Vector {
     pub(crate) const SIZE: usize = if cfg!(feature = "luau-vector4") { 4 } else { 3 };
 

@@ -87,6 +87,7 @@ mod userdata;
 mod util;
 mod value;
 mod vector;
+mod aux;
 
 pub mod prelude;
 
@@ -95,24 +96,23 @@ pub use ffi::{self, lua_CFunction, lua_State};
 
 pub use crate::chunk::{AsChunk, Chunk, ChunkMode, ChunkSource};
 pub use crate::debug::{Debug, DebugEvent, DebugNames, DebugSource, DebugStack};
-pub use crate::error::{Error, ErrorContext, ExternalError, ExternalResult, Result};
+pub use crate::error::{Error, Result};
 pub use crate::function::{Function, FunctionInfo};
 pub use crate::multi::{MultiValue, Variadic};
-pub use crate::state::{GCMode, Lua, LuaOptions, WeakLua};
+pub use crate::state::{GCMode, Lua, WeakLua};
 pub use crate::stdlib::StdLib;
 pub use crate::string::{BorrowedBytes, BorrowedStr, String};
 pub use crate::table::{Table, TablePairs, TablePairsOwned, TableSequence};
 pub use crate::thread::{ContinuationStatus, Thread, ThreadStatus};
 pub use crate::traits::{
-    FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, LuaNativeFn, LuaNativeFnMut, ObjectLike,
+    FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, IntoLuaErr, IntoLuaResult, IntoLuaResultMulti, LuaNativeFn, LuaNativeFnMut,
 };
 pub use crate::types::{
-    AppDataRef, AppDataRefMut, Either, Integer, LightUserData, MaybeSend, Number, RegistryKey, VmState,
+    AppDataRef, AppDataRefMut, Either, Integer, LightUserData, LuaRef, MaybeSend, Number, VmState,
 };
-pub use crate::userdata::{
-    AnyUserData, MetaMethod, UserData, UserDataFields, UserDataMetatable, UserDataMethods, UserDataRef,
-    UserDataRefMut, UserDataRegistry,
-};
+pub use crate::state::extra::USERDATA2_TAG; // embedders should not use this tag
+pub use crate::aux::*;
+pub use crate::userdata::{AnyUserData, TypedUserData, TypedUserData as UserDataRef};
 
 pub use crate::value::{Nil, Value};
 
@@ -141,118 +141,6 @@ pub use crate::{
 #[cfg(feature = "serde")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub mod serde;
-
-#[cfg(feature = "mlua_derive")]
-#[allow(unused_imports)]
-#[macro_use]
-extern crate mlua_derive;
-
-/// Create a type that implements [`AsChunk`] and can capture Rust variables.
-///
-/// This macro allows to write Lua code directly in Rust code.
-///
-/// Rust variables can be referenced from Lua using `$` prefix, as shown in the example below.
-/// User's Rust types needs to implement [`UserData`] or [`IntoLua`] traits.
-///
-/// Captured variables are **moved** into the chunk.
-///
-/// ```
-/// use mluau::{Lua, Result, chunk};
-///
-/// fn main() -> Result<()> {
-///     let lua = Lua::new();
-///     let name = "Rustacean";
-///     lua.load(chunk! {
-///         print("hello, " .. $name)
-///     }).exec()
-/// }
-/// ```
-///
-/// ## Syntax issues
-///
-/// Since the Rust tokenizer will tokenize Lua code, this imposes some restrictions.
-/// The main thing to remember is:
-///
-/// - Use double quoted strings (`""`) instead of single quoted strings (`''`).
-///
-///   (Single quoted strings only work if they contain a single character, since in Rust,
-///   `'a'` is a character literal).
-///
-/// - Using Lua comments `--` is not desirable in **stable** Rust and can have bad side effects.
-///
-///   This is because procedural macros have Line/Column information available only in
-///   **nightly** Rust. Instead, Lua chunks represented as a big single line of code in stable Rust.
-///
-///   As workaround, Rust comments `//` can be used.
-///
-/// Other minor limitations:
-///
-/// - Certain escape codes in string literals don't work. (Specifically: `\a`, `\b`, `\f`, `\v`,
-///   `\123` (octal escape codes), `\u`, and `\U`).
-///
-///   These are accepted: : `\\`, `\n`, `\t`, `\r`, `\xAB` (hex escape codes), and `\0`.
-///
-/// - The `//` (floor division) operator is unusable, as its start a comment.
-///
-/// Everything else should work.
-#[cfg(feature = "macros")]
-#[cfg_attr(docsrs, doc(cfg(feature = "macros")))]
-pub use mlua_derive::chunk;
-
-/// Derive [`FromLua`] for a Rust type.
-///
-/// Current implementation generate code that takes [`UserData`] value, borrow it (of the Rust type)
-/// and clone.
-#[cfg(feature = "macros")]
-#[cfg_attr(docsrs, doc(cfg(feature = "macros")))]
-pub use mlua_derive::FromLua;
-
-/// Registers Lua module entrypoint.
-///
-/// You can register multiple entrypoints as required.
-///
-/// ```ignore
-/// use mluau::{Lua, Result, Table};
-///
-/// #[mluau::lua_module]
-/// fn my_module(lua: &Lua) -> Result<Table> {
-///     let exports = lua.create_table()?;
-///     exports.set("hello", "world")?;
-///     Ok(exports)
-/// }
-/// ```
-///
-/// Internally in the code above the compiler defines C function `luaopen_my_module`.
-///
-/// You can also pass options to the attribute:
-///
-/// * name - name of the module, defaults to the name of the function
-///
-/// ```ignore
-/// #[mluau::lua_module(name = "alt_module")]
-/// fn my_module(lua: &Lua) -> Result<Table> {
-///     ...
-/// }
-/// ```
-///
-/// * skip_memory_check - skip memory allocation checks for some operations.
-///
-/// In module mode, mlua runs in unknown environment and cannot say are there any memory
-/// limits or not. As result, some operations that require memory allocation runs in
-/// protected mode. Setting this attribute will improve performance of such operations
-/// with risk of having uncaught exceptions and memory leaks.
-///
-/// ```ignore
-/// #[mluau::lua_module(skip_memory_check)]
-/// fn my_module(lua: &Lua) -> Result<Table> {
-///     ...
-/// }
-/// ```
-#[cfg(all(feature = "mlua_derive", any(feature = "module", doc)))]
-pub use mlua_derive::lua_module;
-
-#[cfg(all(feature = "module", feature = "send"))]
-compile_error!("`send` feature is not supported in module mode");
 
 pub(crate) mod private {
     use super::*;

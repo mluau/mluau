@@ -27,8 +27,8 @@ jobs:
       - name: Build ${{ matrix.lua }} vendored
         run: |
           cargo build --features "${{ matrix.lua }},vendored" --no-default-features
-          cargo build --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers" --no-default-features
-          cargo build --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send" --no-default-features
+          cargo build --features "${{ matrix.lua }},vendored,serde" --no-default-features
+          cargo build --features "${{ matrix.lua }},vendored,serde,send" --no-default-features
         shell: bash
       - name: Build ${{ matrix.lua }} pkg-config
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -62,8 +62,8 @@ jobs:
       - name: Run ${{ matrix.lua }} tests
         run: |
           cargo test --no-default-features --features "${{ matrix.lua }},vendored"
-          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers"
-          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send"
+          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde"
+          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde,send"
         shell: bash
 
   test_with_sanitizer:
@@ -86,8 +86,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run ${{ matrix.lua }} tests with address sanitizer
         run: |
-          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow" --target x86_64-unknown-linux-gnu -- --skip test_too_many_recursions
-          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers,send" --target x86_64-unknown-linux-gnu -- --skip test_too_many_recursions
+          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,serde" --target x86_64-unknown-linux-gnu -- --skip test_too_many_recursions
+          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,serde,send" --target x86_64-unknown-linux-gnu -- --skip test_too_many_recursions
         shell: bash
         env:
           RUSTFLAGS: -Z sanitizer=address
@@ -112,7 +112,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run ${{ matrix.lua }} tests with forced memory limit
         run: |
-          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,send,serde,macros,anyhow,userdata-wrappers"
+          cargo test --no-default-features --tests --features "${{ matrix.lua }},vendored,send,serde"
         shell: bash
         env:
           RUSTFLAGS: --cfg=force_memory_limit
@@ -136,7 +136,7 @@ jobs:
       - name: Run ${{ matrix.lua }} tests
         run: |
           cargo test --tests --features "${{ matrix.lua }},vendored" --no-default-features
-          cargo test --tests --features "${{ matrix.lua }},vendored,serde,macros,anyhow,userdata-wrappers" --no-default-features
+          cargo test --tests --features "${{ matrix.lua }},vendored,serde" --no-default-features
 
   clippy:
     name: Clippy
@@ -153,4 +153,4 @@ jobs:
       - uses: giraffate/clippy-action@v1
         with:
           reporter: 'github-pr-review'
-          clippy_flags: --features "${{ matrix.lua }},vendored,send,serde,macros,anyhow,userdata-wrappers"
+          clippy_flags: --features "${{ matrix.lua }},vendored,send,serde"

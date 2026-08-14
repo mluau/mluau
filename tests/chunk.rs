@@ -76,44 +76,6 @@ fn test_chunk_impls() -> Result<()> {
     Ok(())
 }
 
-#[test]
-#[cfg(feature = "macros")]
-fn test_chunk_macro() -> Result<()> {
-    let lua = Lua::new();
-
-    let name = "Rustacean";
-    let table = vec![1];
-
-    let data = lua.create_table()?;
-    data.raw_set("num", 1)?;
-
-    let ud = mluau::AnyUserData::wrap("hello");
-    let f = mluau::Function::wrap(|| Ok(()));
-
-    lua.globals().set("g", 123)?;
-
-    let string = String::new();
-    let str = string.as_str();
-
-    lua.load(mluau::chunk! {
-        assert($name == "Rustacean")
-        assert(type($table) == "table")
-        assert($table[1] == 1)
-        assert(type($data) == "table")
-        assert($data.num == 1)
-        assert(type($ud) == "userdata")
-        assert(type($f) == "function")
-        assert(type($str) == "string")
-        assert($str == "")
-        assert(g == 123)
-        s = 321
-    })
-    .exec()?;
-
-    assert_eq!(lua.globals().get::<i32>("s")?, 321);
-
-    Ok(())
-}
 
 #[test]
 fn test_compiler() -> Result<()> {

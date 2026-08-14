@@ -98,6 +98,8 @@ pub type lua_Continuation = unsafe extern "C-unwind" fn(L: *mut lua_State, statu
 /// Type for userdata destructor functions (no unwinding).
 pub type lua_Destructor = unsafe extern "C" fn(L: *mut lua_State, *mut c_void);
 
+pub type lua_ClosureWithDataFree = unsafe extern "C" fn(L: *mut lua_State, data: *mut c_void, sz: usize);
+
 /// Type for externally managed buffer destructor functions (no unwinding).
 pub type lua_BufferFree =
     unsafe extern "C" fn(L: *mut lua_State, data: *mut c_void, sz: usize, userdata: *mut c_void);
@@ -215,6 +217,15 @@ unsafe extern "C-unwind" {
         nup: c_int,
         cont: Option<lua_Continuation>,
     );
+    pub fn lua_pushcclosurewithdatak(
+        L: *mut lua_State,
+        f: lua_CFunction,
+        debugname: *const c_char,
+        cont: Option<lua_Continuation>,
+        size: usize,
+        dtor: Option<lua_ClosureWithDataFree>,
+    ) -> *mut c_void;
+    pub fn lua_getcclosuredata(L: *mut lua_State) -> *mut c_void;
     pub fn lua_pushboolean(L: *mut lua_State, b: c_int);
     pub fn lua_pushthread(L: *mut lua_State) -> c_int;
 
@@ -222,6 +233,7 @@ unsafe extern "C-unwind" {
     pub fn lua_newuserdatatagged(L: *mut lua_State, sz: usize, tag: c_int) -> *mut c_void;
     pub fn lua_newuserdatataggedwithmetatable(L: *mut lua_State, sz: usize, tag: c_int) -> *mut c_void;
     pub fn lua_newuserdatadtor(L: *mut lua_State, sz: usize, dtor: lua_Destructor) -> *mut c_void;
+    pub fn lua_findunuseduserdatatag(L: *mut lua_State) -> c_int;
 
     pub fn lua_newbuffer(L: *mut lua_State, sz: usize) -> *mut c_void;
     pub fn lua_newexternalbuffer(
@@ -347,12 +359,15 @@ unsafe extern "C-unwind" {
 //
 // Reference system, can be used to pin objects
 //
-pub const LUA_NOREF: c_int = -1;
-pub const LUA_REFNIL: c_int = 0;
+pub const LUA_NOREF: c_int = -2;
+pub const LUA_REFNIL: c_int = -1;
 
 unsafe extern "C-unwind" {
     pub fn lua_ref(L: *mut lua_State, idx: c_int) -> c_int;
     pub fn lua_unref(L: *mut lua_State, r#ref: c_int);
+    pub fn lua_refpool(L: *mut lua_State, idx: c_int) -> c_int;
+    pub fn lua_unrefpool(L: *mut lua_State, ref_: c_int);
+    pub fn lua_getrefpool(L: *mut lua_State, ref_: c_int) -> c_int;
 }
 
 //

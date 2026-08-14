@@ -4,17 +4,15 @@
 pub use crate::{
     AnyUserData as LuaAnyUserData, BorrowedBytes as LuaBorrowedBytes, BorrowedStr as LuaBorrowedStr,
     Chunk as LuaChunk, ContinuationStatus as LuaContinuationStatus, Either as LuaEither, Error as LuaError,
-    ErrorContext as LuaErrorContext, ExternalError as LuaExternalError, ExternalResult as LuaExternalResult,
     FromLua, FromLuaMulti, Function as LuaFunction, FunctionInfo as LuaFunctionInfo, GCMode as LuaGCMode,
-    Integer as LuaInteger, IntoLua, IntoLuaMulti, LightUserData as LuaLightUserData, Lua, LuaNativeFn,
-    LuaNativeFnMut, LuaOptions, MetaMethod as LuaMetaMethod, MultiValue as LuaMultiValue, Nil as LuaNil,
-    Number as LuaNumber, ObjectLike as LuaObjectLike, RegistryKey as LuaRegistryKey, Result as LuaResult,
+    Integer as LuaInteger, IntoLua, IntoLuaMulti, IntoLuaErr, IntoLuaResult, IntoLuaResultMulti, LightUserData as LuaLightUserData,
+    Lua, LuaNativeFn, LuaRef,
+    LuaNativeFnMut, MetaMethod as LuaMetaMethod, MultiValue as LuaMultiValue, Nil as LuaNil,
+    Number as LuaNumber, Result as LuaResult,
     StdLib as LuaStdLib, String as LuaString, Table as LuaTable, TablePairs as LuaTablePairs,
     TablePairsOwned as LuaTablePairsOwned, TableSequence as LuaTableSequence, Thread as LuaThread,
-    ThreadStatus as LuaThreadStatus, UserData as LuaUserData, UserDataFields as LuaUserDataFields,
-    UserDataMetatable as LuaUserDataMetatable, UserDataMethods as LuaUserDataMethods,
-    UserDataRef as LuaUserDataRef, UserDataRefMut as LuaUserDataRefMut,
-    UserDataRegistry as LuaUserDataRegistry, Value as LuaValue, Variadic as LuaVariadic,
+    ThreadStatus as LuaThreadStatus, UserData as LuaUserData, TypedUserData as LuaTypedUserData, TypedUserData as LuaUserDataRef, 
+    UserDataFields as LuaUserDataFields, UserDataMethods as LuaUserDataMethods, Value as LuaValue, Variadic as LuaVariadic,
     VmState as LuaVmState, WeakLua,
 };
 

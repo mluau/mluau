@@ -673,7 +673,7 @@ impl Chunk<'_> {
     /// Load this chunk into a regular [`Function`].
     ///
     /// This simply compiles the chunk without actually executing it.
-    #[cfg_attr(not(feature = "luau"), allow(unused_mut))]
+
     pub fn into_function(mut self) -> Result<Function> {
         if self.compiler.is_some() {
             // We don't need to compile source if no compiler set
@@ -685,7 +685,7 @@ impl Chunk<'_> {
             Some(&name),
             self.env?.as_ref(),
             self.mode,
-            self.source?.as_ref(),
+            self.source.map_err(crate::Error::runtime)?.as_ref(),
             self.trusted_binary,
         )
     }

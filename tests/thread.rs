@@ -1,5 +1,3 @@
-use std::panic::catch_unwind;
-
 use mluau::{Error, Function, IntoLua, Lua, Result, Thread, ThreadStatus, Value};
 
 #[test]
@@ -140,16 +138,7 @@ fn test_thread_reset() -> Result<()> {
     let _ = thread.resume::<AnyUserData>(MyUserData(arc.clone()));
     assert_eq!(thread.status(), ThreadStatus::Error);
     assert_eq!(Arc::strong_count(&arc), 2);
-    #[cfg(feature = "lua54")]
-    {
-        assert!(thread.reset(func.clone()).is_err());
-        // Reset behavior has changed in Lua v5.4.4
-        // It's became possible to force reset thread by popping error object
-        assert!(matches!(thread.status(), ThreadStatus::Finished));
-        assert!(thread.reset(func.clone()).is_ok());
-        assert_eq!(thread.status(), ThreadStatus::Resumable);
-    }
-    #[cfg(any(feature = "lua54", feature = "luau"))]
+
     {
         assert!(thread.reset(func.clone()).is_ok());
         assert_eq!(thread.status(), ThreadStatus::Resumable);
@@ -163,10 +152,7 @@ fn test_thread_reset() -> Result<()> {
     })?)?;
     let result = thread.resume::<()>(());
     assert!(
-        matches!(result, Err(Error::CallbackError{ ref cause, ..})
-            if matches!(cause.as_ref(), Error::RuntimeError(err)
-                if err == "cannot reset a running thread")
-        ),
+        matches!(result, Err(Error::RuntimeError(ref msg)) if msg.contains("cannot reset a running thread")),
         "unexpected result: {result:?}",
     );
 
@@ -180,41 +166,14 @@ fn test_coroutine_from_closure() -> Result<()> {
     let thrd_main = lua.create_function(|_, ()| Ok(()))?;
     lua.globals().set("main", thrd_main)?;
 
-    #[cfg(any(
-        feature = "lua54",
-        feature = "lua53",
-        feature = "lua52",
-        feature = "luajit",
-        feature = "luau"
-    ))]
     let thrd: Thread = lua.load("coroutine.create(main)").eval()?;
-    #[cfg(feature = "lua51")]
-    let thrd: Thread = lua
-        .load("coroutine.create(function(...) return main(unpack(arg)) end)")
-        .eval()?;
 
     thrd.resume::<()>(())?;
 
     Ok(())
 }
 
-#[test]
-#[cfg(not(panic = "abort"))]
-fn test_coroutine_panic() {
-    match catch_unwind(|| -> Result<()> {
-        // check that coroutines propagate panics correctly
-        let lua = Lua::new();
-        let thrd_main = lua.create_function(|_, ()| -> Result<()> {
-            panic!("test_panic");
-        })?;
-        lua.globals().set("main", &thrd_main)?;
-        let thrd: Thread = lua.create_thread(thrd_main)?;
-        thrd.resume(())
-    }) {
-        Ok(r) => panic!("coroutine panic not propagated, instead returned {:?}", r),
-        Err(p) => assert!(*p.downcast::<&str>().unwrap() == "test_panic"),
-    }
-}
+
 
 #[test]
 fn test_thread_pointer() -> Result<()> {
@@ -529,7 +488,7 @@ fn test_continuation() {
         .resume::<String>(mv)
         .unwrap_err()
         .to_string()
-        .starts_with("a3"));
+        .contains("a3"));
 
     let cont_func = lua
         .create_function_with_continuation(

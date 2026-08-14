@@ -4,7 +4,6 @@ use std::{mem, ptr, slice};
 
 use crate::error::{Error, Result};
 
-use crate::state::util::get_next_spot;
 use crate::state::Lua;
 use crate::table::Table;
 use crate::traits::{FromLuaMulti, IntoLua, IntoLuaMulti, LuaNativeFn, LuaNativeFnMut};
@@ -188,7 +187,7 @@ impl Function {
 
             ffi::lua_pushinteger(state, nargs as ffi::lua_Integer);
             for arg in &args {
-                lua.push_value_at(arg, state)?;
+                lua.push_value_at(arg, state);
             }
             protect_lua!(state, nargs + 1, 1, fn(state) {
                 ffi::lua_pushcclosure(state, args_wrapper_impl, ffi::lua_gettop(state));
@@ -370,30 +369,21 @@ impl Function {
     pub fn deep_clone(&self) -> Result<Self> {
         let lua = self.0.lua.lock();
         let state = lua.state();
-        let ref_thread = lua.ref_thread(self.0.aux_thread);
         unsafe {
             let _sg = StackGuard::new(state);
-            check_stack(ref_thread, 1)?;
+            check_stack(state, 4)?;
 
-            if ffi::lua_iscfunction(ref_thread, self.0.index) != 0 {
+            lua.push_ref_at(&self.0, state);
+
+            if ffi::lua_iscfunction(state, -1) != 0 {
                 return Ok(self.clone());
             }
 
-            let ref_thread_internal = lua.ref_thread_internal();
-            check_stack(ref_thread_internal, 4)?; // 3+1
-            lua.push_ref_at(&self.0, ref_thread_internal);
-            protect_lua!(ref_thread_internal, 1, 1, move |ref_thread_internal| {
-                ffi::lua_clonefunction(ref_thread_internal, -1)
+            protect_lua!(state, 1, 1, move |state| {
+                ffi::lua_clonefunction(state, -1)
             })?;
 
-            // Get the real next spot
-            let (aux_thread, index, replace) = get_next_spot(lua.extra());
-            ffi::lua_xmove(ref_thread_internal, lua.ref_thread(aux_thread), 1);
-            if replace {
-                ffi::lua_replace(lua.ref_thread(aux_thread), index);
-            }
-
-            Ok(Function(lua.new_value_ref(aux_thread, index)))
+            Ok(Function(lua.pop_ref_at(state)))
         }
     }
 
@@ -416,9 +406,12 @@ impl Function {
         R: IntoLuaMulti,
     {
         WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let state = lua.state();
-            let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
-            func.call(args)?.push_into_specified_stack_multi(lua, state)
+            let wrap = || -> crate::error::Result<c_int> {
+                let state = lua.state();
+                let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
+                func.call(args)?.push_into_specified_stack_multi(lua, state)
+            };
+            wrap().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
         }))
     }
 
@@ -431,10 +424,13 @@ impl Function {
     {
         let func = RefCell::new(func);
         WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let mut func = func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
-            let state = lua.state();
-            let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
-            func.call(args)?.push_into_specified_stack_multi(lua, state)
+            let wrap = || -> crate::error::Result<c_int> {
+                let mut func = func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
+                let state = lua.state();
+                let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
+                func.call(args)?.push_into_specified_stack_multi(lua, state)
+            };
+            wrap().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
         }))
     }
 
@@ -447,12 +443,16 @@ impl Function {
     pub fn wrap_raw<F, A>(func: F) -> impl IntoLua
     where
         F: LuaNativeFn<A> + MaybeSend + 'static,
+        F::Output: IntoLuaMulti,
         A: FromLuaMulti,
     {
         WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let state = lua.state();
-            let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
-            func.call(args).push_into_specified_stack_multi(lua, state)
+            let wrap = || -> crate::error::Result<c_int> {
+                let state = lua.state();
+                let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
+                func.call(args).push_into_specified_stack_multi(lua, state)
+            };
+            wrap().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
         }))
     }
 
@@ -464,14 +464,18 @@ impl Function {
     pub fn wrap_raw_mut<F, A>(func: F) -> impl IntoLua
     where
         F: LuaNativeFnMut<A> + MaybeSend + 'static,
+        F::Output: IntoLuaMulti,
         A: FromLuaMulti,
     {
         let func = RefCell::new(func);
         WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let mut func = func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
-            let state = lua.state();
-            let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
-            func.call(args).push_into_specified_stack_multi(lua, state)
+            let wrap = || -> crate::error::Result<c_int> {
+                let mut func = func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
+                let state = lua.state();
+                let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
+                func.call(args).push_into_specified_stack_multi(lua, state)
+            };
+            wrap().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
         }))
     }
 }
@@ -479,7 +483,7 @@ impl Function {
 impl IntoLua for WrappedFunction {
     #[inline]
     fn into_lua(self, lua: &Lua) -> Result<Value> {
-        lua.lock().create_callback(self.0).map(Value::Function)
+        lua.lock().create_callback(self.0, std::ptr::null()).map(Value::Function)
     }
 }
 

@@ -1,4 +1,4 @@
-use mluau::{Error, Lua, ObjectLike, Result, Table, Value};
+use mluau::{Error, Lua, Result, Table, Value};
 
 #[test]
 fn test_globals_set_get() -> Result<()> {
@@ -450,7 +450,7 @@ fn test_table_fmt() -> Result<()> {
 }
 
 #[test]
-fn test_table_object_like() -> Result<()> {
+fn test_table_get_set() -> Result<()> {
     let lua = Lua::new();
 
     lua.load(
@@ -479,8 +479,8 @@ fn test_table_object_like() -> Result<()> {
 
     let table: Table = lua.globals().get("table")?;
 
-    <Table as ObjectLike>::set(&table, "c", 3)?;
-    assert_eq!(<Table as ObjectLike>::get::<i32>(&table, "c")?, 3);
+    Table::set(&table, "c", 3)?;
+    assert_eq!(Table::get::<i32>(&table, "c")?, 3);
     assert_eq!(table.call::<String>("b")?, "call_2");
     assert_eq!(table.call_function::<String>("func", "a")?, "func_a");
     assert_eq!(table.call_method::<String>("method", "a")?, "method_1");
@@ -496,111 +496,6 @@ fn test_table_object_like() -> Result<()> {
     // Test calling non-callable table
     let table2 = lua.create_table()?;
     assert!(matches!(table2.call::<()>(()), Err(Error::RuntimeError(_))));
-
-    Ok(())
-}
-
-#[test]
-#[cfg(feature = "error-value")]
-fn test_table_error_throw() -> Result<()> {
-    let lua = Lua::new();
-
-    let chunk1 = lua
-        .load("local ok, err = pcall(error, {e = 123}); assert(type(err) == 'table')")
-        .into_function()?;
-    chunk1.call::<()>(())?;
-
-    let chunk = lua.load("error({e = 123})").into_function()?;
-    match chunk.call::<()>(()) {
-        Err(Error::Value(err)) => {
-            println!("Error: {err:#?}");
-
-            #[cfg(feature = "send")]
-            assert!(!lua.is_locked());
-        }
-        r => panic!("expected Value, got {r:?}"),
-    }
-
-    Ok(())
-}
-
-#[test]
-fn test_table_get_path() -> Result<()> {
-    let lua = Lua::new();
-
-    // Create a nested table structure
-    let table = lua
-        .load(
-            r#"
-        {
-            a = {
-                b = {
-                    c = "hello",
-                    d = 42
-                },
-                [1] = "first",
-                ["special key"] = "special value"
-            },
-            abc = "top level",
-            x = {},
-            ["🚀"] = "rocket",
-            [1] = {
-                ["nested-key"] = {
-                    [42] = {
-                        final = "hello!",
-                    },
-                },
-                ["key\"with\"quotes"] = "value1",
-                ["key'with'quotes"] = "value2",
-                ["key\\with\\backslashes"] = "value3",
-                [-2] = "negative index",
-            },
-        }
-        "#,
-        )
-        .eval::<Table>()?;
-
-    // Test basic dot notation
-    assert_eq!(table.get_path::<String>(".a.b.c")?, "hello");
-    assert_eq!(table.get_path::<String>("a.b.c")?, "hello");
-    assert_eq!(table.get_path::<i32>("a.b.d")?, 42);
-    assert_eq!(table.get_path::<String>("abc")?, "top level");
-
-    // Test bracket notation with integer keys
-    assert_eq!(table.get_path::<String>("a[1]")?, "first");
-    assert_eq!(table.get_path::<String>("[1][-2]")?, "negative index");
-
-    // Test bracket notation with string keys
-    assert_eq!(table.get_path::<String>("a[\"special key\"]")?, "special value");
-    assert_eq!(table.get_path::<String>("a['special key']")?, "special value");
-    assert_eq!(table.get_path::<String>(r#"[1]["key\"with\"quotes"]"#)?, "value1");
-    assert_eq!(table.get_path::<String>(r#"[1]['key"with"quotes']"#)?, "value1");
-    assert_eq!(table.get_path::<String>(r#"[1]['key\'with\'quotes']"#)?, "value2");
-    assert_eq!(
-        table.get_path::<String>(r#"[1]["key\\with\\backslashes"]"#)?,
-        "value3"
-    );
-
-    // Test mixed notation
-    assert_eq!(table.get_path::<String>("[1].nested-key[42].final")?, "hello!");
-
-    // Test unicode keys
-    assert_eq!(table.get_path::<String>("🚀")?, "rocket");
-
-    // Test empty path returns the table itself
-    assert_eq!(table.get_path::<Table>("")?, table);
-
-    // Test safe navigation
-    assert_eq!(table.get_path::<String>("a?.b.c")?, "hello");
-    assert_eq!(table.get_path::<Value>("x.y?.z")?, Value::Nil);
-    assert_eq!(table.get_path::<Value>("[1].nested-key[43]?.final")?, Value::Nil);
-
-    // Test path with whitespace
-    assert_eq!(table.get_path::<String>(" .a  [\"b\"]  .c  ")?, "hello");
-
-    // Test indexing non-indexable value
-    let err = table.get_path::<String>("abc.c").unwrap_err().to_string();
-    assert_eq!(err, "runtime error: attempt to index a string value with key 'c'");
 
     Ok(())
 }

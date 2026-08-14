@@ -1,5 +1,4 @@
-#[cfg(not(feature = "luau"))]
-use mluau::ChunkSource;
+
 use mluau::{Error, Function, Lua, Result, String, Table, Variadic};
 
 #[test]
@@ -166,8 +165,7 @@ fn test_function_info() -> Result<()> {
     assert_eq!(function1_info.name.as_deref(), Some("function1"));
     assert_eq!(function1_info.source.as_deref(), Some("source1"));
     assert_eq!(function1_info.line_defined, Some(2));
-    #[cfg(not(feature = "luau"))]
-    assert_eq!(function1_info.last_line_defined, Some(4));
+
 
     assert_eq!(function1_info.last_line_defined, None);
     assert_eq!(function1_info.what, "Lua");
@@ -176,8 +174,7 @@ fn test_function_info() -> Result<()> {
     assert_eq!(function2_info.name, None);
     assert_eq!(function2_info.source.as_deref(), Some("source1"));
     assert_eq!(function2_info.line_defined, Some(3));
-    #[cfg(not(feature = "luau"))]
-    assert_eq!(function2_info.last_line_defined, Some(3));
+
 
     assert_eq!(function2_info.last_line_defined, None);
     assert_eq!(function2_info.what, "Lua");
@@ -199,24 +196,6 @@ fn test_function_info() -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(feature = "luau"))]
-#[test]
-fn test_function_dump() -> Result<()> {
-    let lua = unsafe { Lua::unsafe_new() };
-
-    let concat_lua = lua
-        .load(r#"function(arg1, arg2) return arg1 .. arg2 end"#)
-        .eval::<Function>()?;
-    let dumped = concat_lua.dump(false);
-    // SAFETY: `dumped` was just produced by `Function::dump` above
-    let concat = lua
-        .load(unsafe { ChunkSource::bytecode(dumped.as_slice()) })
-        .into_function()?;
-
-    assert_eq!(concat.call::<String>(("foo", "bar"))?, "foobar");
-
-    Ok(())
-}
 
 #[test]
 fn test_function_coverage() -> Result<()> {
@@ -369,10 +348,7 @@ fn test_function_wrap() -> Result<()> {
 
     // Check recursive mut callback error
     let fmut = Function::wrap_mut(|f: Function| match f.call::<()>(&f) {
-        Err(Error::CallbackError { cause, .. }) => match cause.as_ref() {
-            Error::RecursiveMutCallback { .. } => Ok(()),
-            other => panic!("incorrect result: {other:?}"),
-        },
+        Err(Error::RuntimeError(msg)) if msg.contains("mutable callback called recursively") => Ok(()),
         other => panic!("incorrect result: {other:?}"),
     });
     let fmut = lua.convert::<Function>(fmut)?;

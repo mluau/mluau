@@ -12,14 +12,13 @@ use num_traits::cast;
 
 use crate::error::{Error, Result};
 use crate::function::Function;
-use crate::state::util::get_next_spot;
 use crate::state::{Lua, RawLua};
 use crate::string::{BorrowedBytes, BorrowedStr, String};
 use crate::table::Table;
 use crate::thread::Thread;
 use crate::traits::{FromLua, IntoLua, ShortTypeName as _};
-use crate::types::{Either, LightUserData, MaybeSend, MaybeSync, RegistryKey};
-use crate::userdata::{AnyUserData, UserData};
+use crate::types::{Either, LightUserData};
+use crate::userdata::{AnyUserData};
 use crate::value::{Nil, Value};
 
 impl IntoLua for Value {
@@ -37,7 +36,8 @@ impl IntoLua for &Value {
 
     #[inline]
     unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
-        lua.push_value_at(self, state)
+        lua.push_value_at(self, state);
+        Ok(())
     }
 }
 
@@ -83,12 +83,7 @@ impl FromLua for String {
     unsafe fn from_specified_stack(idx: c_int, lua: &RawLua, state: *mut ffi::lua_State) -> Result<Self> {
         let type_id = ffi::lua_type(state, idx);
         if type_id == ffi::LUA_TSTRING {
-            let (aux_thread, idxs, replace) = get_next_spot(lua.extra());
-            ffi::lua_xpush(state, lua.ref_thread(aux_thread), idx);
-            if replace {
-                ffi::lua_replace(lua.ref_thread(aux_thread), idxs);
-            }
-            return Ok(String(lua.new_value_ref(aux_thread, idxs)));
+            return Ok(String(lua.new_value_ref_from(state, idx)));
         }
         // Fallback to default
         Self::from_lua(lua.stack_value_at(idx, Some(type_id), state)?, lua.lua())
@@ -319,78 +314,6 @@ impl FromLua for AnyUserData {
     }
 }
 
-impl<T: UserData + MaybeSend + MaybeSync + 'static> IntoLua for T {
-    #[inline]
-    fn into_lua(self, lua: &Lua) -> Result<Value> {
-        Ok(Value::UserData(lua.create_userdata(self)?))
-    }
-}
-
-impl IntoLua for Error {
-    #[inline]
-    fn into_lua(self, _: &Lua) -> Result<Value> {
-        Ok(Value::Error(Box::new(self)))
-    }
-}
-
-impl FromLua for Error {
-    #[inline]
-    fn from_lua(value: Value, _: &Lua) -> Result<Error> {
-        match value {
-            Value::Error(err) => Ok(*err),
-            val => Ok(Error::runtime(val.to_string()?)),
-        }
-    }
-}
-
-#[cfg(feature = "anyhow")]
-impl IntoLua for anyhow::Error {
-    #[inline]
-    fn into_lua(self, _: &Lua) -> Result<Value> {
-        Ok(Value::Error(Box::new(Error::from(self))))
-    }
-}
-
-impl IntoLua for RegistryKey {
-    #[inline]
-    fn into_lua(self, lua: &Lua) -> Result<Value> {
-        lua.registry_value(&self)
-    }
-
-    #[inline]
-    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
-        <&RegistryKey>::push_into_specified_stack(&self, lua, state)
-    }
-}
-
-impl IntoLua for &RegistryKey {
-    #[inline]
-    fn into_lua(self, lua: &Lua) -> Result<Value> {
-        lua.registry_value(self)
-    }
-
-    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
-        if !lua.owns_registry_value(self) {
-            return Err(Error::MismatchedRegistryKey);
-        }
-
-        match self.id() {
-            ffi::LUA_REFNIL => ffi::lua_pushnil(state),
-            id => {
-                ffi::lua_rawgeti(state, ffi::LUA_REGISTRYINDEX, id as _);
-            }
-        }
-        Ok(())
-    }
-}
-
-impl FromLua for RegistryKey {
-    #[inline]
-    fn from_lua(value: Value, lua: &Lua) -> Result<RegistryKey> {
-        lua.create_registry_value(value)
-    }
-}
-
 impl IntoLua for bool {
     #[inline]
     fn into_lua(self, _: &Lua) -> Result<Value> {
@@ -573,12 +496,16 @@ impl FromLua for crate::Object {
 impl IntoLua for StdString {
     #[inline]
     fn into_lua(self, lua: &Lua) -> Result<Value> {
-        Ok(Value::String(lua.create_string(self)?))
+        Ok(Value::String(lua.create_external_string(self)?))
     }
 
     #[inline]
-    unsafe fn push_into_specified_stack(self, lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
-        push_bytes_into_stack(self, lua, state)
+    unsafe fn push_into_specified_stack(self, _lua: &RawLua, state: *mut ffi::lua_State) -> Result<()> {
+        use crate::string::ExternalString;
+        let (ptr, len, userdata) = self.into_ext_parts()?;
+        let free_cb = Some(StdString::free_string as ffi::lua_StringFree);
+        crate::util::push_external_string(state, ptr as *const _, len, userdata, free_cb)?;
+        Ok(())
     }
 }
 
@@ -900,7 +827,8 @@ unsafe fn push_bytes_into_stack<T>(this: T, lua: &RawLua, state: *mut ffi::lua_S
 where
     T: IntoLua + AsRef<[u8]>,
 {
-    lua.push_value_at(&T::into_lua(this, lua.lua())?, state)
+    lua.push_value_at(&T::into_lua(this, lua.lua())?, state);
+    Ok(())
 }
 
 macro_rules! lua_convert_int {
@@ -1311,5 +1239,35 @@ impl<L: FromLua, R: FromLua> FromLua for Either<L, R> {
                 }
             },
         }
+    }
+}
+
+use crate::traits::IntoLuaErr;
+
+impl IntoLuaErr for StdString {
+    #[inline]
+    fn into_lua_err(self, lua: &Lua) -> Result<Value> {
+        self.into_lua(lua)
+    }
+}
+
+impl IntoLuaErr for Box<dyn std::error::Error + Send + Sync> {
+    #[inline]
+    fn into_lua_err(self, lua: &Lua) -> Result<Value> {
+        self.to_string().into_lua_err(lua)
+    }
+}
+
+impl IntoLuaErr for crate::error::Error {
+    #[inline]
+    fn into_lua_err(self, lua: &Lua) -> Result<Value> {
+        self.to_string().into_lua_err(lua)
+    }
+}
+
+impl IntoLuaErr for () {
+    #[inline]
+    fn into_lua_err(self, _lua: &Lua) -> Result<Value> {
+        Ok(Value::Nil)
     }
 }

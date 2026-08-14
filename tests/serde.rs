@@ -5,23 +5,15 @@ use std::error::Error as StdError;
 
 use bstr::BString;
 use mluau::{
-    AnyUserData, DeserializeOptions, Error, ExternalResult, IntoLua, Lua, LuaSerdeExt, Result as LuaResult,
-    SerializeOptions, UserData, Value,
+    DeserializeOptions, Error, Lua, LuaSerdeExt, LuaUserDataExt, Result as LuaResult, SerializeOptions, UserData, Value
 };
 use serde::{Deserialize, Serialize};
 
 #[test]
 fn test_serialize() -> Result<(), Box<dyn StdError>> {
-    #[derive(Serialize)]
-    struct MyUserData(i64, String);
-
-    impl UserData for MyUserData {}
-
     let lua = Lua::new();
     let globals = lua.globals();
 
-    let ud = lua.create_ser_userdata(MyUserData(123, "test userdata".into()))?;
-    globals.set("ud", ud)?;
     globals.set("null", Value::None)?;
 
     let empty_array = lua.create_table()?;
@@ -39,7 +31,6 @@ fn test_serialize() -> Result<(), Box<dyn StdError>> {
             _table_arr = {nil, "value 1", nil, "value 2", {}},
             _table_map = {["table"] = "map", ["null"] = null},
             _bytes = "\240\040\140\040",
-            _userdata = ud,
             _null = null,
             _empty_map = {},
             _empty_array = empty_array,
@@ -56,7 +47,6 @@ fn test_serialize() -> Result<(), Box<dyn StdError>> {
         "_table_arr": [null, "value 1", null, "value 2", {}],
         "_table_map": {"table": "map", "null": null},
         "_bytes": [240, 40, 140, 40],
-        "_userdata": [123, "test userdata"],
         "_null": null,
         "_empty_map": {},
         "_empty_array": [],
@@ -70,33 +60,6 @@ fn test_serialize() -> Result<(), Box<dyn StdError>> {
     assert_eq!(expected_json, json);
 
     Ok(())
-}
-
-#[test]
-fn test_serialize_any_userdata() {
-    let lua = Lua::new();
-
-    let json_val = serde_json::json!({
-        "a": 1,
-        "b": "test",
-    });
-    let json_ud = lua.create_ser_any_userdata(json_val).unwrap();
-    let json_str = serde_json::to_string_pretty(&json_ud).unwrap();
-    assert_eq!(json_str, "{\n  \"a\": 1,\n  \"b\": \"test\"\n}");
-}
-
-#[test]
-fn test_serialize_wrapped_any_userdata() {
-    let lua = Lua::new();
-
-    let json_val = serde_json::json!({
-        "a": 1,
-        "b": "test",
-    });
-    let ud = AnyUserData::wrap_ser(json_val);
-    let json_ud = ud.into_lua(&lua).unwrap();
-    let json_str = serde_json::to_string(&json_ud).unwrap();
-    assert_eq!(json_str, "{\"a\":1,\"b\":\"test\"}");
 }
 
 #[test]
@@ -668,65 +631,6 @@ fn test_from_value_with_options() -> Result<(), Box<dyn StdError>> {
 }
 
 #[test]
-fn test_from_value_userdata() -> Result<(), Box<dyn StdError>> {
-    let lua = Lua::new();
-
-    // Tuple struct
-    #[derive(Serialize, Deserialize)]
-    struct MyUserData(i64, String);
-
-    impl UserData for MyUserData {}
-
-    let ud = lua.create_ser_userdata(MyUserData(123, "test userdata".into()))?;
-
-    match lua.from_value::<MyUserData>(Value::UserData(ud)) {
-        Ok(_) => {}
-        Err(err) => panic!("expected no errors, got {err:?}"),
-    };
-
-    // Newtype struct
-    #[derive(Serialize, Deserialize)]
-    struct NewtypeUserdata(String);
-
-    impl UserData for NewtypeUserdata {}
-
-    let ud = lua.create_ser_userdata(NewtypeUserdata("newtype userdata".into()))?;
-
-    match lua.from_value::<NewtypeUserdata>(Value::UserData(ud)) {
-        Ok(_) => {}
-        Err(err) => panic!("expected no errors, got {err:?}"),
-    };
-
-    // Option
-    #[derive(Serialize, Deserialize)]
-    struct UnitUserdata;
-
-    impl UserData for UnitUserdata {}
-
-    let ud = lua.create_ser_userdata(UnitUserdata)?;
-
-    match lua.from_value::<Option<()>>(Value::UserData(ud)) {
-        Ok(Some(_)) => {}
-        Ok(_) => panic!("expected `Some`, got `None`"),
-        Err(err) => panic!("expected no errors, got {err:?}"),
-    };
-
-    // Destructed userdata with skip option
-    let ud = lua.create_ser_userdata(NewtypeUserdata("newtype userdata".into()))?;
-    let _ = ud.take::<NewtypeUserdata>()?;
-
-    match lua.from_value_with::<()>(
-        Value::UserData(ud),
-        DeserializeOptions::new().deny_unsupported_types(false),
-    ) {
-        Ok(_) => {}
-        Err(err) => panic!("expected no errors, got {err:?}"),
-    };
-
-    Ok(())
-}
-
-#[test]
 fn test_from_value_empty_table() -> Result<(), Box<dyn StdError>> {
     let lua = Lua::new();
 
@@ -764,7 +668,7 @@ fn test_from_value_sorted() -> Result<(), Box<dyn StdError>> {
     let to_json = lua.create_function(|lua, value| {
         let json_value: serde_json::Value =
             lua.from_value_with(value, DeserializeOptions::new().sort_keys(true))?;
-        serde_json::to_string(&json_value).into_lua_err()
+        serde_json::to_string(&json_value).map_err(mluau::Error::external)
     })?;
     lua.globals().set("to_json", to_json)?;
 
@@ -809,31 +713,4 @@ fn test_arbitrary_precision() {
         format!("{:#?}", num),
         "{\n  [\"$serde_json::private::Number\"] = \"124.4\",\n}"
     );
-}
-
-#[test]
-fn test_buffer_serialize() -> LuaResult<()> {
-    let lua = Lua::new();
-
-    let buf = lua.create_buffer(&[1, 2, 3, 4])?;
-    let val = serde_value::to_value(&buf).unwrap();
-    assert_eq!(val, serde_value::Value::Bytes(vec![1, 2, 3, 4]));
-
-    // Try empty buffer
-    let buf = lua.create_buffer(&[])?;
-    let val = serde_value::to_value(&buf).unwrap();
-    assert_eq!(val, serde_value::Value::Bytes(vec![]));
-
-    Ok(())
-}
-
-#[test]
-fn test_buffer_from_value() -> LuaResult<()> {
-    let lua = Lua::new();
-
-    let buf = lua.create_buffer(&[1, 2, 3, 4])?;
-    let val = lua.from_value::<serde_value::Value>(Value::Buffer(buf)).unwrap();
-    assert_eq!(val, serde_value::Value::Bytes(vec![1, 2, 3, 4]));
-
-    Ok(())
 }
