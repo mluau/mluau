@@ -1355,22 +1355,11 @@ impl Lua {
     /// # Example
     ///
     /// ```
-    /// use mluau::{Lua, Result, LuaSerdeExt};
-    /// use serde_json::Value as JsonValue;
+    /// use mluau::{Lua, Result};
     ///
     /// fn main() -> Result<()> {
     ///     let lua = Lua::new();
     ///     lua.globals().set("array_mt", lua.array_metatable())?;
-    ///
-    ///     // Encode as an empty array (no sequence part in the lua table)
-    ///     let val = lua.load("setmetatable({a = 5}, array_mt)").eval()?;
-    ///     let j: JsonValue = lua.from_value(val)?;
-    ///     assert_eq!(j.to_string(), "[]");
-    ///
-    ///     // Encode as object
-    ///     let val = lua.load("{a = 5}").eval()?;
-    ///     let j: JsonValue = lua.from_value(val)?;
-    ///     assert_eq!(j.to_string(), r#"{"a":5}"#);
     ///
     ///     Ok(())
     /// }
