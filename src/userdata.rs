@@ -1,6 +1,6 @@
 use std::{ffi::{c_int, c_void}, ptr::NonNull};
 
-use crate::{FromLua, FromLuaMulti, Function, IntoLua, IntoLuaMulti, Lua, Result, Table, Value, WeakLua, state::{LuaGuard, extra::USERDATA2_TAG}, types::{TypedRef, ValueRef}, util::{StackGuard, assert_stack, check_stack, short_type_name}};
+use crate::{FromLua, FromLuaMulti, Function, IntoLua, IntoLuaMulti, Lua, Result, Table, USERDATA2_TAG, Value, WeakLua, state::LuaGuard, types::{TypedRef, ValueRef}, util::{StackGuard, assert_stack, check_stack, short_type_name}};
 
 pub(crate) const fn assert_ud_tag<const TAG: c_int>() {
     assert!(TAG > 0 && TAG < ffi::LUA_UTAG_LIMIT);
@@ -66,7 +66,7 @@ impl AnyUserData {
         (ptr.map(NonNull::from), lua)
     }
 
-    /// Turns the userdata immutably into a TypedUserData handle if it is of type `T`.
+    /// `into_with_tag` but with default tag
     #[inline(always)]
     pub fn into<T: 'static>(self) -> Option<TypedUserData<T>> {
         self.into_with_tag::<T, USERDATA2_TAG>()
@@ -80,16 +80,16 @@ impl AnyUserData {
         ptr.map(|p| TypedRef::new(lua.0, p, self))
     }
 
-    /// Same as `into` but clones the underlying AnyUserData if the borrow succeeds
-    /// 
-    /// Note: This internally has to clone the underlying AnyUserData handle in the process making it 
-    /// *slightly* less performant than `into`
+    /// `borrow_with_tag` but with default tag
     #[inline(always)]
     pub fn borrow<T: 'static>(&self) -> Option<TypedUserData<T>> {
         self.borrow_with_tag::<T, USERDATA2_TAG>()
     }
 
-    /// Same as `into_with_tag`, but for borrow
+    /// Same as `into` but clones the underlying AnyUserData if the borrow succeeds
+    /// 
+    /// Note: This internally has to clone the underlying AnyUserData handle in the process making it 
+    /// *slightly* less performant than `into`
     #[inline(always)]
     pub fn borrow_with_tag<T: 'static, const TAG: c_int>(&self) -> Option<TypedRef<T, Self, TAG>> {
         let (ptr, lua) = self.borrow_to_ptr::<T, TAG>();
@@ -181,9 +181,9 @@ impl AnyUserData {
     }
 }
 
-pub type TypedUserData<T> = TypedRef<T, AnyUserData, USERDATA2_TAG>;
+pub type TypedUserData<T, const TAG: c_int = USERDATA2_TAG> = TypedRef<T, AnyUserData, TAG>;
 
-impl<T: 'static> IntoLua for TypedUserData<T> {
+impl<T: 'static, const TAG: c_int> IntoLua for TypedRef<T, AnyUserData, TAG> {
     fn into_lua(self, _lua: &Lua) -> Result<Value> {
         Ok(Value::UserData(self.ud))
     }

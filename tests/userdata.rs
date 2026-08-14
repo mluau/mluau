@@ -23,6 +23,15 @@ fn test_userdata() -> Result<()> {
     let userdata1 = lua.create_any_userdata_with_tag::<_, 127>(1292, None)?;
     assert_eq!(*userdata1.borrow_with_tag::<i32, 127>().unwrap(), 1292);
 
+    struct Ud(i32);
+    impl UserData<55> for Ud {
+        fn add_methods<M: UserDataMethods<Self, 55>>(methods: &mut M) {
+            methods.add_method("get", |_, data, ()| Ok(data.0 + 1));
+        }
+    }
+    let my_ud = lua.create_userdata(Ud(128))?;
+    assert_eq!(my_ud.borrow_with_tag::<Ud, 55>().unwrap().0, 128);
+    assert_eq!(my_ud.get::<Function>("get")?.call::<i32>(my_ud)?, 129);
     Ok(())
 }
 

@@ -1,5 +1,5 @@
-use std::cell::RefCell;
-use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaResult, IntoLuaResultMulti, Lua, LuaUserDataExt, TypedUserData, UserDataMethods};
+use std::{cell::RefCell, ffi::c_int};
+use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaResult, IntoLuaResultMulti, Lua, LuaUserDataExt, TypedUserData, USERDATA2_TAG, UserDataMethods};
 
 pub struct LuaLock<T>(pub RefCell<T>);
 
@@ -10,7 +10,7 @@ impl<T> LuaLock<T> {
 }
 
 /// Method registry for [`UserDataMut`] implementors.
-pub trait UserDataMethodsMut<T> {
+pub trait UserDataMethodsMut<T, const TAG: c_int> {
     /// Add a regular method which accepts a `&T` as the first parameter.
     ///
     /// Regular methods are implemented by overriding the `__index` metamethod and returning the
@@ -73,7 +73,7 @@ pub trait UserDataMethodsMut<T> {
 }
 
 /// Field registry for [`UserDataMut`] implementors.
-pub trait UserDataFieldsMut<T> {
+pub trait UserDataFieldsMut<T, const TAG: c_int> {
     /// Add a static field to the [`UserData`].
     ///
     /// Static fields are implemented by updating the `__index` metamethod and returning the
@@ -117,7 +117,7 @@ pub trait UserDataFieldsMut<T> {
 /// Note: mutable methods will error if the userdata is already borrowed. Also note that mutable
 /// userdata does incur overhead compared to normal immutable userdata. Be careful: here be dragons, 
 /// this api is a *major* footgun. Users be warned.
-pub trait UserDataMut: 'static + Sized {
+pub trait UserDataMut<const TAG: c_int = USERDATA2_TAG>: 'static + Sized {
     /// Whether or not to use __namecall optimization. See [`UserData`] 
     /// for more info on what this means.
     const USE_NAMECALL: bool = true;
@@ -129,21 +129,21 @@ pub trait UserDataMut: 'static + Sized {
 
     /// Adds custom fields specific to this userdata.
     #[allow(unused_variables)]
-    fn add_fields<F: super::UserDataFieldsMut<Self>>(fields: &mut F) {}
+    fn add_fields<F: super::UserDataFieldsMut<Self, TAG>>(fields: &mut F) {}
 
     /// Adds custom methods and operators specific to this userdata.
     #[allow(unused_variables)]
-    fn add_methods<M: UserDataMethodsMut<Self>>(methods: &mut M) {}
+    fn add_methods<M: UserDataMethodsMut<Self, TAG>>(methods: &mut M) {}
 
     fn into_mut(self) -> LuaLock<Self> {
         LuaLock::new(self)
     }
 }
 
-impl<T, M> UserDataMethodsMut<T> for M
+impl<const TAG: c_int, T, M> UserDataMethodsMut<T, TAG> for M
 where
     T: 'static,
-    M: UserDataMethods<LuaLock<T>>, 
+    M: UserDataMethods<LuaLock<T>, TAG>, 
 {
     fn add_method<F, A, R>(&mut self, name: impl Into<&'static str>, method: F)
     where
@@ -151,7 +151,7 @@ where
         A: FromLuaMulti,
         R: IntoLuaResultMulti 
     {
-        self.add_method(name, move |lua, this: TypedUserData<LuaLock<T>>, args| {
+        self.add_method(name, move |lua, this: TypedUserData<LuaLock<T>, TAG>, args| {
             let inner = this.0.borrow(); 
             method(lua, &*inner, args)
         });
@@ -163,7 +163,7 @@ where
         A: FromLuaMulti,
         R: IntoLuaResultMulti 
     {
-        self.add_method(name, move |lua, this: TypedUserData<LuaLock<T>>, args| {
+        self.add_method(name, move |lua, this: TypedUserData<LuaLock<T>, TAG>, args| {
             let mut inner = this.0.borrow_mut(); 
             method(lua, &mut *inner, args)
         });
@@ -175,7 +175,7 @@ where
         A: FromLuaMulti,
         R: IntoLuaResultMulti,
     {
-        UserDataMethods::<LuaLock<T>>::add_function(self, name, function);
+        UserDataMethods::<LuaLock<T>, TAG>::add_function(self, name, function);
     }
 
     fn add_meta_method<F, A, R>(&mut self, name: impl Into<&'static str>, method: F)
@@ -184,7 +184,7 @@ where
         A: FromLuaMulti,
         R: IntoLuaResultMulti,
     {
-        self.add_meta_method(name, move |lua, this: TypedUserData<LuaLock<T>>, args| {
+        self.add_meta_method(name, move |lua, this: TypedUserData<LuaLock<T>, TAG>, args| {
             let inner = this.0.borrow(); 
             method(lua, &*inner, args)
         });
@@ -196,7 +196,7 @@ where
         A: FromLuaMulti,
         R: IntoLuaResultMulti,
     {
-        self.add_meta_method(name, move |lua, this: TypedUserData<LuaLock<T>>, args| {
+        self.add_meta_method(name, move |lua, this: TypedUserData<LuaLock<T>, TAG>, args| {
             let mut inner = this.0.borrow_mut(); 
             method(lua, &mut *inner, args)
         });
@@ -208,27 +208,27 @@ where
         A: FromLuaMulti,
         R: IntoLuaResultMulti,
     {
-        UserDataMethods::<LuaLock<T>>::add_meta_function(self, name, function);
+        UserDataMethods::<LuaLock<T>, TAG>::add_meta_function(self, name, function);
     }
 }
 
-impl<T, M> UserDataFieldsMut<T> for M
+impl<const TAG: c_int, T, M> UserDataFieldsMut<T, TAG> for M
 where
     T: 'static,
-    M: crate::UserDataFields<LuaLock<T>>,
+    M: crate::UserDataFields<LuaLock<T>, TAG>,
 {
     fn add_field<V>(&mut self, name: impl Into<&'static str>, value: V)
     where
         V: crate::IntoLua + 'static,
     {
-        crate::UserDataFields::<LuaLock<T>>::add_field(self, name, value);
+        crate::UserDataFields::<LuaLock<T>, TAG>::add_field(self, name, value);
     }
 
     fn add_meta_field<V>(&mut self, name: impl Into<&'static str>, value: V)
     where
         V: crate::IntoLua + 'static,
     {
-        crate::UserDataFields::<LuaLock<T>>::add_meta_field(self, name, value);
+        crate::UserDataFields::<LuaLock<T>, TAG>::add_meta_field(self, name, value);
     }
 
     fn add_field_method_get<F, R>(&mut self, name: impl Into<&'static str>, method: F)
@@ -236,25 +236,25 @@ where
         F: Fn(&crate::Lua, &T) -> R + 'static,
         R: crate::IntoLuaResult,
     {
-        self.add_field_method_get(name, move |lua, this: crate::TypedUserData<LuaLock<T>>| {
+        self.add_field_method_get(name, move |lua, this: crate::TypedUserData<LuaLock<T>, TAG>| {
             let inner = this.0.borrow();
             method(lua, &*inner)
         });
     }
 }
 
-impl<T: UserDataMut> crate::UserData for LuaLock<T> {
+impl<const TAG: c_int, T: UserDataMut<TAG>> crate::UserData<TAG> for LuaLock<T> {
     const USE_NAMECALL: bool = true;
 
     fn type_name() -> &'static str {
         T::type_name()
     }
 
-    fn add_fields<F: crate::UserDataFields<Self>>(fields: &mut F) {
+    fn add_fields<F: crate::UserDataFields<Self, TAG>>(fields: &mut F) {
         T::add_fields(fields);
     }
 
-    fn add_methods<M: crate::UserDataMethods<Self>>(methods: &mut M) {
+    fn add_methods<M: crate::UserDataMethods<Self, TAG>>(methods: &mut M) {
         T::add_methods(methods);
     }
 }
@@ -263,19 +263,19 @@ pub trait LuaUserDataMutExt {
     /// Create a mutable userdata
     /// 
     /// The `T` is internally wrapped in a [`LuaLock`] for interior mutability purposes
-    fn create_userdata_mut<T: UserDataMut>(&self, data: T) -> crate::Result<AnyUserData>;
+    fn create_userdata_mut<const TAG: c_int, T: UserDataMut<TAG>>(&self, data: T) -> crate::Result<AnyUserData>;
 
     /// Enriches a AnyUserData of mutable userdata of base type `T` into the underlying lock [`LuaLock<T>`] from which `borrow`/`borrow_mut` can be called
     /// 
     /// Will return `None` if `T` if not the type of the data within the AnyUserData
-    fn into_lock<T: UserDataMut>(self, ud: AnyUserData) -> Option<TypedUserData<LuaLock<T>>>;
+    fn into_lock<const TAG: c_int, T: UserDataMut<TAG>>(self, ud: AnyUserData) -> Option<TypedUserData<LuaLock<T>, TAG>>;
 }
 
 impl LuaUserDataMutExt for Lua {
-    fn create_userdata_mut<T: UserDataMut>(&self, data: T) -> crate::Result<AnyUserData> {
-        self.create_userdata(data.into_mut())
+    fn create_userdata_mut<const TAG: c_int, T: UserDataMut<TAG>>(&self, data: T) -> crate::Result<AnyUserData> {
+        self.create_userdata::<TAG, LuaLock<T>>(data.into_mut())
     }
-    fn into_lock<T: UserDataMut>(self, ud: AnyUserData) -> Option<TypedUserData<LuaLock<T>>> {
-        ud.into::<LuaLock<T>>()
+    fn into_lock<const TAG: c_int, T: UserDataMut<TAG>>(self, ud: AnyUserData) -> Option<TypedUserData<LuaLock<T>, TAG>> {
+        ud.into_with_tag::<LuaLock<T>, TAG>()
     }
 }

@@ -1219,12 +1219,12 @@ impl Lua {
         unsafe { self.lock().create_thread(&func) }
     }
 
-    /// Creates a userdata with data and optional metatable with the default [`USERDATA2_TAG`]
+    /// `create_any_userdata_with_tag` but with default tag
     pub fn create_any_userdata<T: 'static>(&self, data: T, metatable: Option<&Table>) -> Result<AnyUserData> {
         self.create_any_userdata_with_tag::<T, USERDATA2_TAG>(data, metatable)
     }
 
-    /// Creates a userdata with data and optional metatable using the specified custom tag
+    /// Creates a userdata with data and optional metatable using the specified tag
     /// 
     /// # Safety
     /// 
@@ -1246,20 +1246,36 @@ impl Lua {
                     is_registered.set(true);
                 }
             }
-
+                
             // Create ud_ptr, then use place_into_gc_memory to write data onto the GC allocated memory
-            let ud_ptr = protect_lua!(state, 0, 1, |state| {
-                ffi::lua_newuserdatatagged(state, crate::types::ErasedHeader::wrapper_size::<T>(), TAG)
+            protect_lua!(state, 0, 1, |state| {
+                let ud_ptr = ffi::lua_newuserdatatagged(state, crate::types::ErasedHeader::wrapper_size::<T>(), TAG);
+                crate::types::ErasedHeader::place_into_gc_memory(ud_ptr, data);
+
+                // Set metatable if we have one
+                if let Some(mt) = metatable {
+                    lua.push_ref_at(&mt.0, state);
+                    ffi::lua_setmetatable(state, -2);
+                }
             })?;
-            crate::types::ErasedHeader::place_into_gc_memory(ud_ptr, data);
-
-            // Set metatable if we have one
-            if let Some(mt) = metatable {
-                lua.push_ref_at(&mt.0, state);
-                ffi::lua_setmetatable(state, -2);
-            }
-
             Ok(AnyUserData(lua.pop_ref()))
+        }
+    }
+
+    /// Reserve the specified userdata tag's dtor so `lua_findunuseduserdatatag` etc. can find the dtor
+    pub fn reserve_userdata_tag<const TAG: c_int>(&self) {
+        const { assert_ud_tag::<TAG>(); }
+        let lua = self.lock();
+        let state = lua.state();
+        unsafe {
+            // If not default tag, set dtor lazily
+            if const { TAG != USERDATA2_TAG } {
+                let is_registered = &(*lua.extra()).registered_tags[TAG as usize];
+                if !is_registered.get() {
+                    ExtraData::set_userdata_dtor(state, TAG);
+                    is_registered.set(true);
+                }
+            }
         }
     }
 
