@@ -1,4 +1,5 @@
 use std::os::raw::{c_int, c_void};
+use std::ptr::NonNull;
 
 use crate::error::Result;
 use crate::state::{Lua, RawLua};
@@ -14,38 +15,71 @@ pub type Integer = ffi::lua_Integer;
 /// Type of Lua floating point numbers.
 pub type Number = ffi::lua_Number;
 
-/// A reference to a value `T`
-/// 
-/// Required to hold the underlying Luau VM alive until reference is dropped
-pub struct LuaRef<'a, T: 'static> {
-    lua: Lua,
-    data: &'a T,
+/// A Luau-backed reference to a value of type `T` pinning both the Luau VM and the backer it came from
+pub struct TypedRef<T: 'static, Backer: 'static + Clone> {
+    pub(crate) ud: Backer,
+    // cached data ptr
+    pub(crate) ptr: NonNull<T>,
+    pub(crate) lua: Lua, // hold a strong ref to VM
 }
 
-impl<'a, T: 'static> LuaRef<'a, T> {
-    pub(crate) fn new(lua: Lua, data: &'a T) -> Self {
-        Self { lua: lua, data }
+impl<T: 'static, Backer: 'static + Clone> Clone for TypedRef<T, Backer> {
+    fn clone(&self) -> Self {
+        Self {
+            // new valueref refcount
+            ud: self.ud.clone(), 
+            ptr: self.ptr, // we can keep same ptr   
+            lua: self.lua.clone(), // one new vm ref
+        }
+    }
+}
+
+impl<T: 'static, Backer: 'static + Clone + PartialEq> PartialEq for TypedRef<T, Backer> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.ud != other.ud {
+            return false;
+        }
+
+        self.ptr == other.ptr
+    }
+}
+
+impl<T: 'static + std::fmt::Debug, Backer: 'static + Clone> std::fmt::Debug for TypedRef<T, Backer> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("TypedRef")
+            .field(&**self)
+            .finish()
+    }
+}
+
+impl<T: 'static, Backer: 'static + Clone> Deref for TypedRef<T, Backer> {
+    type Target = T;
+    
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: ValueRef pins the TypedRef down w/ lua_refpool and _lua holds Lua VM alive
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl<T: 'static, Backer: 'static + Clone> TypedRef<T, Backer> {
+    pub(crate) fn new(lua: Lua, data: NonNull<T>, ud: Backer) -> Self {
+        Self { lua, ptr: data, ud }
     }
 
-    pub(crate) fn new_opt(lua: Lua, data: Option<&'a T>) -> Option<Self> {
-        match data {
-            Some(data) => Some(Self::new(lua, data)),
-            None => None
-        }
+    pub(crate) fn new_opt(lua: Lua, data: Option<&T>, ud: Backer) -> Option<Self> {
+        let ptr = data.map(|x| NonNull::from(x))?;
+        Some(Self::new(lua, ptr, ud))
     }
 
     /// Returns a reference to the Lua reference backing `T`
     pub fn lua(&self) -> &Lua {
         &self.lua
     }
-}
 
-impl<'a, T: 'static> Deref for LuaRef<'a, T> {
-    type Target = T;
-
-    #[inline]
-    fn deref(&self) -> &T {
-        self.data
+    /// Returns the backer that backs `T` consuming the TypedRef in the process
+    pub fn into_backer(self) -> Backer {
+        self.ud
     }
 }
 

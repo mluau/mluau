@@ -244,7 +244,7 @@ pub trait UserData: 'static + Sized {
 }
 
 // Internal impl
-enum UdError {
+pub(super) enum UdError {
     Value(Value),
     Error(crate::Error)
 }
@@ -262,7 +262,7 @@ impl IntoLuaResultMulti for Result<MultiValue, UdError> {
     type Item = MultiValue;
     type Error = UdError;
 
-    fn into_result(self) -> std::result::Result<Self::Item, UdError> { self }
+    fn into_result(self) -> Result<Self::Item, UdError> { self }
 }
 
 enum IndexResult {
@@ -274,7 +274,7 @@ impl IntoLuaResultMulti for Result<IndexResult, UdError> {
     type Item = MultiValue;
     type Error = UdError;
 
-    fn into_result(self) -> std::result::Result<Self::Item, Self::Error> {
+    fn into_result(self) -> Result<Self::Item, Self::Error> {
         self.map(|x| {
             match x {
                 IndexResult::Value(v) => MultiValue::from_iter([v]),
@@ -320,50 +320,6 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
         T::add_methods(&mut reg);
 
         reg.finalize_metatable()
-    }
-
-    #[inline]
-    /// Wraps a method into a type-erased MethodCb<T>
-    fn wrap_method<M, A, R>(method: M) -> MethodCb<T>
-    where
-        M: Fn(&Lua, TypedUserData<T>, A) -> R + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaResultMulti,
-    {
-        Rc::new(move |lua, this, args| {
-            let args = match A::from_lua_multi(args, lua) {
-                Ok(a) => a,
-                Err(e) => return Err(UdError::Error(e)),
-            };
-            
-            // Call method and normalize
-            match method(lua, this, args).into_result() {
-                Ok(item) => item.into_lua_multi(lua).map_err(UdError::Error),
-                Err(err) => match err.into_lua_err(lua) {
-                    Ok(v) => Err(UdError::Value(v)),
-                    Err(e) => Err(UdError::Error(e)),
-                }
-            }
-        })
-    }
-
-    #[inline]
-    /// Wraps a method into a type-erased MethodCb<T>
-    fn wrap_field_getter<M, R>(method: M) -> FieldGetter<T>
-    where
-        M: Fn(&Lua, TypedUserData<T>) -> R + 'static,
-        R: IntoLuaResult,
-    {
-        Rc::new(move |lua, this| {
-            // Call method and normalize
-            match method(lua, this).into_result() {
-                Ok(item) => item.into_lua(lua).map_err(UdError::Error),
-                Err(err) => match err.into_lua_err(lua) {
-                    Ok(v) => Err(UdError::Value(v)),
-                    Err(e) => Err(UdError::Error(e)),
-                }
-            }
-        })
     }
 
     fn finalize_metatable(self) -> crate::Result<Table> {
@@ -496,7 +452,7 @@ impl<T: UserData> UserDataFields<T> for UserDataRegistry<'_, T> {
         M: Fn(&Lua, TypedUserData<T>) -> R + 'static,
         R: IntoLuaResult
     {
-        self.field_method_get.insert(name.into(), Self::wrap_field_getter(method));
+        self.field_method_get.insert(name.into(), wrap_field_getter(method));
     }
 }
 
@@ -518,7 +474,7 @@ impl<T: UserData> UserDataMethods<T> for UserDataRegistry<'_, T> {
         // Methods are a bit special due to __namecall optimization which normal functions don't get
         //
         // If namecall optimization is enabled, we need to wrap methods to get a namecall repr for __namecall optimization
-        let wrapped = Self::wrap_method(method);
+        let wrapped = wrap_method(method);
         let name = name.into();
         self.namecall_methods.insert(name, wrapped.clone());
         self.index_mt_props.insert(name, self.lua.create_function(move |lua: &Lua, (ud, args): (TypedUserData<T>, MultiValue)| {
@@ -542,8 +498,8 @@ impl<T: UserData> UserDataMethods<T> for UserDataRegistry<'_, T> {
     {
         let name = name.into();
         match name {
-            "__index" => { self.index_fb = Some(Self::wrap_method(method)); },
-            "__namecall" => { self.namecall_fb = Some(Self::wrap_method(method)); },
+            "__index" => { self.index_fb = Some(wrap_method(method)); },
+            "__namecall" => { self.namecall_fb = Some(wrap_method(method)); },
             _ => { self.mt_props.insert(name, self.lua.create_function(move |lua, (ud, args)| method(lua, ud, args)).map(Value::Function)); }
         };
     }
@@ -567,4 +523,52 @@ impl LuaUserDataExt for Lua {
         let ud = UserDataRegistry::create_userdata(self, data)?;
         Ok(ud)
     }
+}
+
+// Helpers for wrapping fn's/cb's
+
+#[inline]
+/// Wraps a method into a type-erased MethodCb<T>
+pub(super) fn wrap_method<T, M, A, R>(method: M) -> MethodCb<T>
+where
+    T: UserData,
+    M: Fn(&Lua, TypedUserData<T>, A) -> R + 'static,
+    A: FromLuaMulti,
+    R: IntoLuaResultMulti,
+{
+    Rc::new(move |lua, this, args| {
+        let args = match A::from_lua_multi(args, lua) {
+            Ok(a) => a,
+            Err(e) => return Err(UdError::Error(e)),
+        };
+        
+        // Call method and normalize
+        match method(lua, this, args).into_result() {
+            Ok(item) => item.into_lua_multi(lua).map_err(UdError::Error),
+            Err(err) => match err.into_lua_err(lua) {
+                Ok(v) => Err(UdError::Value(v)),
+                Err(e) => Err(UdError::Error(e)),
+            }
+        }
+    })
+}
+
+#[inline]
+/// Wraps a method into a type-erased MethodCb<T>
+pub(super) fn wrap_field_getter<T, M, R>(method: M) -> FieldGetter<T>
+where
+    T: UserData,
+    M: Fn(&Lua, TypedUserData<T>) -> R + 'static,
+    R: IntoLuaResult,
+{
+    Rc::new(move |lua, this| {
+        // Call method and normalize
+        match method(lua, this).into_result() {
+            Ok(item) => item.into_lua(lua).map_err(UdError::Error),
+            Err(err) => match err.into_lua_err(lua) {
+                Ok(v) => Err(UdError::Value(v)),
+                Err(e) => Err(UdError::Error(e)),
+            }
+        }
+    })
 }

@@ -5,7 +5,7 @@ use std::os::raw::c_void;
 use serde::ser::{Serialize, Serializer};
 
 use crate::state::RawLua;
-use crate::types::{LuaRef, ValueRef};
+use crate::types::{TypedRef, ValueRef};
 
 /// A Luau buffer type.
 ///
@@ -64,7 +64,7 @@ impl Buffer {
     /// # Safety:
     /// 
     /// Assumes the external buffer was created by mluau's create_external_buffer
-    pub fn downcast_ref<T: ExternalBuffer>(&self) -> Option<LuaRef<'_, T>> {
+    pub fn downcast_ref<T: ExternalBuffer>(&self) -> Option<TypedRef<T, Self>> {
         let lua = self.0.lua.lock();
         let state = lua.state();
         let ptr = unsafe { 
@@ -73,7 +73,7 @@ impl Buffer {
             let ud = ffi::lua_getbufferuserdata(state, -1);
             crate::types::ErasedHeader::downcast_ref(ud)
         };
-        LuaRef::new_opt(lua.lua().clone(), ptr)
+        TypedRef::new_opt(lua.lua().clone(), ptr, self.clone())
     }
 
     /// Reads given number of bytes from the buffer at the given offset.

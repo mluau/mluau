@@ -1,6 +1,6 @@
 use std::{ffi::c_void, ptr::NonNull};
 
-use crate::{FromLua, FromLuaMulti, Function, IntoLua, IntoLuaMulti, Lua, Result, Table, Value, WeakLua, state::{LuaGuard, extra::USERDATA2_TAG}, types::{LuaRef, ValueRef}, util::{StackGuard, assert_stack, check_stack, short_type_name}};
+use crate::{FromLua, FromLuaMulti, Function, IntoLua, IntoLuaMulti, Lua, Result, Table, Value, WeakLua, state::{LuaGuard, extra::USERDATA2_TAG}, types::{TypedRef, ValueRef}, util::{StackGuard, assert_stack, check_stack, short_type_name}};
 
 /// Handle to an internal Lua userdata
 #[derive(Clone, Debug, PartialEq)]
@@ -44,24 +44,20 @@ impl AnyUserData {
     }
 
     #[inline(always)]
-    fn borrow_to_ptr<T: 'static>(&self) -> (Option<&T>, LuaGuard) {
+    fn borrow_to_ptr<T: 'static>(&self) -> (Option<NonNull<T>>, LuaGuard) {
         let lua = self.0.lua.lock();
         let state = lua.state();
-        unsafe {
+        let ptr = unsafe {
             let _sg = StackGuard::new(state);
 
             // Push the userdata onto the stack
             lua.push_ref_at(&self.0, state);
 
             let res = ffi::lua_touserdatatagged(state, -1, USERDATA2_TAG);
-            (crate::types::ErasedHeader::downcast_ref(res), lua)
-        }
-    }
-
-    /// Borrow this userdata immutably if it is of type `T` as a `LuaRef` for compatibility etc. with buffers/thread data API
-    pub fn borrow_ref<T: 'static>(&self) -> Option<LuaRef<'_, T>> {
-        let (ptr, lua) = self.borrow_to_ptr();
-        LuaRef::new_opt(lua.lua().clone(), ptr)
+            crate::types::ErasedHeader::downcast_ref(res)
+        };
+        
+        (ptr.map(NonNull::from), lua)
     }
 
     /// Borrow this userdata immutably into a TypedUserData handle if it is of type `T`.
@@ -69,15 +65,15 @@ impl AnyUserData {
     /// Note: This operation is basically as cheap as `borrow_ref`
     #[inline(always)]
     pub fn borrow<T: 'static>(&self) -> Option<TypedUserData<T>> {
-        let ud_ref = self.0.clone();
         let (ptr, lua) = self.borrow_to_ptr::<T>();
-        ptr.map(|ptr| {
-            TypedUserData {
-                ud: ud_ref,
-                ptr: std::ptr::NonNull::from(ptr),
-                _lua: lua.lua().clone(),
-            }
-        })
+        ptr.map(|p| TypedRef::new(lua.lua().clone(), p, self.clone()))
+    }
+
+    /// Same as `borrow` but takes ownership for performance purposes
+    #[inline(always)]
+    pub fn into<T: 'static>(self) -> Option<TypedUserData<T>> {
+        let (ptr, lua) = self.borrow_to_ptr::<T>();
+        ptr.map(|p| TypedRef::new(lua.lua().clone(), p, self))
     }
 
     #[inline]
@@ -165,53 +161,18 @@ impl AnyUserData {
     }
 }
 
-/// A typed (and optimized) version of `AnyUserData`
-pub struct TypedUserData<T: 'static> {
-    ud: ValueRef,
-    // cached data ptr
-    ptr: NonNull<T>,
-    _lua: Lua, // hold a strong ref to VM
-}
-
-impl<T: 'static> Clone for TypedUserData<T> {
-    fn clone(&self) -> Self {
-        Self {
-            // new valueref refcount
-            ud: self.ud.clone(), 
-            ptr: self.ptr, // we can keep same ptr   
-            _lua: self._lua.clone(), // one new vm ref
-        }
-    }
-}
-
-impl<T: 'static> PartialEq for TypedUserData<T> {
-    fn eq(&self, other: &Self) -> bool {
-        if self.ud.lua != other.ud.lua {
-            return false;
-        }
-
-        self.ptr == other.ptr
-    }
-}
-
-impl<T: 'static + std::fmt::Debug> std::fmt::Debug for TypedUserData<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("TypedUserData")
-            .field(&**self)
-            .finish()
-    }
-}
+pub type TypedUserData<T> = TypedRef<T, AnyUserData>;
 
 impl<T: 'static> IntoLua for TypedUserData<T> {
     fn into_lua(self, _lua: &Lua) -> Result<Value> {
-        Ok(Value::UserData(AnyUserData(self.ud)))
+        Ok(Value::UserData(self.ud))
     }
 }
 
 impl<T: 'static> crate::FromLua for TypedUserData<T> {
-    fn from_lua(value: crate::Value, lua: &crate::Lua) -> crate::Result<Self> {
-        let ud_ref = match value {
-            crate::Value::UserData(ud) => ud.0, 
+    fn from_lua(value: crate::Value, _lua: &crate::Lua) -> crate::Result<Self> {
+        let ud = match value {
+            crate::Value::UserData(ud) => ud, 
             _ => {
                 return Err(crate::Error::FromLuaConversionError {
                     from: value.type_name(),
@@ -221,30 +182,11 @@ impl<T: 'static> crate::FromLua for TypedUserData<T> {
             }
         };
 
-        let lua = lua.lock();
-        let state = lua.state();
-        let ptr = unsafe {
-            let _sg = StackGuard::new(state);
-
-            // Push the userdata onto the stack
-            lua.push_ref_at(&ud_ref, state);
-
-            let res = ffi::lua_touserdatatagged(state, -1, USERDATA2_TAG);
-            crate::types::ErasedHeader::downcast_ref::<T>(res)
-        };
-
-        match ptr {
-            Some(p) => Ok(Self {
-                ud: ud_ref,
-                ptr: std::ptr::NonNull::from(p),
-                _lua: lua.lua().clone(),
-            }),
-            None => Err(crate::Error::FromLuaConversionError {
-                from: "userdata",
-                to: short_type_name::<T>().to_string(),
-                message: Some(format!("expected userdata of type {}", short_type_name::<T>())),
-            })
-        }
+        ud.into().ok_or_else(|| crate::Error::FromLuaConversionError {
+            from: "userdata",
+            to: short_type_name::<T>().to_string(),
+            message: Some(format!("expected userdata of type {}", short_type_name::<T>())),
+        })
     }
 
     // Fast-path: we can directly use touserdatatagged directly and avoid extra work
@@ -260,11 +202,7 @@ impl<T: 'static> crate::FromLua for TypedUserData<T> {
         }
 
         if let Some(data_ref) = crate::types::ErasedHeader::downcast_ref::<T>(ud_ptr) {
-            return Ok(Self {
-                ud: lua.new_value_ref_from(state, idx),
-                ptr: std::ptr::NonNull::from(data_ref),
-                _lua: lua.lua().clone(),
-            })
+            return Ok(Self::new(lua.lua().clone(), NonNull::from(data_ref), AnyUserData(lua.new_value_ref_from(state, idx))))
         }
 
         Err(crate::Error::FromLuaConversionError {
@@ -273,14 +211,4 @@ impl<T: 'static> crate::FromLua for TypedUserData<T> {
             message: Some(format!("expected userdata of type {}", short_type_name::<T>())),
         })
     }   
-}
-
-impl<T: 'static> std::ops::Deref for TypedUserData<T> {
-    type Target = T;
-    
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        // SAFETY: ValueRef pins the TypedUserData down w/ lua_refpool and _lua holds Lua VM alive
-        unsafe { self.ptr.as_ref() }
-    }
 }

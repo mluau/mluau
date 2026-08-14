@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 use crate::function::Function;
 use crate::state::RawLua;
 use crate::traits::{FromLuaMulti, IntoLuaMulti};
-use crate::types::{LuaRef, LuaType, ValueRef};
+use crate::types::{LuaType, TypedRef, ValueRef};
 
 use crate::util::{check_stack, error_traceback_thread, pop_error, StackGuard};
 use crate::WeakLua;
@@ -100,7 +100,7 @@ impl Thread {
     ///
     /// This is a Luau specific extension.
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn thread_data<T: 'static>(&self) -> Option<LuaRef<'_, T>> {
+    pub fn thread_data<T: 'static>(&self) -> Option<TypedRef<T, Self>> {
         let lua = self.0.lua.lock();
         let thread_state = self.state();
         let ptr = unsafe {
@@ -110,7 +110,7 @@ impl Thread {
             }
             crate::types::ErasedHeader::downcast_ref(current)
         };
-        LuaRef::new_opt(lua.lua().clone(), ptr)
+        TypedRef::new_opt(lua.lua().clone(), ptr, self.clone())
     }
 
     /// Sets the thread data. The set thread data will automatically be dropped upon Luau GC
