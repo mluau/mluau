@@ -224,9 +224,9 @@ pub trait UserDataFields<T, const TAG: c_int = USERDATA2_TAG> {
 /// - Adding a __index metamethod via meta-method (warning: __index as meta function will *not* work right now, this is a current impl limitation, forces all __index to go through func and not table __index)
 /// - Field getters (forces func __index)
 /// 
-/// Mutable Userdata:
-/// 
-/// - 
+/// Mutable userdata can be created by defining [`UserDataMut`] instead of this trait. Note that this costs about 8 bytes extra. and is slower
+/// than immutable userdata as it wraps every userdata access behind a RefCell meaning all normal RefCell guidance apply (incl. but not limited to
+/// never holding the mutable ref to `T` beyond a await point)
 pub trait UserData<const TAG: c_int = USERDATA2_TAG>: 'static + Sized {
     /// Whether or not to use __namecall optimization
     /// 
