@@ -344,8 +344,8 @@ unsafe extern "C-unwind" {
 //
 // Reference system, can be used to pin objects
 //
-pub const LUA_NOREF: c_int = -1;
-pub const LUA_REFNIL: c_int = 0;
+pub const LUA_NOREF: c_int = -2;
+pub const LUA_REFNIL: c_int = -1;
 
 unsafe extern "C-unwind" {
     pub fn lua_ref(L: *mut lua_State, idx: c_int) -> c_int;
