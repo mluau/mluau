@@ -827,7 +827,8 @@ pub fn test_thread_set_thread_data() -> Result<()> {
     // Check if we can get a ref to TestData
     let weak = {
         let data = thread
-            .thread_data::<TestData>()
+            .clone()
+            .with_data::<TestData>()
             .ok_or(Error::runtime("No thread data found"))?;
         assert!(Arc::ptr_eq(&data.value, &count));
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 0);
@@ -854,7 +855,8 @@ pub fn test_thread_set_thread_data() -> Result<()> {
 
     {
         let data = thread_2
-            .thread_data::<TestData>()
+            .clone()
+            .with_data::<TestData>()
             .ok_or(Error::runtime("No thread data found"))?;
         assert!(Arc::ptr_eq(&data.value, &count_2));
         assert_eq!(count_2.load(std::sync::atomic::Ordering::SeqCst), 0);

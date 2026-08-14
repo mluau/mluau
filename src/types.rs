@@ -16,14 +16,14 @@ pub type Integer = ffi::lua_Integer;
 pub type Number = ffi::lua_Number;
 
 /// A Luau-backed reference to a value of type `T` pinning both the Luau VM and the backer it came from
-pub struct TypedRef<T: 'static, Backer: 'static + Clone> {
+pub struct TypedRef<T: 'static, Backer: 'static + Clone, const TAG: c_int> {
     pub(crate) ud: Backer,
     // cached data ptr
     pub(crate) ptr: NonNull<T>,
     pub(crate) lua: XRc<RawLua>, // hold a strong ref to VM
 }
 
-impl<T: 'static, Backer: 'static + Clone> Clone for TypedRef<T, Backer> {
+impl<T: 'static, Backer: 'static + Clone, const TAG: c_int> Clone for TypedRef<T, Backer, TAG> {
     fn clone(&self) -> Self {
         Self {
             // new valueref refcount
@@ -34,7 +34,7 @@ impl<T: 'static, Backer: 'static + Clone> Clone for TypedRef<T, Backer> {
     }
 }
 
-impl<T: 'static, Backer: 'static + Clone + PartialEq> PartialEq for TypedRef<T, Backer> {
+impl<T: 'static, Backer: 'static + Clone + PartialEq, const TAG: c_int> PartialEq for TypedRef<T, Backer, TAG> {
     fn eq(&self, other: &Self) -> bool {
         if self.ud != other.ud {
             return false;
@@ -44,7 +44,7 @@ impl<T: 'static, Backer: 'static + Clone + PartialEq> PartialEq for TypedRef<T, 
     }
 }
 
-impl<T: 'static + std::fmt::Debug, Backer: 'static + Clone> std::fmt::Debug for TypedRef<T, Backer> {
+impl<T: 'static + std::fmt::Debug, Backer: 'static + Clone, const TAG: c_int> std::fmt::Debug for TypedRef<T, Backer, TAG> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("TypedRef")
             .field(&**self)
@@ -52,7 +52,7 @@ impl<T: 'static + std::fmt::Debug, Backer: 'static + Clone> std::fmt::Debug for 
     }
 }
 
-impl<T: 'static, Backer: 'static + Clone> Deref for TypedRef<T, Backer> {
+impl<T: 'static, Backer: 'static + Clone, const TAG: c_int> Deref for TypedRef<T, Backer, TAG> {
     type Target = T;
     
     #[inline(always)]
@@ -62,7 +62,7 @@ impl<T: 'static, Backer: 'static + Clone> Deref for TypedRef<T, Backer> {
     }
 }
 
-impl<T: 'static, Backer: 'static + Clone> TypedRef<T, Backer> {
+impl<T: 'static, Backer: 'static + Clone, const TAG: c_int> TypedRef<T, Backer, TAG> {
     pub(crate) fn new(lua: XRc<RawLua>, data: NonNull<T>, ud: Backer) -> Self {
         Self { lua, ptr: data, ud }
     }
@@ -80,6 +80,11 @@ impl<T: 'static, Backer: 'static + Clone> TypedRef<T, Backer> {
     /// Returns the backer that backs `T` consuming the TypedRef in the process
     pub fn into_backer(self) -> Backer {
         self.ud
+    }
+
+    /// Returns a reference to the backer that backs `T`
+    pub fn backer(&self) -> &Backer {
+        &self.ud
     }
 }
 

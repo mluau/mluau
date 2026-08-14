@@ -265,17 +265,17 @@ pub trait LuaUserDataMutExt {
     /// The `T` is internally wrapped in a [`LuaLock`] for interior mutability purposes
     fn create_userdata_mut<T: UserDataMut>(&self, data: T) -> crate::Result<AnyUserData>;
 
-    /// Take a borrow of the mutable userdata's lock from which `borrow`/`borrow_mut` can be called
+    /// Enriches a AnyUserData of mutable userdata of base type `T` into the underlying lock [`LuaLock<T>`] from which `borrow`/`borrow_mut` can be called
     /// 
     /// Will return `None` if `T` if not the type of the data within the AnyUserData
-    fn borrow_lock<T: UserDataMut>(&self, ud: AnyUserData) -> Option<TypedUserData<LuaLock<T>>>;
+    fn into_lock<T: UserDataMut>(self, ud: AnyUserData) -> Option<TypedUserData<LuaLock<T>>>;
 }
 
 impl LuaUserDataMutExt for Lua {
     fn create_userdata_mut<T: UserDataMut>(&self, data: T) -> crate::Result<AnyUserData> {
         self.create_userdata(data.into_mut())
     }
-    fn borrow_lock<T: UserDataMut>(&self, ud: AnyUserData) -> Option<TypedUserData<LuaLock<T>>> {
-        ud.borrow::<LuaLock<T>>()
+    fn into_lock<T: UserDataMut>(self, ud: AnyUserData) -> Option<TypedUserData<LuaLock<T>>> {
+        ud.into::<LuaLock<T>>()
     }
 }

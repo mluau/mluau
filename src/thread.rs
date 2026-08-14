@@ -93,14 +93,12 @@ impl Thread {
         }
     }
 
-    /// Returns the thread data without removing it from the thread.
+    /// Returns the thread data without removing it from the thread
     ///
     /// Returns `None` if no data was set for the current lua thread or if the provided type
     /// does not match the stored data type.
-    ///
-    /// This is a Luau specific extension.
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn thread_data<T: 'static>(&self) -> Option<TypedRef<T, Self>> {
+    pub fn with_data<T: 'static>(self) -> Option<TypedRef<T, Self, 0>> {
         let lua = self.0.lua.lock();
         let thread_state = self.state();
         let ptr = unsafe {
@@ -110,7 +108,7 @@ impl Thread {
             }
             crate::types::ErasedHeader::downcast_ref(current)
         };
-        TypedRef::new_opt(lua.0, ptr, self.clone())
+        TypedRef::new_opt(lua.0, ptr, self)
     }
 
     /// Sets the thread data. The set thread data will automatically be dropped upon Luau GC

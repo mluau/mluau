@@ -64,7 +64,7 @@ impl Buffer {
     /// # Safety:
     /// 
     /// Assumes the external buffer was created by mluau's create_external_buffer
-    pub fn downcast_ref<T: ExternalBuffer>(&self) -> Option<TypedRef<T, Self>> {
+    pub fn downcast_ref<T: ExternalBuffer>(&self) -> Option<TypedRef<T, Self, 0>> { // TODO: when we get tagged buffers, use the tag here
         let lua = self.0.lua.lock();
         let state = lua.state();
         let ptr = unsafe { 

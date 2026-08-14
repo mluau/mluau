@@ -12,7 +12,7 @@ use crate::stdlib::StdLib;
 use crate::string::String;
 use crate::table::Table;
 use crate::thread::Thread;
-use crate::userdata::AnyUserData;
+use crate::userdata::{AnyUserData, assert_ud_tag};
 use std::cell::{BorrowError, BorrowMutError, RefCell};
 use std::ffi::CStr;
 
@@ -1219,17 +1219,31 @@ impl Lua {
         unsafe { self.lock().create_thread(&func) }
     }
 
-    /// Creates a userdata with data and optional metatable.
+    /// Creates a userdata with data and optional metatable with the default [`USERDATA2_TAG`]
     pub fn create_any_userdata<T: 'static>(&self, data: T, metatable: Option<&Table>) -> Result<AnyUserData> {
+        self.create_any_userdata_with_tag::<T, USERDATA2_TAG>(data, metatable)
+    }
+
+    /// Creates a userdata with data and optional metatable using the specified custom tag
+    pub fn create_any_userdata_with_tag<T: 'static, const TAG: c_int>(&self, data: T, metatable: Option<&Table>) -> Result<AnyUserData> {
+        const { assert_ud_tag::<TAG>(); }
+
         let lua = self.lock();
         let state = lua.state();
         unsafe {
             let _sg = StackGuard::new(state);
             check_stack(state, 3)?;
 
+            if const { TAG != USERDATA2_TAG } {
+                if !(*lua.extra()).registered_tags[TAG as usize] {
+                    ExtraData::set_userdata_dtor(state, TAG);
+                    lua.extra.get().as_mut().unwrap_unchecked().registered_tags[TAG as usize] = true;
+                }
+            }
+
             // Create ud_ptr, then use place_into_gc_memory to write data onto the GC allocated memory
             let ud_ptr = protect_lua!(state, 0, 1, |state| {
-                ffi::lua_newuserdatatagged(state, crate::types::ErasedHeader::wrapper_size::<T>(), USERDATA2_TAG)
+                ffi::lua_newuserdatatagged(state, crate::types::ErasedHeader::wrapper_size::<T>(), TAG)
             })?;
             crate::types::ErasedHeader::place_into_gc_memory(ud_ptr, data);
 

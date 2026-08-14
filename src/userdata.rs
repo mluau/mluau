@@ -1,6 +1,10 @@
-use std::{ffi::c_void, ptr::NonNull};
+use std::{ffi::{c_int, c_void}, ptr::NonNull};
 
 use crate::{FromLua, FromLuaMulti, Function, IntoLua, IntoLuaMulti, Lua, Result, Table, Value, WeakLua, state::{LuaGuard, extra::USERDATA2_TAG}, types::{TypedRef, ValueRef}, util::{StackGuard, assert_stack, check_stack, short_type_name}};
+
+pub(crate) const fn assert_ud_tag<const TAG: c_int>() {
+    assert!(TAG > 0 && TAG < ffi::LUA_UTAG_LIMIT);
+}
 
 /// Handle to an internal Lua userdata
 #[derive(Clone, Debug, PartialEq)]
@@ -44,36 +48,58 @@ impl AnyUserData {
     }
 
     #[inline(always)]
-    fn borrow_to_ptr<T: 'static>(&self) -> (Option<NonNull<T>>, LuaGuard) {
+    fn borrow_to_ptr<T: 'static, const TAG: c_int>(&self) -> (Option<NonNull<T>>, LuaGuard) {
+        const { assert_ud_tag::<TAG>() }
+
         let lua = self.0.lua.lock();
         let state = lua.state();
         let ptr = unsafe {
             let _sg = StackGuard::new(state);
 
+            if const { TAG != USERDATA2_TAG } {
+                if !(*lua.extra()).registered_tags[TAG as usize] {
+                    return (None, lua); // we dont own this TAG
+                }
+            }
+
             // Push the userdata onto the stack
             lua.push_ref_at(&self.0, state);
 
-            let res = ffi::lua_touserdatatagged(state, -1, USERDATA2_TAG);
+            let res = ffi::lua_touserdatatagged(state, -1, TAG);
             crate::types::ErasedHeader::downcast_ref(res)
         };
         
         (ptr.map(NonNull::from), lua)
     }
 
-    /// Borrow this userdata immutably into a TypedUserData handle if it is of type `T`.
-    /// 
-    /// Note: This operation is basically as cheap as `borrow_ref`
-    #[inline(always)]
-    pub fn borrow<T: 'static>(&self) -> Option<TypedUserData<T>> {
-        let (ptr, lua) = self.borrow_to_ptr::<T>();
-        ptr.map(|p| TypedRef::new(lua.0, p, self.clone()))
-    }
-
-    /// Same as `borrow` but takes ownership for performance purposes
+    /// Turns the userdata immutably into a TypedUserData handle if it is of type `T`.
     #[inline(always)]
     pub fn into<T: 'static>(self) -> Option<TypedUserData<T>> {
-        let (ptr, lua) = self.borrow_to_ptr::<T>();
+        self.into_with_tag::<T, USERDATA2_TAG>()
+    }
+
+    /// Turns the userdata immutably into a TypedUserData handle if it is of type `T`
+    /// given the userdata has a *tag* of `tag`.
+    #[inline(always)]
+    pub fn into_with_tag<T: 'static, const TAG: c_int>(self) -> Option<TypedRef<T, Self, TAG>> {
+        let (ptr, lua) = self.borrow_to_ptr::<T, TAG>();
         ptr.map(|p| TypedRef::new(lua.0, p, self))
+    }
+
+    /// Same as `into` but clones the underlying AnyUserData if the borrow succeeds
+    /// 
+    /// Note: This internally has to clone the underlying AnyUserData handle in the process making it 
+    /// *slightly* less performant than `into`
+    #[inline(always)]
+    pub fn borrow<T: 'static>(&self) -> Option<TypedUserData<T>> {
+        self.borrow_with_tag::<T, USERDATA2_TAG>()
+    }
+
+    /// Same as `into_with_tag`, but for borrow
+    #[inline(always)]
+    pub fn borrow_with_tag<T: 'static, const TAG: c_int>(&self) -> Option<TypedRef<T, Self, TAG>> {
+        let (ptr, lua) = self.borrow_to_ptr::<T, TAG>();
+        ptr.map(|p| TypedRef::new(lua.0, p, self.clone()))
     }
 
     #[inline]
@@ -161,7 +187,7 @@ impl AnyUserData {
     }
 }
 
-pub type TypedUserData<T> = TypedRef<T, AnyUserData>;
+pub type TypedUserData<T> = TypedRef<T, AnyUserData, USERDATA2_TAG>;
 
 impl<T: 'static> IntoLua for TypedUserData<T> {
     fn into_lua(self, _lua: &Lua) -> Result<Value> {
@@ -169,21 +195,18 @@ impl<T: 'static> IntoLua for TypedUserData<T> {
     }
 }
 
-impl<T: 'static> crate::FromLua for TypedUserData<T> {
+impl<T: 'static, const TAG: c_int> crate::FromLua for TypedRef<T, AnyUserData, TAG> {
     fn from_lua(value: crate::Value, _lua: &crate::Lua) -> crate::Result<Self> {
-        let ud = match value {
-            crate::Value::UserData(ud) => ud, 
-            _ => {
-                return Err(crate::Error::FromLuaConversionError {
-                    from: value.type_name(),
-                    to: short_type_name::<T>().to_string(),
-                    message: Some(format!("expected userdata of type {}", short_type_name::<T>())),
-                })
-            }
-        };
+        let from_type = value.type_name(); 
 
-        ud.into().ok_or_else(|| crate::Error::FromLuaConversionError {
-            from: "userdata",
+        if let crate::Value::UserData(ud) = value {
+            if let Some(typed_ref) = ud.into_with_tag::<T, TAG>() {
+                return Ok(typed_ref);
+            }
+        }
+
+        Err(crate::Error::FromLuaConversionError {
+            from: from_type, 
             to: short_type_name::<T>().to_string(),
             message: Some(format!("expected userdata of type {}", short_type_name::<T>())),
         })
@@ -191,24 +214,33 @@ impl<T: 'static> crate::FromLua for TypedUserData<T> {
 
     // Fast-path: we can directly use touserdatatagged directly and avoid extra work
     unsafe fn from_specified_stack(idx: std::os::raw::c_int, lua: &crate::state::RawLua, state: *mut ffi::lua_State) -> Result<Self> {
-        let ud_ptr = ffi::lua_touserdatatagged(state, idx, USERDATA2_TAG); // returns nullptr if not ud or incorrect tag
-        if ud_ptr.is_null() {
+        // Tag safety
+        const { assert_ud_tag::<TAG>() }
+        let err = || {
             let from = crate::util::lua_type_to_str(ffi::lua_type(state, idx));
-            return Err(crate::Error::FromLuaConversionError {
+            crate::Error::FromLuaConversionError {
                 from,
                 to: short_type_name::<T>().to_string(),
                 message: Some(format!("expected userdata of type {}", short_type_name::<T>())),
-            })
+            }
+        };
+
+        // Ensure the tagged is registered to *us*
+        if const { TAG != USERDATA2_TAG } {
+            if !(*lua.extra()).registered_tags[TAG as usize] {
+                return Err(err()); // we dont own this TAG
+            }
+        }
+        
+        let ud_ptr = ffi::lua_touserdatatagged(state, idx, TAG); // returns nullptr if not ud or incorrect tag
+        if ud_ptr.is_null() {
+            return Err(err())
         }
 
         if let Some(data_ref) = crate::types::ErasedHeader::downcast_ref::<T>(ud_ptr) {
             return Ok(Self::new(lua.lua().guard().0, NonNull::from(data_ref), AnyUserData(lua.new_value_ref_from(state, idx))))
         }
 
-        Err(crate::Error::FromLuaConversionError {
-            from: "userdata",
-            to: short_type_name::<T>().to_string(),
-            message: Some(format!("expected userdata of type {}", short_type_name::<T>())),
-        })
+        Err(err())
     }   
 }

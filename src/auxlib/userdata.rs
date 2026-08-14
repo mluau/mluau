@@ -222,6 +222,10 @@ pub trait UserDataFields<T> {
 /// - Disabling namecall (forces __index then call as two separate accesses)
 /// - Adding a __index metamethod via meta-method (warning: __index as meta function will *not* work right now, this is a current impl limitation, forces all __index to go through func and not table __index)
 /// - Field getters (forces func __index)
+/// 
+/// Mutable Userdata:
+/// 
+/// - 
 pub trait UserData: 'static + Sized {
     /// Whether or not to use __namecall optimization
     /// 

@@ -65,6 +65,8 @@ pub(crate) struct ExtraData {
     pub(super) on_close: Option<Box<dyn Fn() + 'static>>,
 
     pub(crate) mem_categories: Vec<std::ffi::CString>,
+
+    pub(crate) registered_tags: [bool; ffi::LUA_UTAG_LIMIT as usize],
 }
 
 impl Drop for ExtraData {
@@ -80,7 +82,7 @@ impl Drop for ExtraData {
 }
 
 impl ExtraData {
-    pub(super) unsafe fn init(state: *mut ffi::lua_State, owned: bool) -> XRc<UnsafeCell<Self>> {
+    pub(crate) unsafe fn set_userdata_dtor(state: *mut ffi::lua_State, tag: c_int) {
         // Set global dtor for userdata v2, the data `ud` is guaranteed to be a ErasedHeader vtable
         //
         // All mluau owned userdata v2 will use this dtor for cleanup
@@ -96,7 +98,11 @@ impl ExtraData {
             ErasedHeader::drop(ud); // Note: panicking in the dtor for a userdata is not allowed and will call abort() bc this is a extern "C"
             (*extra).running_gc = prev_gc;
         }
-        ffi::lua_setuserdatadtor(state, USERDATA2_TAG, Some(userdata2_dtor));
+        ffi::lua_setuserdatadtor(state, tag, Some(userdata2_dtor));
+    }
+
+    pub(super) unsafe fn init(state: *mut ffi::lua_State, owned: bool) -> XRc<UnsafeCell<Self>> {
+        Self::set_userdata_dtor(state, USERDATA2_TAG); // Base userdata dtor
 
         #[allow(clippy::arc_with_non_send_sync)]
         let extra = XRc::new(UnsafeCell::new(ExtraData {
@@ -164,6 +170,11 @@ impl ExtraData {
             on_close: None,
 
             mem_categories: vec![std::ffi::CString::new("main").unwrap()],
+            registered_tags: {
+                let mut tags = [false; _];
+                tags[USERDATA2_TAG as usize] = true; // USERDATA2_TAG is a default registered tag
+                tags
+            }
         }));
 
         // Store it in the registry
