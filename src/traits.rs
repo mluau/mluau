@@ -5,7 +5,6 @@ use std::sync::Arc;
 use crate::error::{Error, Result};
 use crate::multi::MultiValue;
 use crate::state::{Lua, RawLua};
-use crate::types::MaybeSend;
 use crate::util::{check_stack, short_type_name};
 use crate::value::Value;
 
@@ -211,7 +210,7 @@ macro_rules! impl_lua_native_fn {
     ($($A:ident),*) => {
         impl<FN, $($A,)* R> LuaNativeFn<($($A,)*)> for FN
         where
-            FN: Fn($($A,)*) -> R + MaybeSend + 'static,
+            FN: Fn($($A,)*) -> R + 'static,
             ($($A,)*): FromLuaMulti,
         {
             type Output = R;
@@ -225,7 +224,7 @@ macro_rules! impl_lua_native_fn {
 
         impl<FN, $($A,)* R> LuaNativeFnMut<($($A,)*)> for FN
         where
-            FN: FnMut($($A,)*) -> R + MaybeSend + 'static,
+            FN: FnMut($($A,)*) -> R + 'static,
             ($($A,)*): FromLuaMulti,
         {
             type Output = R;

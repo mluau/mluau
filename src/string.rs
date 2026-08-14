@@ -628,12 +628,5 @@ unsafe impl ExternalString for bytes::BytesMut {
 mod assertions {
     use super::*;
 
-    #[cfg(not(feature = "send"))]
     static_assertions::assert_not_impl_any!(String: Send);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(String: Send, Sync);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(BorrowedBytes: Send, Sync);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(BorrowedStr: Send, Sync);
 }

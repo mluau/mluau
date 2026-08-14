@@ -1,6 +1,6 @@
 use std::{ffi::c_void, ptr::NonNull};
 
-use crate::{FromLua, FromLuaMulti, Function, IntoLua, IntoLuaMulti, Lua, MaybeSend, Result, Table, Value, WeakLua, state::{LuaGuard, extra::USERDATA2_TAG}, types::{LuaRef, MaybeSync, ValueRef}, util::{StackGuard, assert_stack, check_stack, short_type_name}};
+use crate::{FromLua, FromLuaMulti, Function, IntoLua, IntoLuaMulti, Lua, Result, Table, Value, WeakLua, state::{LuaGuard, extra::USERDATA2_TAG}, types::{LuaRef, ValueRef}, util::{StackGuard, assert_stack, check_stack, short_type_name}};
 
 /// Handle to an internal Lua userdata
 #[derive(Clone, Debug, PartialEq)]
@@ -44,7 +44,7 @@ impl AnyUserData {
     }
 
     #[inline(always)]
-    fn borrow_to_ptr<T: 'static + MaybeSend + MaybeSync>(&self) -> (Option<&T>, LuaGuard) {
+    fn borrow_to_ptr<T: 'static>(&self) -> (Option<&T>, LuaGuard) {
         let lua = self.0.lua.lock();
         let state = lua.state();
         unsafe {
@@ -59,7 +59,7 @@ impl AnyUserData {
     }
 
     /// Borrow this userdata immutably if it is of type `T` as a `LuaRef` for compatibility etc. with buffers/thread data API
-    pub fn borrow_ref<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<LuaRef<'_, T>> {
+    pub fn borrow_ref<T: 'static>(&self) -> Option<LuaRef<'_, T>> {
         let (ptr, lua) = self.borrow_to_ptr();
         LuaRef::new_opt(lua.lua().clone(), ptr)
     }
@@ -68,7 +68,7 @@ impl AnyUserData {
     /// 
     /// Note: This operation is basically as cheap as `borrow_ref`
     #[inline(always)]
-    pub fn borrow<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<TypedUserData<T>> {
+    pub fn borrow<T: 'static>(&self) -> Option<TypedUserData<T>> {
         let ud_ref = self.0.clone();
         let (ptr, lua) = self.borrow_to_ptr::<T>();
         ptr.map(|ptr| {
@@ -166,14 +166,14 @@ impl AnyUserData {
 }
 
 /// A typed (and optimized) version of `AnyUserData`
-pub struct TypedUserData<T: 'static + MaybeSend + MaybeSync> {
+pub struct TypedUserData<T: 'static> {
     ud: ValueRef,
     // cached data ptr
     ptr: NonNull<T>,
     _lua: Lua, // hold a strong ref to VM
 }
 
-impl<T: 'static + MaybeSend + MaybeSync> Clone for TypedUserData<T> {
+impl<T: 'static> Clone for TypedUserData<T> {
     fn clone(&self) -> Self {
         Self {
             // new valueref refcount
@@ -184,7 +184,7 @@ impl<T: 'static + MaybeSend + MaybeSync> Clone for TypedUserData<T> {
     }
 }
 
-impl<T: 'static + MaybeSend + MaybeSync> PartialEq for TypedUserData<T> {
+impl<T: 'static> PartialEq for TypedUserData<T> {
     fn eq(&self, other: &Self) -> bool {
         if self.ud.lua != other.ud.lua {
             return false;
@@ -194,7 +194,7 @@ impl<T: 'static + MaybeSend + MaybeSync> PartialEq for TypedUserData<T> {
     }
 }
 
-impl<T: 'static + std::fmt::Debug + MaybeSend + MaybeSync> std::fmt::Debug for TypedUserData<T> {
+impl<T: 'static + std::fmt::Debug> std::fmt::Debug for TypedUserData<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("TypedUserData")
             .field(&**self)
@@ -202,18 +202,13 @@ impl<T: 'static + std::fmt::Debug + MaybeSend + MaybeSync> std::fmt::Debug for T
     }
 }
 
-#[cfg(feature = "send")]
-unsafe impl<T: 'static + MaybeSend + MaybeSync> Send for TypedUserData<T> {}
-#[cfg(feature = "send")]
-unsafe impl<T: 'static + MaybeSend + MaybeSync> Sync for TypedUserData<T> {}
-
-impl<T: 'static + MaybeSend + MaybeSync> IntoLua for TypedUserData<T> {
+impl<T: 'static> IntoLua for TypedUserData<T> {
     fn into_lua(self, _lua: &Lua) -> Result<Value> {
         Ok(Value::UserData(AnyUserData(self.ud)))
     }
 }
 
-impl<T: 'static + MaybeSend + MaybeSync> crate::FromLua for TypedUserData<T> {
+impl<T: 'static> crate::FromLua for TypedUserData<T> {
     fn from_lua(value: crate::Value, lua: &crate::Lua) -> crate::Result<Self> {
         let ud_ref = match value {
             crate::Value::UserData(ud) => ud.0, 
@@ -280,7 +275,7 @@ impl<T: 'static + MaybeSend + MaybeSync> crate::FromLua for TypedUserData<T> {
     }   
 }
 
-impl<T: 'static + MaybeSend + MaybeSync> std::ops::Deref for TypedUserData<T> {
+impl<T: 'static> std::ops::Deref for TypedUserData<T> {
     type Target = T;
     
     #[inline(always)]

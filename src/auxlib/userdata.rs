@@ -1,11 +1,10 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 use std::marker::PhantomData;
 use std::fmt;
 
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
-use crate::types::MaybeSync;
-use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaErr, IntoLuaMulti, IntoLuaResult, IntoLuaResultMulti, Lua, MaybeSend, MultiValue, Table, TypedUserData, Value, XRc};
+use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaErr, IntoLuaMulti, IntoLuaResult, IntoLuaResultMulti, Lua, MultiValue, Table, TypedUserData, Value};
 
 /// Kinds of metamethods that can be overridden.
 ///
@@ -141,7 +140,7 @@ pub trait UserDataMethods<T> {
     /// be used as a fall-back if no regular method is found.
     fn add_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
-        M: Fn(&Lua, TypedUserData<T>, A) -> R + MaybeSend + MaybeSync + 'static,
+        M: Fn(&Lua, TypedUserData<T>, A) -> R + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti;
 
@@ -150,14 +149,14 @@ pub trait UserDataMethods<T> {
     /// The first argument will be a [`AnyUserData`] of type `T` if the method if it is passed in as 
     /// the first argument: `my_userdata.my_method(my_userdata, arg1, arg2)`.
     fn add_function<F, A, R>(&mut self, name: impl Into<&'static str>, function: F) where
-        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
+        F: Fn(&Lua, A) -> R + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti;
 
     /// Add a metamethod which accepts a `&T` as the first parameter.
     fn add_meta_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
-        M: Fn(&Lua, TypedUserData<T>, A) -> R + MaybeSend + MaybeSync + 'static,
+        M: Fn(&Lua, TypedUserData<T>, A) -> R + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti;
 
@@ -168,7 +167,7 @@ pub trait UserDataMethods<T> {
     /// userdata of type `T`.
     fn add_meta_function<F, A, R>(&mut self, name: impl Into<&'static str>, function: F)
     where
-        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
+        F: Fn(&Lua, A) -> R + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti;
 }
@@ -205,16 +204,17 @@ pub trait UserDataFields<T> {
     /// be used as a fall-back if no regular index property is found.
     fn add_field_method_get<M, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
-        M: Fn(&Lua, TypedUserData<T>) -> R + MaybeSend + MaybeSync + 'static,
+        M: Fn(&Lua, TypedUserData<T>) -> R + 'static,
         R: IntoLuaResult;
+
+    // TODO: Add field method setters
 }
 
 /// Trait for custom userdata types.
 ///
 /// By implementing this trait, a struct becomes eligible for use inside Lua code.
 ///
-/// Implementation of [`IntoLua`] is automatically provided, [`FromLua`] needs to be implemented
-/// manually.
+/// Implementation of [`IntoLua`] is automatically provided, Use `TypedUserData<T>` for a [`FromLua`] implementation
 /// 
 /// Deoptimization notes:
 ///
@@ -222,7 +222,7 @@ pub trait UserDataFields<T> {
 /// - Disabling namecall (forces __index then call as two separate accesses)
 /// - Adding a __index metamethod via meta-method (warning: __index as meta function will *not* work right now, this is a current impl limitation, forces all __index to go through func and not table __index)
 /// - Field getters (forces func __index)
-pub trait UserData: 'static + Sized + MaybeSend + MaybeSync {
+pub trait UserData: 'static + Sized {
     /// Whether or not to use __namecall optimization
     /// 
     /// When using namecall optimization:
@@ -284,15 +284,8 @@ impl IntoLuaResultMulti for Result<IndexResult, UdError> {
     }
 }
 
-#[cfg(not(feature = "send"))]
-type MethodCb<T> = XRc<dyn Fn(&Lua, TypedUserData<T>, MultiValue) -> Result<MultiValue, UdError> + 'static>;
-#[cfg(feature = "send")]
-type MethodCb<T> = XRc<dyn Fn(&Lua, TypedUserData<T>, MultiValue) -> Result<MultiValue, UdError> + Send + Sync + 'static>;
-
-#[cfg(not(feature = "send"))]
-type FieldGetter<T> = XRc<dyn Fn(&Lua, TypedUserData<T>) -> Result<Value, UdError> + 'static>;
-#[cfg(feature = "send")]
-type FieldGetter<T> = XRc<dyn Fn(&Lua, TypedUserData<T>) -> Result<Value, UdError> + Send + Sync + 'static>;
+type MethodCb<T> = Rc<dyn Fn(&Lua, TypedUserData<T>, MultiValue) -> Result<MultiValue, UdError> + 'static>;
+type FieldGetter<T> = Rc<dyn Fn(&Lua, TypedUserData<T>) -> Result<Value, UdError> + 'static>;
 
 struct UserDataRegistry<'a, T: UserData> {
     lua: &'a Lua,
@@ -333,11 +326,11 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
     /// Wraps a method into a type-erased MethodCb<T>
     fn wrap_method<M, A, R>(method: M) -> MethodCb<T>
     where
-        M: Fn(&Lua, TypedUserData<T>, A) -> R + MaybeSend + MaybeSync + 'static,
+        M: Fn(&Lua, TypedUserData<T>, A) -> R + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti,
     {
-        XRc::new(move |lua, this, args| {
+        Rc::new(move |lua, this, args| {
             let args = match A::from_lua_multi(args, lua) {
                 Ok(a) => a,
                 Err(e) => return Err(UdError::Error(e)),
@@ -358,10 +351,10 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
     /// Wraps a method into a type-erased MethodCb<T>
     fn wrap_field_getter<M, R>(method: M) -> FieldGetter<T>
     where
-        M: Fn(&Lua, TypedUserData<T>) -> R + MaybeSend + MaybeSync + 'static,
+        M: Fn(&Lua, TypedUserData<T>) -> R + 'static,
         R: IntoLuaResult,
     {
-        XRc::new(move |lua, this| {
+        Rc::new(move |lua, this| {
             // Call method and normalize
             match method(lua, this).into_result() {
                 Ok(item) => item.into_lua(lua).map_err(UdError::Error),
@@ -381,7 +374,7 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
         let index_as_fn = self.index_fb.is_some() || !self.field_method_get.is_empty();
         let index = if index_as_fn {
             // Build up the index_mt_props hashmap with values resolved
-            let index_mt_props = XRc::new({
+            let index_mt_props = Rc::new({
                 let mut new_index_mt_props = HashMap::with_capacity_and_hasher(self.index_mt_props.len(), FxBuildHasher);
                 for (k, v) in self.index_mt_props {
                     new_index_mt_props.insert(k, v?);
@@ -433,7 +426,7 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
         }
 
         if T::USE_NAMECALL {
-            let namecall_cbs = XRc::new(self.namecall_methods);
+            let namecall_cbs = Rc::new(self.namecall_methods);
             mt.set("__namecall", Self::namecall_cb(self.lua, namecall_cbs, self.namecall_fb)?)?;
         }
 
@@ -443,7 +436,7 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
         Ok(mt)
     }
 
-    fn namecall_cb(lua: &Lua, namecall_methods: XRc<FxHashMap<&'static str, MethodCb<T>>>, namecall_fb: Option<MethodCb<T>>) -> crate::Result<crate::Function> {
+    fn namecall_cb(lua: &Lua, namecall_methods: Rc<FxHashMap<&'static str, MethodCb<T>>>, namecall_fb: Option<MethodCb<T>>) -> crate::Result<crate::Function> {
         lua.create_function(move |lua, (ud, args): (TypedUserData<T>, MultiValue)| {
             let func = lua.with_namecall(|method| -> Result<_, crate::Error> {
                 let s = method.ok_or_else(|| crate::Error::external("internal error: no method set for namecall"))?.to_str().map_err(crate::Error::external)?;
@@ -500,7 +493,7 @@ impl<T: UserData> UserDataFields<T> for UserDataRegistry<'_, T> {
 
     fn add_field_method_get<M, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
-        M: Fn(&Lua, TypedUserData<T>) -> R + MaybeSend + MaybeSync + 'static,
+        M: Fn(&Lua, TypedUserData<T>) -> R + 'static,
         R: IntoLuaResult
     {
         self.field_method_get.insert(name.into(), Self::wrap_field_getter(method));
@@ -509,7 +502,7 @@ impl<T: UserData> UserDataFields<T> for UserDataRegistry<'_, T> {
 
 impl<T: UserData> UserDataMethods<T> for UserDataRegistry<'_, T> {
     fn add_function<F, A, R>(&mut self, name: impl Into<&'static str>, function: F) where
-    F: Fn(&Lua, A) -> R + MaybeSend + 'static,
+    F: Fn(&Lua, A) -> R + 'static,
     A: FromLuaMulti,
     R: IntoLuaResultMulti 
     {
@@ -518,7 +511,7 @@ impl<T: UserData> UserDataMethods<T> for UserDataRegistry<'_, T> {
 
     fn add_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
-        M: Fn(&Lua, TypedUserData<T>, A) -> R + MaybeSend + MaybeSync + 'static,
+        M: Fn(&Lua, TypedUserData<T>, A) -> R + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti 
     {
@@ -534,7 +527,7 @@ impl<T: UserData> UserDataMethods<T> for UserDataRegistry<'_, T> {
     }
 
     fn add_meta_function<F, A, R>(&mut self, name: impl Into<&'static str>, function: F) where
-    F: Fn(&Lua, A) -> R + MaybeSend + 'static,
+    F: Fn(&Lua, A) -> R + 'static,
     A: FromLuaMulti,
     R: IntoLuaResultMulti 
     {
@@ -543,7 +536,7 @@ impl<T: UserData> UserDataMethods<T> for UserDataRegistry<'_, T> {
 
     fn add_meta_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
-        M: Fn(&Lua, TypedUserData<T>, A) -> R + MaybeSend + MaybeSync + 'static,
+        M: Fn(&Lua, TypedUserData<T>, A) -> R + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti 
     {

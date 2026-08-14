@@ -10,9 +10,5 @@ fn test_compilation() {
     t.compile_fail("tests/compile/scope_invariance.rs");
     t.compile_fail("tests/compile/scope_mutable_aliasing.rs");
     t.compile_fail("tests/compile/scope_userdata_borrow.rs");
-
-    #[cfg(feature = "send")]
-    t.compile_fail("tests/compile/non_send.rs");
-    #[cfg(not(feature = "send"))]
     t.pass("tests/compile/non_send.rs");
 }

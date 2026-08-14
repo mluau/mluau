@@ -8,11 +8,7 @@ use crate::state::RawLua;
 use crate::traits::{FromLuaMulti, IntoLuaMulti};
 use crate::types::{LuaRef, LuaType, ValueRef};
 
-use crate::types::MaybeSync;
 use crate::util::{check_stack, error_traceback_thread, pop_error, StackGuard};
-
-use crate::MaybeSend;
-
 use crate::WeakLua;
 
 /// Continuation thread status. Can either be Ok, Yielded (rare, but can happen) or Error
@@ -66,11 +62,6 @@ enum ThreadStatusInner {
 #[derive(Clone)]
 pub struct Thread(pub(crate) ValueRef, pub(crate) *mut ffi::lua_State);
 
-#[cfg(feature = "send")]
-unsafe impl Send for Thread {}
-#[cfg(feature = "send")]
-unsafe impl Sync for Thread {}
-
 impl Thread {
     /// Returns reference to the Lua state that this thread is associated with.
     #[doc(hidden)]
@@ -109,7 +100,7 @@ impl Thread {
     ///
     /// This is a Luau specific extension.
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn thread_data<T: 'static + MaybeSend + MaybeSync>(&self) -> Option<LuaRef<'_, T>> {
+    pub fn thread_data<T: 'static>(&self) -> Option<LuaRef<'_, T>> {
         let lua = self.0.lua.lock();
         let thread_state = self.state();
         let ptr = unsafe {
@@ -128,7 +119,7 @@ impl Thread {
     ///
     /// This is a Luau specific extension.
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn set_thread_data<T: 'static + MaybeSend + MaybeSync>(&self, data: T) -> Result<()> {
+    pub fn set_thread_data<T: 'static>(&self, data: T) -> Result<()> {
         let lua = self.0.lua.lock();
         let thread_state = self.state();
         unsafe {
@@ -491,8 +482,5 @@ impl LuaType for Thread {
 mod assertions {
     use super::*;
 
-    #[cfg(not(feature = "send"))]
     static_assertions::assert_not_impl_any!(Thread: Send);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(Thread: Send, Sync);
 }

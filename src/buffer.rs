@@ -4,9 +4,8 @@ use std::os::raw::c_void;
 #[cfg(feature = "serde")]
 use serde::ser::{Serialize, Serializer};
 
-use crate::MaybeSend;
 use crate::state::RawLua;
-use crate::types::{LuaRef, MaybeSync, ValueRef};
+use crate::types::{LuaRef, ValueRef};
 
 /// A Luau buffer type.
 ///
@@ -237,7 +236,7 @@ impl crate::types::LuaType for Buffer {
 /// and safe to be read by the Luau VM for the lifetime of this object. Note that implementing
 /// this trait by itself does not require the memory to be safe for mutation by the Luau VM;
 /// mutability safety is only a concern if the type also implements `ExternalBufferMut`.
-pub unsafe trait ExternalBuffer: 'static + MaybeSend + MaybeSync {
+pub unsafe trait ExternalBuffer: 'static {
     /// Returns a pointer to the buffer data.
     fn as_ptr(&self) -> *const u8;
     /// Returns the length of the buffer.
@@ -258,7 +257,7 @@ pub unsafe trait ExternalBufferMut: ExternalBuffer {
 /// by the Luau VM. Types implementing this must not contain references, padding bytes with
 /// undefined behavior, or complex drop logic. Crucially, any arbitrary bit pattern must
 /// represent a valid instance of the type without causing undefined behavior.
-pub unsafe trait Primitive: MaybeSend + MaybeSync {}
+pub unsafe trait Primitive {}
 
 unsafe impl Primitive for u8 {}
 unsafe impl Primitive for i8 {}
@@ -278,7 +277,7 @@ unsafe impl Primitive for f64 {}
 // SAFETY: `Vec<T>` manages a heap allocation that will not move or be deallocated
 // as long as the `Vec` itself is alive. The pointer and length returned are valid
 // to safely read from.
-unsafe impl<T: MaybeSend + MaybeSync + 'static> ExternalBuffer for Vec<T> {
+unsafe impl<T: 'static> ExternalBuffer for Vec<T> {
     fn as_ptr(&self) -> *const u8 {
         self.as_slice().as_ptr() as *const u8
     }
@@ -312,13 +311,8 @@ unsafe impl<T: ExternalBuffer> ExternalBuffer for std::sync::Arc<T> {
     }
 }
 
-#[cfg(not(feature = "send"))]
 // SAFETY: `Rc<T>` is a reference-counted pointer to `T`. The underlying memory
 // allocation managed by `T` is stable and valid for reading as long as the `Rc` is alive.
-//
-// Thread Safety: `Rc` is explicitly NOT thread-safe. It is only available when the `send`
-// feature is disabled, guaranteeing that the Luau state and its GC will never cross thread
-// boundaries.
 unsafe impl<T: ExternalBuffer> ExternalBuffer for std::rc::Rc<T> {
     fn as_ptr(&self) -> *const u8 {
         (**self).as_ptr()

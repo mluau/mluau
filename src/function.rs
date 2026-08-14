@@ -7,7 +7,7 @@ use crate::error::{Error, Result};
 use crate::state::Lua;
 use crate::table::Table;
 use crate::traits::{FromLuaMulti, IntoLua, IntoLuaMulti, LuaNativeFn, LuaNativeFnMut};
-use crate::types::{Callback, LuaType, MaybeSend, ValueRef};
+use crate::types::{Callback, LuaType, ValueRef};
 use crate::util::{
     assert_stack, check_stack, linenumber_to_usize, pop_error, ptr_to_lossy_str, ptr_to_str, StackGuard,
 };
@@ -401,7 +401,7 @@ impl Function {
     #[inline]
     pub fn wrap<F, A, R>(func: F) -> impl IntoLua
     where
-        F: LuaNativeFn<A, Output = Result<R>> + MaybeSend + 'static,
+        F: LuaNativeFn<A, Output = Result<R>> + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti,
     {
@@ -418,7 +418,7 @@ impl Function {
     /// Wraps a Rust mutable closure, returning an opaque type that implements [`IntoLua`] trait.
     pub fn wrap_mut<F, A, R>(func: F) -> impl IntoLua
     where
-        F: LuaNativeFnMut<A, Output = Result<R>> + MaybeSend + 'static,
+        F: LuaNativeFnMut<A, Output = Result<R>> + 'static,
         A: FromLuaMulti,
         R: IntoLuaMulti,
     {
@@ -442,7 +442,7 @@ impl Function {
     #[inline]
     pub fn wrap_raw<F, A>(func: F) -> impl IntoLua
     where
-        F: LuaNativeFn<A> + MaybeSend + 'static,
+        F: LuaNativeFn<A> + 'static,
         F::Output: IntoLuaMulti,
         A: FromLuaMulti,
     {
@@ -463,7 +463,7 @@ impl Function {
     #[inline]
     pub fn wrap_raw_mut<F, A>(func: F) -> impl IntoLua
     where
-        F: LuaNativeFnMut<A> + MaybeSend + 'static,
+        F: LuaNativeFnMut<A> + 'static,
         F::Output: IntoLuaMulti,
         A: FromLuaMulti,
     {
@@ -495,8 +495,5 @@ impl LuaType for Function {
 mod assertions {
     use super::*;
 
-    #[cfg(not(feature = "send"))]
     static_assertions::assert_not_impl_any!(Function: Send);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(Function: Send, Sync);
 }

@@ -5,7 +5,8 @@ use std::os::raw::c_int;
 use crate::error::Result;
 use crate::state::RawLua;
 use crate::stdlib::StdLib;
-use crate::types::{AppData, ErasedHeader, ReentrantMutex, XRc};
+use crate::types::{AppData, ErasedHeader};
+use std::rc::Rc as XRc;
 
 #[cfg(any(feature = "luau", doc))]
 use crate::chunk::Compiler;
@@ -61,10 +62,6 @@ pub(crate) struct ExtraData {
     // Values currently being yielded from Lua.yield()
     pub(super) yielded_values: Option<MultiValue>,
 
-    // Callback called when lua VM is about to be closed
-    #[cfg(feature = "send")]
-    pub(super) on_close: Option<Box<dyn Fn() + Send + 'static>>,
-    #[cfg(not(feature = "send"))]
     pub(super) on_close: Option<Box<dyn Fn() + 'static>>,
 
     pub(crate) mem_categories: Vec<std::ffi::CString>,
@@ -175,7 +172,7 @@ impl ExtraData {
         extra
     }
 
-    pub(super) unsafe fn set_lua(&mut self, raw: &XRc<ReentrantMutex<RawLua>>) {
+    pub(super) unsafe fn set_lua(&mut self, raw: &XRc<RawLua>) {
         self.lua.write(Lua {
             raw: XRc::clone(raw),
             collect_garbage: false,
@@ -199,7 +196,7 @@ impl ExtraData {
 
     #[inline(always)]
     pub(crate) unsafe fn raw_lua(&self) -> &RawLua {
-        &*self.lua.assume_init_ref().raw.data_ptr()
+        &*self.lua.assume_init_ref().raw
     }
 
     #[inline(always)]

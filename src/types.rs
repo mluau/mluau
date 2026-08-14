@@ -3,9 +3,7 @@ use std::os::raw::{c_int, c_void};
 use crate::error::Result;
 use crate::state::{Lua, RawLua};
 use std::ops::Deref;
-// Re-export mutex wrappers
-pub use sync::XRc;
-pub(crate) use sync::{ArcReentrantMutexGuard, ReentrantMutex, ReentrantMutexGuard, XWeak};
+use std::rc::Rc as XRc;
 
 pub use app_data::{AppData, AppDataRef, AppDataRefMut};
 pub use either::Either;
@@ -129,22 +127,9 @@ impl ErasedHeader {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct LightUserData(pub *mut c_void);
 
-#[cfg(feature = "send")]
-unsafe impl Send for LightUserData {}
-#[cfg(feature = "send")]
-unsafe impl Sync for LightUserData {}
-
-#[cfg(feature = "send")]
-type CallbackFn<'a> = dyn Fn(&RawLua, c_int) -> std::result::Result<c_int, crate::Value> + Send + 'a;
-
-#[cfg(not(feature = "send"))]
 type CallbackFn<'a> = dyn Fn(&RawLua, c_int) -> std::result::Result<c_int, crate::Value> + 'a;
 
 pub(crate) type Callback = Box<CallbackFn<'static>>;
-
-#[cfg(feature = "send")]
-pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> std::result::Result<c_int, crate::Value> + Send + 'static>;
-#[cfg(not(feature = "send"))]
 pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> std::result::Result<c_int, crate::Value> + 'static>;
 
 /// Type to set next Lua VM action after executing interrupt or hook function.
@@ -178,30 +163,6 @@ pub(crate) type ThreadCollectionCallback = XRc<dyn Fn(crate::LightUserData) + Se
 pub(crate) type ThreadCollectionCallback = XRc<dyn Fn(crate::LightUserData)>;
 
 
-/// A trait that adds `Send` requirement if `send` feature is enabled.
-#[cfg(feature = "send")]
-pub trait MaybeSend: Send {}
-#[cfg(feature = "send")]
-impl<T: Send> MaybeSend for T {}
-
-/// A trait that adds `Send` requirement if `send` feature is enabled.
-#[cfg(not(feature = "send"))]
-pub trait MaybeSend {}
-#[cfg(not(feature = "send"))]
-impl<T> MaybeSend for T {}
-
-/// A trait that adds `Sync` requirement if `send` feature is enabled.
-#[cfg(feature = "send")]
-pub trait MaybeSync: Sync {}
-#[cfg(feature = "send")]
-impl<T: Sync> MaybeSync for T {}
-
-/// A trait that adds `Sync` requirement if `send` feature is enabled.
-#[cfg(not(feature = "send"))]
-pub trait MaybeSync {}
-#[cfg(not(feature = "send"))]
-impl<T> MaybeSync for T {}
-
 pub(crate) trait LuaType {
     const TYPE_ID: c_int;
 }
@@ -219,15 +180,11 @@ impl LuaType for LightUserData {
 }
 
 mod app_data;
-mod sync;
 mod value_ref;
 
 #[cfg(test)]
 mod assertions {
     use super::*;
 
-    #[cfg(not(feature = "send"))]
     static_assertions::assert_not_impl_any!(ValueRef: Send);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(ValueRef: Send, Sync);
 }

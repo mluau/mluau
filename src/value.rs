@@ -884,8 +884,5 @@ impl Serialize for SerializableValue<'_> {
 mod assertions {
     use super::*;
 
-    #[cfg(not(feature = "send"))]
     static_assertions::assert_not_impl_any!(Value: Send);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(Value: Send, Sync);
 }

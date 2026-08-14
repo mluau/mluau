@@ -6,7 +6,6 @@ use crate::error::{Error, Result};
 use crate::function::Function;
 use crate::state::{callback_error_ext, ExtraData, Lua};
 use crate::traits::{FromLuaMulti, IntoLua};
-use crate::types::MaybeSend;
 
 pub use heap_dump::HeapDump;
 pub use require::{NavigateError, Require, TextRequirer};
@@ -52,7 +51,7 @@ impl Lua {
     /// and load modules.
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn create_require_function<R: Require + MaybeSend + 'static>(&self, require: R) -> Result<Function> {
+    pub fn create_require_function<R: Require + 'static>(&self, require: R) -> Result<Function> {
         require::create_require_function(self, require)
     }
 

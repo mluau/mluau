@@ -6,14 +6,9 @@ use std::result::Result as StdResult;
 
 use rustc_hash::FxHashMap;
 
-use super::MaybeSend;
 use crate::state::LuaGuard;
 
-#[cfg(not(feature = "send"))]
 type Container = UnsafeCell<FxHashMap<TypeId, RefCell<Box<dyn Any>>>>;
-
-#[cfg(feature = "send")]
-type Container = UnsafeCell<FxHashMap<TypeId, RefCell<Box<dyn Any + Send>>>>;
 
 /// A container for arbitrary data associated with the Lua state.
 #[derive(Debug, Default)]
@@ -24,14 +19,14 @@ pub struct AppData {
 
 impl AppData {
     #[track_caller]
-    pub(crate) fn insert<T: MaybeSend + 'static>(&self, data: T) -> Option<T> {
+    pub(crate) fn insert<T: 'static>(&self, data: T) -> Option<T> {
         match self.try_insert(data) {
             Ok(data) => data,
             Err(_) => panic!("cannot mutably borrow app data container"),
         }
     }
 
-    pub(crate) fn try_insert<T: MaybeSend + 'static>(&self, data: T) -> StdResult<Option<T>, T> {
+    pub(crate) fn try_insert<T: 'static>(&self, data: T) -> StdResult<Option<T>, T> {
         if self.borrow.get() != 0 {
             return Err(data);
         }
@@ -201,10 +196,7 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for AppDataRefMut<'_, T> {
 mod assertions {
     use super::*;
 
-    #[cfg(not(feature = "send"))]
     static_assertions::assert_not_impl_any!(AppData: Send);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(AppData: Send);
 
     // Must be !Send
     static_assertions::assert_not_impl_any!(AppDataRef<()>: Send);

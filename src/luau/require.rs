@@ -10,7 +10,6 @@ use crate::error::{Error, Result};
 use crate::function::Function;
 use crate::state::{callback_error_ext, Lua};
 use crate::table::Table;
-use crate::types::MaybeSend;
 
 // TODO: Rename to FsRequirer
 pub use fs::TextRequirer;
@@ -119,7 +118,7 @@ impl DerefMut for Context {
 }
 
 impl Context {
-    fn new(require: impl Require + MaybeSend + 'static) -> Self {
+    fn new(require: impl Require + 'static) -> Self {
         Context {
             require: Box::new(require),
             config_cache: None,
@@ -348,7 +347,7 @@ unsafe fn write_to_buffer(
     WriteResult::Success
 }
 
-pub(super) fn create_require_function<R: Require + MaybeSend + 'static>(
+pub(super) fn create_require_function<R: Require + 'static>(
     lua: &Lua,
     require: R,
 ) -> Result<Function> {

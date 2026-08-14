@@ -134,13 +134,6 @@ impl crate::types::LuaType for Object {
 mod assertions {
     use super::*;
 
-    #[cfg(not(feature = "send"))]
     static_assertions::assert_not_impl_any!(Class: Send);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(Class: Send, Sync);
-
-    #[cfg(not(feature = "send"))]
     static_assertions::assert_not_impl_any!(Object: Send);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(Object: Send, Sync);
 }

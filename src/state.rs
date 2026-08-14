@@ -27,9 +27,11 @@ use crate::thread::ContinuationStatus;
 
 use crate::traits::{FromLua, FromLuaMulti, IntoLua, IntoLuaResultMulti, IntoLuaMulti};
 use crate::types::{
-    AppDataRef, AppDataRefMut, ArcReentrantMutexGuard, Integer, LuaType, MaybeSend, MaybeSync, Number,
-    ReentrantMutex, ReentrantMutexGuard, VmState, XRc, XWeak,
+    AppDataRef, AppDataRefMut, Integer, LuaType, Number,
+    VmState
 };
+use std::rc::Rc as XRc;
+use std::rc::Weak as XWeak;
 use crate::util::{assert_stack, check_stack, protect_lua_closure, StackGuard};
 use crate::value::{Nil, Value};
 
@@ -47,7 +49,7 @@ pub(crate) use util::callback_error_ext;
 
 /// Top level Lua struct which represents an instance of Lua VM.
 pub struct Lua {
-    pub(self) raw: XRc<ReentrantMutex<RawLua>>,
+    pub(self) raw: XRc<RawLua>,
     // Controls whether garbage collection should be run on drop
     pub(self) collect_garbage: bool,
 }
@@ -56,9 +58,9 @@ pub struct Lua {
 ///
 /// This can used to prevent circular references between Lua and Rust objects.
 #[derive(Clone)]
-pub struct WeakLua(XWeak<ReentrantMutex<RawLua>>);
+pub struct WeakLua(XWeak<RawLua>);
 
-pub(crate) struct LuaGuard(ArcReentrantMutexGuard<RawLua>);
+pub(crate) struct LuaGuard(XRc<RawLua>);
 
 /// Mode of the Lua garbage collector (GC).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -411,7 +413,7 @@ impl Lua {
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_interrupt<F>(&self, callback: F)
     where
-        F: Fn(&Lua) -> Result<VmState> + MaybeSend + 'static,
+        F: Fn(&Lua) -> Result<VmState> + 'static,
     {
         unsafe extern "C-unwind" fn interrupt_proc(state: *mut ffi::lua_State, gc: c_int) {
             if gc >= 0 {
@@ -453,7 +455,7 @@ impl Lua {
         }
 
         // Set interrupt callback
-        let lua = self.lock_gc_safe();
+        let lua = &self.raw;
         unsafe {
             (*lua.extra.get()).interrupt_callback = Some(XRc::new(callback));
             (*ffi::lua_callbacks(lua.main_state())).interrupt = Some(interrupt_proc);
@@ -466,7 +468,7 @@ impl Lua {
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn remove_interrupt(&self) {
-        let lua = self.lock_gc_safe();
+        let lua = &self.raw;
         unsafe {
             (*lua.extra.get()).interrupt_callback = None;
             (*ffi::lua_callbacks(lua.main_state())).interrupt = None;
@@ -484,9 +486,9 @@ impl Lua {
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_gc_interrupt<F>(&self, callback: F)
     where
-        F: Fn(&Lua, c_int) + MaybeSend + 'static,
+        F: Fn(&Lua, c_int) + 'static,
     {
-        let lua = self.lock_gc_safe();
+        let lua = &self.raw;
         unsafe {
             (*lua.extra.get()).gc_interrupt_callback = Some(XRc::new(callback));
         }
@@ -496,7 +498,7 @@ impl Lua {
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn remove_gc_interrupt(&self) {
-        let lua = self.lock_gc_safe();
+        let lua = &self.raw;
         unsafe {
             (*lua.extra.get()).gc_interrupt_callback = None;
         }
@@ -507,9 +509,9 @@ impl Lua {
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_thread_creation_callback<F>(&self, callback: F)
     where
-        F: Fn(&Lua, Thread) -> Result<()> + MaybeSend + 'static,
+        F: Fn(&Lua, Thread) -> Result<()> + 'static,
     {
-        let lua = self.lock_gc_safe();
+        let lua = &self.raw;
         unsafe {
             (*lua.extra.get()).thread_creation_callback = Some(XRc::new(callback));
             (*ffi::lua_callbacks(lua.main_state())).userthread = Some(Self::userthread_proc);
@@ -524,9 +526,9 @@ impl Lua {
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_thread_collection_callback<F>(&self, callback: F)
     where
-        F: Fn(crate::LightUserData) + MaybeSend + 'static,
+        F: Fn(crate::LightUserData) + 'static,
     {
-        let lua = self.lock_gc_safe();
+        let lua = &self.raw;
         unsafe {
             (*lua.extra.get()).thread_collection_callback = Some(XRc::new(callback));
             (*ffi::lua_callbacks(lua.main_state())).userthread = Some(Self::userthread_proc);
@@ -617,7 +619,7 @@ impl Lua {
     /// Level `0` is the current running function, whereas level `n+1` is the function that has
     /// called level `n` (except for tail calls, which do not count in the stack).
     pub fn inspect_stack<R>(&self, level: usize, f: impl FnOnce(&Debug) -> R) -> Option<R> {
-        let lua = self.lock_gc_safe();
+        let lua = &self.raw;
         unsafe {
             let mut ar = mem::zeroed::<ffi::lua_Debug>();
             let level = level as c_int;
@@ -1054,7 +1056,7 @@ impl Lua {
     /// ```
     pub fn create_function<F, A, R>(&self, func: F) -> Result<Function>
     where
-        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
+        F: Fn(&Lua, A) -> R + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti,
     {
@@ -1089,8 +1091,8 @@ impl Lua {
         debugname: Option<&'static CStr>,
     ) -> Result<Function>
     where
-        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
-        FC: Fn(&Lua, ContinuationStatus, AC) -> RC + MaybeSend + 'static,
+        F: Fn(&Lua, A) -> R + 'static,
+        FC: Fn(&Lua, ContinuationStatus, AC) -> RC + 'static,
         A: FromLuaMulti,
         AC: FromLuaMulti,
         R: IntoLuaResultMulti,
@@ -1126,7 +1128,7 @@ impl Lua {
     /// This is a version of [`Lua::create_function`] that accepts a `FnMut` argument.
     pub fn create_function_mut<F, A, R>(&self, func: F) -> Result<Function>
     where
-        F: FnMut(&Lua, A) -> R + MaybeSend + 'static,
+        F: FnMut(&Lua, A) -> R + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti,
     {
@@ -1151,7 +1153,7 @@ impl Lua {
         debugname: Option<&'static CStr>,
     ) -> Result<Function>
     where
-        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
+        F: Fn(&Lua, A) -> R + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti,
     {
@@ -1175,7 +1177,7 @@ impl Lua {
         debugname: Option<&'static CStr>,
     ) -> Result<Function>
     where
-        F: FnMut(&Lua, A) -> R + MaybeSend + 'static,
+        F: FnMut(&Lua, A) -> R + 'static,
         A: FromLuaMulti,
         R: IntoLuaResultMulti,
     {
@@ -1218,7 +1220,7 @@ impl Lua {
     }
 
     /// Creates a userdata with data and optional metatable.
-    pub fn create_any_userdata<T: 'static + MaybeSend + MaybeSync>(&self, data: T, metatable: Option<&Table>) -> Result<AnyUserData> {
+    pub fn create_any_userdata<T: 'static>(&self, data: T, metatable: Option<&Table>) -> Result<AnyUserData> {
         let lua = self.lock();
         let state = lua.state();
         unsafe {
@@ -1559,7 +1561,7 @@ impl Lua {
     /// }
     /// ```
     #[track_caller]
-    pub fn set_app_data<T: MaybeSend + 'static>(&self, data: T) -> Option<T> {
+    pub fn set_app_data<T: 'static>(&self, data: T) -> Option<T> {
         let lua = self.lock();
         let extra = unsafe { &*lua.extra.get() };
         extra.app_data.insert(data)
@@ -1574,7 +1576,7 @@ impl Lua {
     ///   currently borrowed.
     ///
     /// See [`Lua::set_app_data`] for examples.
-    pub fn try_set_app_data<T: MaybeSend + 'static>(&self, data: T) -> StdResult<Option<T>, T> {
+    pub fn try_set_app_data<T: 'static>(&self, data: T) -> StdResult<Option<T>, T> {
         let lua = self.lock();
         let extra = unsafe { &*lua.extra.get() };
         extra.app_data.try_insert(data)
@@ -1589,15 +1591,15 @@ impl Lua {
     /// reads can be taken out at the same time.
     #[track_caller]
     pub fn app_data_ref<T: 'static>(&self) -> Option<AppDataRef<'_, T>> {
-        let guard = self.lock_arc();
-        let extra = unsafe { &*guard.extra.get() };
+        let guard = self.guard();
+        let extra = unsafe { &*self.raw.extra.get() };
         extra.app_data.borrow(Some(guard))
     }
 
     /// Tries to get a reference to an application data object stored by [`Lua::set_app_data`] of
     /// type `T`.
     pub fn try_app_data_ref<T: 'static>(&self) -> StdResult<Option<AppDataRef<'_, T>>, BorrowError> {
-        let guard = self.lock_arc();
+        let guard = self.guard();
         let extra = unsafe { &*guard.extra.get() };
         extra.app_data.try_borrow(Some(guard))
     }
@@ -1610,7 +1612,7 @@ impl Lua {
     /// Panics if the data object of type `T` is currently borrowed.
     #[track_caller]
     pub fn app_data_mut<T: 'static>(&self) -> Option<AppDataRefMut<'_, T>> {
-        let guard = self.lock_arc();
+        let guard = self.guard();
         let extra = unsafe { &*guard.extra.get() };
         extra.app_data.borrow_mut(Some(guard))
     }
@@ -1618,7 +1620,7 @@ impl Lua {
     /// Tries to get a mutable reference to an application data object stored by
     /// [`Lua::set_app_data`] of type `T`.
     pub fn try_app_data_mut<T: 'static>(&self) -> StdResult<Option<AppDataRefMut<'_, T>>, BorrowMutError> {
-        let guard = self.lock_arc();
+        let guard = self.guard();
         let extra = unsafe { &*guard.extra.get() };
         extra.app_data.try_borrow_mut(Some(guard))
     }
@@ -1645,8 +1647,8 @@ impl Lua {
     }
 
     #[inline(always)]
-    pub(crate) fn lock(&self) -> ReentrantMutexGuard<'_, RawLua> {
-        let rawlua = self.raw.lock();
+    pub(crate) fn lock(&self) -> &RawLua {
+        let rawlua = &self.raw;
 
         if unsafe { (*rawlua.extra.get()).running_gc } {
             panic!("Luau VM is suspended while GC is running");
@@ -1655,14 +1657,8 @@ impl Lua {
     }
 
     #[inline(always)]
-    pub(crate) fn lock_gc_safe(&self) -> ReentrantMutexGuard<'_, RawLua> {
-        let rawlua = self.raw.lock();
-        rawlua
-    }
-
-    #[inline(always)]
-    pub(crate) fn lock_arc(&self) -> LuaGuard {
-        LuaGuard(self.raw.lock_arc())
+    pub(crate) fn guard(&self) -> LuaGuard {
+        LuaGuard(XRc::clone(&self.raw))
     }
 
     /// Set the yield arguments. Note that Lua will not yield until you return from the function
@@ -1690,7 +1686,7 @@ impl Lua {
     /// }
     /// ```
     pub fn yield_with(&self, args: impl IntoLuaMulti) -> Result<()> {
-        let raw = self.lock_gc_safe();
+        let raw = &self.raw;
         unsafe {
             raw.extra.get().as_mut().unwrap_unchecked().yielded_values = Some(args.into_lua_multi(self)?);
         }
@@ -1700,13 +1696,13 @@ impl Lua {
     /// Checks if Luau is allowed to yield.
     #[inline]
     pub fn is_yieldable(&self) -> bool {
-        self.lock_gc_safe().is_yieldable()
+        self.raw.is_yieldable()
     }
 
     /// Returns the address of the Lua main state as a string
     #[inline]
     pub fn main_state_address(&self) -> StdString {
-        let raw = self.lock_gc_safe();
+        let raw = &self.raw;
         format!("{:?}", raw.main_state())
     }
 
@@ -1720,9 +1716,9 @@ impl Lua {
     /// The provided function should either not panic or catch all panics using catch_unwind
     pub fn set_on_close<F>(&self, f: F)
     where
-        F: Fn() + MaybeSend + 'static,
+        F: Fn() + 'static,
     {
-        let lua = self.lock_gc_safe();
+        let lua = &self.raw;
         unsafe {
             (*lua.extra.get()).on_close = Some(Box::new(f));
         }
@@ -1733,7 +1729,7 @@ impl Lua {
     /// Useful when paired with GC interrupts
 
     pub fn gc_state_name(&self, state: c_int) -> Option<StdString> {
-        let raw = self.lock_gc_safe();
+        let raw = &self.raw;
         raw.gc_state_name(state)
     }
 
@@ -1742,15 +1738,8 @@ impl Lua {
     /// Returns -1 on failure
 
     pub fn gc_allocation_rate(&self) -> i64 {
-        let raw = self.lock_gc_safe();
+        let raw = &self.raw;
         raw.gc_allocation_rate()
-    }
-
-    /// Debug method to return if the Lua underlying lock is currently locked.
-    /// This is useful for debugging purposes only.
-    #[cfg(feature = "send")]
-    pub fn is_locked(&self) -> bool {
-        self.raw.is_locked()
     }
 
     /// Returns the strong count of the Lua instance.
@@ -1856,14 +1845,8 @@ impl PartialEq for WeakLua {
 impl Eq for WeakLua {}
 
 impl LuaGuard {
-    #[cfg(feature = "send")]
-    pub(crate) fn new(handle: XRc<ReentrantMutex<RawLua>>) -> Self {
-        LuaGuard(handle.lock_arc())
-    }
-
-    #[cfg(not(feature = "send"))]
-    pub(crate) fn new(handle: XRc<ReentrantMutex<RawLua>>) -> Self {
-        LuaGuard(handle.into_lock_arc())
+    pub(crate) fn new(handle: XRc<RawLua>) -> Self {
+        LuaGuard(handle)
     }
 }
 
@@ -1905,8 +1888,5 @@ mod assertions {
     // Lua has lots of interior mutability, should not be RefUnwindSafe
     static_assertions::assert_not_impl_any!(Lua: std::panic::RefUnwindSafe);
 
-    #[cfg(not(feature = "send"))]
     static_assertions::assert_not_impl_any!(Lua: Send);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(Lua: Send, Sync);
 }
