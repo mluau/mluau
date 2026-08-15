@@ -630,6 +630,9 @@ pub struct lua_Callbacks {
 
     /// gets called when memory is allocated
     pub onallocate: Option<unsafe extern "C-unwind" fn(L: *mut lua_State, osize: usize, nsize: usize)>,
+
+    /// gets called when L returns from lua_resume
+    pub userthreadstatechange: Option<unsafe extern "C-unwind" fn(L: *mut lua_State, status: c_int)>,
 }
 
 unsafe extern "C" {
