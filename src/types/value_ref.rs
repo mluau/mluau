@@ -1,38 +1,24 @@
 use std::fmt;
 use std::os::raw::{c_int, c_void};
+use std::cell::Cell;
 
 use super::XRc;
 use crate::state::{RawLua, WeakLua};
 
-/// A reference to a Lua (complex) value stored in the Lua auxiliary thread.
-#[derive(Clone)]
+/// A reference to a Luau (complex) value stored in the Luau refpool.
 pub struct ValueRef {
     pub(crate) lua: WeakLua,
     pub(crate) ref_id: c_int,
-    /// If `index_count` is `None`, the value does not need to be destroyed.
-    pub(crate) index_count: Option<ValueRefIndex>,
-}
-
-/// A reference to a Lua value index in the auxiliary thread.
-/// It's cheap to clone and can be used to track the number of references to a value.
-#[derive(Clone)]
-pub(crate) struct ValueRefIndex(pub(crate) XRc<c_int>);
-
-impl From<c_int> for ValueRefIndex {
-    #[inline]
-    fn from(index: c_int) -> Self {
-        ValueRefIndex(XRc::new(index))
-    }
+    count: RefCount,
 }
 
 impl ValueRef {
     #[inline]
     pub(crate) fn new(lua: &RawLua, ref_id: c_int) -> Self {
-        let index_count = ValueRefIndex::from(ref_id);
         ValueRef {
             lua: lua.weak().clone(),
             ref_id,
-            index_count: Some(index_count),
+            count: RefCount::unique()
         }
     }
 
@@ -48,16 +34,21 @@ impl ValueRef {
     }
 }
 
+impl Clone for ValueRef {
+    #[inline]
+    fn clone(&self) -> Self {
+        ValueRef {
+            lua: self.lua.clone(),
+            ref_id: self.ref_id,
+            count: self.count.clone_shared(),
+        }
+    }
+}
+
 impl Drop for ValueRef {
     fn drop(&mut self) {
-        if let Some(ValueRefIndex(index)) = self.index_count.take() {
-            // It's guaranteed that the inner value returns exactly once.
-            // This means in particular that the value is not dropped.
-            if XRc::into_inner(index).is_some() {
-                if let Some(lua) = self.lua.try_lock() {
-                    unsafe { lua.drop_ref(self) };
-                }
-            }
+        if self.count.drop_is_last() && let Some(lua) = self.lua.try_lock() {
+            unsafe { lua.drop_ref(self) }
         }
     }
 }
@@ -82,6 +73,69 @@ impl PartialEq for ValueRef {
             ffi::lua_getrefpool(state, self.ref_id);
             ffi::lua_getrefpool(state, other.ref_id);
             ffi::lua_rawequal(state, -1, -2) == 1
+        }
+    }
+}
+
+// From mlua-rs/mlua src/types/value_ref.rs -- refcount optimization
+
+// The counter is a pure refcount token.
+type Unit = ();
+const UNIQUE: *mut Unit = std::ptr::without_provenance_mut(1);
+
+pub(super) struct RefCount(Cell<*mut Unit>);
+
+impl RefCount {
+    #[inline]
+    pub(super) fn from_raw(ptr: *mut Unit) -> Self {
+        RefCount(Cell::new(ptr))
+    }
+
+    #[inline]
+    pub(super) fn load(&self) -> *mut Unit {
+        self.0.get()
+    }
+
+    /// Replaces the `UNIQUE` tag with the freshly allocated shared counter `new`.
+    ///
+    /// Never fails.
+    #[inline]
+    pub(super) fn promote(&self, new: *mut Unit) {
+        debug_assert_eq!(self.0.get(), UNIQUE);
+        self.0.set(new);
+    }
+}
+
+impl RefCount {
+    #[inline]
+    fn unique() -> Self {
+        Self::from_raw(UNIQUE)
+    }
+
+    #[inline]
+    fn clone_shared(&self) -> RefCount {
+        let current = self.load();
+        if current != UNIQUE {
+            unsafe { XRc::increment_strong_count(current as *const Unit) };
+            return RefCount::from_raw(current);
+        }
+
+        // Otherwise, lazily allocate the shared counter
+        let shared = XRc::into_raw(XRc::new(())) as *mut Unit;
+        self.promote(shared);
+        unsafe { XRc::increment_strong_count(shared as *const Unit) };
+        return RefCount::from_raw(shared);
+    }
+
+    /// Drops the reference and returns `true` if it was the last owner of the slot
+    /// (so the slot must be freed).
+    #[inline]
+    fn drop_is_last(&mut self) -> bool {
+        let current = self.load();
+        if current == UNIQUE {
+            true
+        } else {
+            unsafe { XRc::into_inner(XRc::from_raw(current as *const Unit)).is_some() }
         }
     }
 }

@@ -302,7 +302,7 @@ fn test_external_buffer_bytes_sliced_and_cloned() -> Result<()> {
 }
 
 #[test]
-fn test_external_buffer_downcast() -> Result<()> {
+fn test_external_buffer_with_data() -> Result<()> {
     let lua = Lua::new();
     let data = b"hello, world".to_vec();
     let buf = lua.create_external_buffer(data)?;
@@ -310,24 +310,24 @@ fn test_external_buffer_downcast() -> Result<()> {
     assert_eq!(buf.len(), 12);
 
     // Downcast to Vec<u8>
-    let vec_ref = buf.downcast_ref::<Vec<u8>>();
+    let vec_ref = buf.clone().with_data::<Vec<u8>>();
     assert!(vec_ref.is_some());
     assert_eq!(*vec_ref.unwrap(), b"hello, world");
 
     // Try downcasting to wrong type
-    let wrong_ref = buf.downcast_ref::<Vec<u16>>();
+    let wrong_ref = buf.clone().with_data::<Vec<u16>>();
     assert!(wrong_ref.is_none());
 
     // Try downcasting a normal (non-external) buffer
     let normal_buf = lua.create_buffer(b"hello")?;
-    assert!(normal_buf.downcast_ref::<Vec<u8>>().is_none());
+    assert!(normal_buf.with_data::<Vec<u8>>().is_none());
 
     #[cfg(feature = "bytes")]
     {
         let bytes_data = bytes::Bytes::from("hello, bytes");
         let bytes_buf = lua.create_external_buffer(bytes_data.clone())?;
 
-        let bytes_ref = bytes_buf.downcast_ref::<bytes::Bytes>();
+        let bytes_ref = bytes_buf.with_data::<bytes::Bytes>();
         assert!(bytes_ref.is_some());
         assert_eq!(bytes_ref.unwrap().as_ref(), b"hello, bytes");
     }
@@ -345,7 +345,7 @@ fn test_external_buffer_arc() -> Result<()> {
     assert_eq!(buf.len(), 10);
     assert_eq!(buf.to_vec(), b"hello, Arc");
 
-    let arc_ref = buf.downcast_ref::<Arc<Vec<u8>>>();
+    let arc_ref = buf.clone().with_data::<Arc<Vec<u8>>>();
     assert!(arc_ref.is_some());
     assert!(Arc::ptr_eq(&arc_ref.unwrap(), &data));
 

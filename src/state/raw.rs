@@ -641,11 +641,6 @@ impl RawLua {
 
     // Pops the topmost element of the stack and stores a reference to it. This pins the object,
     // preventing garbage collection until the returned `ValueRef` is dropped.
-    //
-    // References are stored on the stack of a specially created auxiliary thread that exists only
-    // to store reference values. This is much faster than storing these in the registry, and also
-    // much more flexible and requires less bookkeeping than storing them directly in the currently
-    // used stack.
     #[inline]
     pub(crate) unsafe fn pop_ref(&self) -> ValueRef {
         self.pop_ref_at(self.state())

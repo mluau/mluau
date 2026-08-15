@@ -64,7 +64,7 @@ impl Buffer {
     /// # Safety:
     /// 
     /// Assumes the external buffer was created by mluau's create_external_buffer
-    pub fn downcast_ref<T: ExternalBuffer>(&self) -> Option<TypedRef<T, Self, 0>> { // TODO: when we get tagged buffers, use the tag here
+    pub fn with_data<T: ExternalBuffer>(self) -> Option<TypedRef<T, Self, 0>> { // TODO: when we get tagged buffers, use the tag here
         let lua = self.0.lua.lock();
         let state = lua.state();
         let ptr = unsafe { 
@@ -73,7 +73,7 @@ impl Buffer {
             let ud = ffi::lua_getbufferuserdata(state, -1);
             crate::types::ErasedHeader::downcast_ref(ud)
         };
-        TypedRef::new_opt(lua.0, ptr, self.clone())
+        TypedRef::new_opt(lua.0, ptr, self)
     }
 
     /// Reads given number of bytes from the buffer at the given offset.

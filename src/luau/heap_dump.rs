@@ -34,12 +34,13 @@ impl HeapDump {
             }
             ffi::lua_gcdump(state, file as *mut _, Some(category_name));
             libc::fseek(file, 0, libc::SEEK_END);
-            let len = libc::ftell(file) as usize;
+            let len = libc::ftell(file);
             libc::rewind(file);
             if len > 0 {
+                let len = len as usize;
                 buf.reserve(len);
-                libc::fread(buf.as_mut_ptr() as *mut _, 1, len, file);
-                buf.set_len(len);
+                let n = libc::fread(buf.as_mut_ptr() as *mut _, 1, len, file);
+                buf.set_len(n);
             }
             libc::fclose(file);
         }
@@ -64,7 +65,8 @@ impl HeapDump {
 
     /// Returns a mapping from object type to (count, total size in bytes).
     ///
-    /// If `category` is provided, only objects in that category are considered.
+    /// If `category` is provided, only objects in that category are considered. An unknown category
+    /// yields an empty map.
     pub fn size_by_type<'a>(&'a self, category: Option<&str>) -> HashMap<&'a str, (usize, u64)> {
         self.size_by_type_inner(category).unwrap_or_default()
     }
@@ -79,10 +81,10 @@ impl HeapDump {
         let mut size_by_type = HashMap::new();
         let objects = self.data["objects"].as_object()?;
         for obj in objects.values() {
-            if let Some(cat_id) = category_id {
-                if obj["cat"].as_i64()? != cat_id {
-                    continue;
-                }
+            if let Some(cat_id) = category_id
+                && obj["cat"].as_i64()? != cat_id
+            {
+                continue;
             }
             update_size(&mut size_by_type, obj["type"].as_str()?, obj["size"].as_u64()?);
         }
@@ -103,6 +105,9 @@ impl HeapDump {
     }
 
     /// Returns a mapping from userdata type to (count, total size in bytes).
+    ///
+    /// If `category` is provided, only objects in that category are considered. An unknown category
+    /// yields an empty map.
     pub fn size_by_userdata<'a>(&'a self, category: Option<&str>) -> HashMap<&'a str, (usize, u64)> {
         self.size_by_userdata_inner(category).unwrap_or_default()
     }
@@ -123,18 +128,18 @@ impl HeapDump {
             if obj["type"] != "userdata" {
                 continue;
             }
-            if let Some(cat_id) = category_id {
-                if obj["cat"].as_i64()? != cat_id {
-                    continue;
-                }
+            if let Some(cat_id) = category_id
+                && obj["cat"].as_i64()? != cat_id
+            {
+                continue;
             }
 
             // Determine userdata type from metatable
             let mut ud_type = "unknown";
-            if let Some(metatable_addr) = obj["metatable"].as_str() {
-                if let Some(t) = get_key(objects, &objects[metatable_addr], "__type") {
-                    ud_type = t;
-                }
+            if let Some(metatable_addr) = obj["metatable"].as_str()
+                && let Some(t) = get_key(objects, &objects[metatable_addr], "__type")
+            {
+                ud_type = t;
             }
             update_size(&mut size_by_userdata, ud_type, obj["size"].as_u64()?);
         }
@@ -155,7 +160,7 @@ impl HeapDump {
 
 /// Updates the size mapping for a given key.
 fn update_size<K: Eq + Hash>(size_type: &mut HashMap<K, (usize, u64)>, key: K, size: u64) {
-    let (ref mut count, ref mut total_size) = size_type.entry(key).or_insert((0, 0));
+    let (count, total_size) = size_type.entry(key).or_insert((0, 0));
     *count += 1;
     *total_size += size;
 }

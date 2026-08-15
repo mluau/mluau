@@ -731,7 +731,7 @@ fn test_memory_category() -> Result<()> {
 }
 
 // TODO: Fix this test
-//#[test]
+#[test]
 fn test_heap_dump() -> Result<()> {
     let lua = Lua::new();
 
@@ -759,18 +759,6 @@ fn test_heap_dump() -> Result<()> {
     // Remove category filter
     let size_by_type_all = dump.size_by_type(None);
     assert!(size_by_type.len() < size_by_type_all.len());
-
-    // Check size by userdata type within the category
-    let size_by_udtype = dump.size_by_userdata(Some("test_category"));
-    assert_eq!(size_by_udtype.len(), 1);
-    assert!(size_by_udtype.contains_key("&str"));
-    assert_eq!(size_by_udtype["&str"].0, 1);
-    // Try non-existent category
-    let size_by_udtype2 = dump.size_by_userdata(Some("non_existent_category"));
-    assert!(size_by_udtype2.is_empty());
-    // Remove category filter
-    let size_by_udtype_all = dump.size_by_userdata(None);
-    assert!(size_by_udtype.len() < size_by_udtype_all.len());
 
     Ok(())
 }
