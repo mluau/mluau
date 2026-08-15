@@ -17,6 +17,40 @@ pub type Integer = ffi::lua_Integer;
 pub type Number = ffi::lua_Number;
 
 /// A Luau-backed reference to a value of type `T` pinning both the Luau VM and the backer it came from
+pub struct UnbackedTypedRef<'a, T: 'static> {
+    pub(crate) _ud: &'a ValueRef,
+    // cached data ptr
+    pub(crate) ptr: NonNull<T>,
+    pub(crate) lua: XRc<RawLua>, // hold a strong ref to VM
+}
+
+impl<'a, T: 'static> Deref for UnbackedTypedRef<'a, T> {
+    type Target = T;
+    
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: ValueRef pins the TypedRef down w/ lua_refpool and _lua holds Lua VM alive
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl<'a, T: 'static> UnbackedTypedRef<'a, T> {
+    pub(crate) fn new(lua: XRc<RawLua>, data: NonNull<T>, vref: &'a ValueRef) -> Self {
+        Self { lua, ptr: data, _ud: vref }
+    }
+
+    pub(crate) fn new_opt(lua: XRc<RawLua>, data: Option<&T>, vref: &'a ValueRef) -> Option<Self> {
+        let ptr = data.map(|x| NonNull::from(x))?;
+        Some(Self::new(lua, ptr, vref))
+    }
+
+    /// Returns a reference to the Lua reference backing `T`
+    pub fn lua(&self) -> &Lua {
+        &self.lua.lua()
+    }
+}
+
+/// A Luau-backed reference to a value of type `T` pinning both the Luau VM and the backer it came from
 pub struct TypedRef<T: 'static, Backer: 'static + Clone, const TAG: c_int> {
     pub(crate) ud: Backer,
     // cached data ptr

@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
+use crate::types::UnbackedTypedRef;
 use crate::util::short_type_name;
 use crate::{AnyUserData, CallbackResult, FromLua, FromLuaMulti, IntoCallbackResult, IntoLua, Lua, MultiValue, Table, TypedUserData, USERDATA2_TAG, Value};
 
@@ -492,7 +493,7 @@ impl LuaUserDataExt for Lua {
 }
 
 pub trait UserDataBorrowExt {
-    fn try_borrow<const TAG: c_int, T: UserData<TAG>>(&self) -> crate::Result<TypedUserData<T, TAG>>;
+    fn try_borrow<const TAG: c_int, T: UserData<TAG>>(&self) -> crate::Result<UnbackedTypedRef<'_, T>>;
     fn with_ref<const TAG: c_int, T: UserData<TAG>, R>(
         &self, 
         f: impl FnOnce(&T) -> R
@@ -500,7 +501,7 @@ pub trait UserDataBorrowExt {
 }
 
 impl UserDataBorrowExt for AnyUserData {
-    fn try_borrow<const TAG: c_int, T: UserData<TAG>>(&self) -> crate::Result<TypedUserData<T, TAG>> {
+    fn try_borrow<const TAG: c_int, T: UserData<TAG>>(&self) -> crate::Result<UnbackedTypedRef<'_, T>> {
         match self.borrow_with_tag::<T, TAG>() {
             Some(tref) => Ok(tref),
             None => Err(crate::Error::FromLuaConversionError { from: "userdata", to: T::type_name().to_string(), message: None })
