@@ -39,7 +39,7 @@ impl<'a, T: 'static> UnbackedTypedRef<'a, T> {
         Self { lua, ptr: data, _ud: vref }
     }
 
-    pub(crate) fn new_opt(lua: XRc<RawLua>, data: Option<&T>, vref: &'a ValueRef) -> Option<Self> {
+    pub(crate) fn new_opt(lua: XRc<RawLua>, data: Option<&'a T>, vref: &'a ValueRef) -> Option<Self> {
         let ptr = data.map(|x| NonNull::from(x))?;
         Some(Self::new(lua, ptr, vref))
     }
