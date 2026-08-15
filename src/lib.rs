@@ -104,10 +104,10 @@ pub use crate::string::{BorrowedBytes, BorrowedStr, String};
 pub use crate::table::{Table, TablePairs, TablePairsOwned, TableSequence};
 pub use crate::thread::{ContinuationStatus, Thread, ThreadStatus};
 pub use crate::traits::{
-    FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, IntoLuaErr, IntoLuaResult, IntoLuaResultMulti, LuaNativeFn, LuaNativeFnMut,
+    FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, IntoCallbackResult,
 };
 pub use crate::types::{
-    AppDataRef, AppDataRefMut, Either, Integer, LightUserData, TypedRef, Number, VmState,
+    AppDataRef, AppDataRefMut, Either, Integer, LightUserData, TypedRef, Number, VmState, CallbackResult, CallbackFinalizeAction, Yield, CustomError, Ok
 };
 pub use crate::state::extra::USERDATA2_TAG; // embedders should not use this tag
 pub use crate::auxlib::*;

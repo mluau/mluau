@@ -1,4 +1,4 @@
-use mluau::{Error, Lua, Result};
+use mluau::{CustomError, Error, IntoLua, Lua, Result};
 
 #[test]
 fn test_disable_error_userdata() -> Result<()> {
@@ -74,8 +74,8 @@ fn test_custom_error_value() -> Result<()> {
         b: i32,
     }
 
-    impl mluau::IntoLuaErr for MyTableError {
-        fn into_lua_err(self, lua: &Lua) -> Result<mluau::Value> {
+    impl IntoLua for MyTableError {
+        fn into_lua(self, lua: &Lua) -> Result<mluau::Value> {
             let table = lua.create_table()?;
             table.set("a", self.a)?;
             table.set("b", self.b)?;
@@ -83,22 +83,8 @@ fn test_custom_error_value() -> Result<()> {
         }
     }
 
-    struct MyResult;
-    
-    impl mluau::IntoLuaResultMulti for MyResult {
-        type Item = ();
-        type Error = MyTableError;
-
-        fn into_result(self) -> std::result::Result<Self::Item, Self::Error> {
-            Err(MyTableError {
-                a: "hello".to_string(),
-                b: 42,
-            })
-        }
-    }
-
     let func = lua.create_function(|_, ()| {
-        MyResult
+        CustomError(MyTableError { a: "hello".to_string(), b: 42 })
     })?;
     lua.globals().set("func", func)?;
 

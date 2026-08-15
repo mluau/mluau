@@ -170,8 +170,8 @@ pub(super) unsafe extern "C-unwind" fn init_config(config: *mut ffi::luarequire_
     ) -> ffi::luarequire_NavigateResult {
         let mut this = try_borrow_mut!(state, ctx);
         let chunk_name = CStr::from_ptr(requirer_chunkname).to_string_lossy();
-        callback_error_ext(state, ptr::null_mut(), move |extra, _| {
-            this.reset(&chunk_name).into_nav_result().map_err(|e| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), e))
+        callback_error_ext(state, ptr::null_mut(), move |_extra, _| {
+            this.reset(&chunk_name).into_nav_result()
         })
     }
 
@@ -182,8 +182,8 @@ pub(super) unsafe extern "C-unwind" fn init_config(config: *mut ffi::luarequire_
     ) -> ffi::luarequire_NavigateResult {
         let mut this = try_borrow_mut!(state, ctx);
         let path = CStr::from_ptr(path).to_string_lossy();
-        callback_error_ext(state, ptr::null_mut(), move |extra, _| {
-            this.jump_to_alias(&path).into_nav_result().map_err(|e| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), e))
+        callback_error_ext(state, ptr::null_mut(), move |_extra, _| {
+            this.jump_to_alias(&path).into_nav_result()
         })
     }
 
@@ -192,8 +192,8 @@ pub(super) unsafe extern "C-unwind" fn init_config(config: *mut ffi::luarequire_
         ctx: *mut c_void,
     ) -> ffi::luarequire_NavigateResult {
         let mut this = try_borrow_mut!(state, ctx);
-        callback_error_ext(state, ptr::null_mut(), move |extra, _| {
-            this.to_parent().into_nav_result().map_err(|e| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), e))
+        callback_error_ext(state, ptr::null_mut(), move |_extra, _| {
+            this.to_parent().into_nav_result()
         })
     }
 
@@ -204,8 +204,8 @@ pub(super) unsafe extern "C-unwind" fn init_config(config: *mut ffi::luarequire_
     ) -> ffi::luarequire_NavigateResult {
         let mut this = try_borrow_mut!(state, ctx);
         let name = CStr::from_ptr(name).to_string_lossy();
-        callback_error_ext(state, ptr::null_mut(), move |extra, _| {
-            this.to_child(&name).into_nav_result().map_err(|e| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), e))
+        callback_error_ext(state, ptr::null_mut(), move |_extra, _| {
+            this.to_child(&name).into_nav_result()
         })
     }
 
@@ -268,11 +268,11 @@ pub(super) unsafe extern "C-unwind" fn init_config(config: *mut ffi::luarequire_
         size_out: *mut usize,
     ) -> WriteResult {
         let mut this = try_borrow_mut!(state, ctx);
-        let config = callback_error_ext(state, ptr::null_mut(), move |extra, _| {
+        let config = callback_error_ext(state, ptr::null_mut(), move |_extra, _| {
             let mut wrap = || -> crate::error::Result<Vec<u8>> {
                 Ok(this.config_cache.take().unwrap_or_else(|| this.config()).map_err(crate::error::Error::external)?)
             };
-            wrap().map_err(|e| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), e))
+            wrap()
         });
         write_to_buffer(buffer, buffer_size, size_out, &config)
     }
@@ -292,7 +292,7 @@ pub(super) unsafe extern "C-unwind" fn init_config(config: *mut ffi::luarequire_
                 rawlua.push_at(state, loader)?;
                 Ok(1)
             };
-            wrap().map_err(|e| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), e))
+            wrap()
         })
     }
 
@@ -408,7 +408,7 @@ pub(super) fn create_require_function<R: Require + 'static>(
             let s = (s.to_bytes().iter())
                 .map(|&c| c.to_ascii_lowercase())
                 .collect::<bstr::BString>();
-            (*extra).raw_lua().push_at(state, s).map(|_| 1).map_err(|e| crate::state::util::map_err_to_value((*extra).raw_lua().lua(), e))
+            (*extra).raw_lua().push_at(state, s).map(|_| 1)
         })
     }
 

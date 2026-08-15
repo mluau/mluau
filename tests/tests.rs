@@ -441,34 +441,6 @@ fn test_pcall_xpcall() -> Result<()> {
 }
 
 #[test]
-fn test_recursive_mut_callback_error() -> Result<()> {
-    let lua = Lua::new();
-
-    let mut v = Some(Box::new(123));
-    let f = lua.create_function_mut(move |lua, mutate: bool| {
-        if mutate {
-            v = None;
-        } else {
-            // Produce a mutable reference
-            let r = v.as_mut().unwrap();
-            // Whoops, this will recurse into the function and produce another mutable reference!
-            lua.globals().get::<Function>("f")?.call::<()>(true)?;
-            println!("Should not get here, mutable aliasing has occurred!");
-            println!("value at {:p} is {r}", r as *mut _);
-        }
-
-        Ok(())
-    })?;
-    lua.globals().set("f", f)?;
-    match lua.globals().get::<Function>("f")?.call::<()>(false) {
-        Err(Error::RuntimeError(msg)) if msg.contains("mutable callback called recursively") => {}
-        other => panic!("incorrect result: {:?}", other),
-    };
-
-    Ok(())
-}
-
-#[test]
 fn test_set_metatable_nil() -> Result<()> {
     let lua = Lua::new();
     lua.load(

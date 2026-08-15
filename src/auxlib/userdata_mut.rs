@@ -1,5 +1,5 @@
 use std::{borrow::Cow, cell::RefCell, ffi::c_int};
-use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaResult, IntoLuaResultMulti, Lua, LuaUserDataExt, TypedUserData, USERDATA2_TAG, UserDataMethods, util::short_type_name};
+use crate::{AnyUserData, FromLua, FromLuaMulti, IntoCallbackResult, IntoLua, Lua, LuaUserDataExt, TypedUserData, USERDATA2_TAG, UserDataMethods, util::short_type_name};
 
 pub struct LuaLock<T>(pub RefCell<T>);
 
@@ -22,7 +22,7 @@ pub trait UserDataMethodsMut<T, const TAG: c_int = USERDATA2_TAG> {
     where
         M: Fn(&Lua, &T, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti;
+        R: IntoCallbackResult;
     
     /// Add a mutable method which accepts a `&mut T` as the first parameter.
     ///
@@ -35,7 +35,7 @@ pub trait UserDataMethodsMut<T, const TAG: c_int = USERDATA2_TAG> {
     where
         M: Fn(&Lua, &mut T, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti;
+        R: IntoCallbackResult;
 
     /// Add a regular function which accepts generic arguments.
     ///
@@ -44,21 +44,21 @@ pub trait UserDataMethodsMut<T, const TAG: c_int = USERDATA2_TAG> {
     fn add_function<F, A, R>(&mut self, name: impl Into<&'static str>, function: F) where
         F: Fn(&Lua, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti;
+        R: IntoCallbackResult;
 
     /// Add a metamethod which accepts a `&T` as the first parameter.
     fn add_meta_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
         M: Fn(&Lua, &T, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti;
+        R: IntoCallbackResult;
 
     /// Add a mutable metamethod which accepts a `&mut T` as the first parameter.
     fn add_meta_method_mut<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
         M: Fn(&Lua, &mut T, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti;
+        R: IntoCallbackResult;
 
     /// Add a metamethod which accepts generic arguments.
     ///
@@ -69,7 +69,7 @@ pub trait UserDataMethodsMut<T, const TAG: c_int = USERDATA2_TAG> {
     where
         F: Fn(&Lua, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti;
+        R: IntoCallbackResult;
 }
 
 /// Field registry for [`UserDataMut`] implementors.
@@ -105,9 +105,19 @@ pub trait UserDataFieldsMut<T, const TAG: c_int = USERDATA2_TAG> {
     fn add_field_method_get<M, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
         M: Fn(&Lua, &T) -> R + 'static,
-        R: IntoLuaResult;
+        R: IntoCallbackResult;
 
-    // TODO: Add field method setters
+    /// Add a regular field getter as a method which accepts a `&T` as the parameter.
+    ///
+    /// Regular field getters are implemented by overriding the `__index` metamethod and returning
+    /// the accessed field. This allows them to be used with the expected `userdata.field` syntax.
+    ///
+    /// If `add_meta_method` is used to set the `__index` metamethod, the `__index` metamethod will
+    /// be used as a fall-back if no regular index property is found.
+    fn add_field_method_set<M, A>(&mut self, name: impl Into<&'static str>, method: M)
+    where
+        M: Fn(&Lua, &mut T, A) -> Result<(), crate::Error> + 'static,
+        A: FromLua;
 }
 
 /// Trait for custom mutable userdata types.
@@ -149,7 +159,7 @@ where
     where
         F: Fn(&Lua, &T, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti 
+        R: IntoCallbackResult 
     {
         self.add_method(name, move |lua, this: TypedUserData<LuaLock<T>, TAG>, args| {
             let inner = this.0.borrow(); 
@@ -161,7 +171,7 @@ where
     where
         F: Fn(&Lua, &mut T, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti 
+        R: IntoCallbackResult 
     {
         self.add_method(name, move |lua, this: TypedUserData<LuaLock<T>, TAG>, args| {
             let mut inner = this.0.borrow_mut(); 
@@ -173,7 +183,7 @@ where
     where
         F: Fn(&Lua, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti,
+        R: IntoCallbackResult,
     {
         UserDataMethods::<LuaLock<T>, TAG>::add_function(self, name, function);
     }
@@ -182,7 +192,7 @@ where
     where
         F: Fn(&Lua, &T, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti,
+        R: IntoCallbackResult,
     {
         self.add_meta_method(name, move |lua, this: TypedUserData<LuaLock<T>, TAG>, args| {
             let inner = this.0.borrow(); 
@@ -194,7 +204,7 @@ where
     where
         F: Fn(&Lua, &mut T, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti,
+        R: IntoCallbackResult,
     {
         self.add_meta_method(name, move |lua, this: TypedUserData<LuaLock<T>, TAG>, args| {
             let mut inner = this.0.borrow_mut(); 
@@ -206,7 +216,7 @@ where
     where
         F: Fn(&Lua, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti,
+        R: IntoCallbackResult,
     {
         UserDataMethods::<LuaLock<T>, TAG>::add_meta_function(self, name, function);
     }
@@ -234,11 +244,22 @@ where
     fn add_field_method_get<F, R>(&mut self, name: impl Into<&'static str>, method: F)
     where
         F: Fn(&crate::Lua, &T) -> R + 'static,
-        R: crate::IntoLuaResult,
+        R: IntoCallbackResult,
     {
         self.add_field_method_get(name, move |lua, this: crate::TypedUserData<LuaLock<T>, TAG>| {
             let inner = this.0.borrow();
             method(lua, &*inner)
+        });
+    }
+
+    fn add_field_method_set<F, A>(&mut self, name: impl Into<&'static str>, method: F)
+    where
+        F: Fn(&Lua, &mut T, A) -> Result<(), crate::Error> + 'static,
+        A: FromLua,
+    {
+        self.add_field_method_set(name, move |lua, this: crate::TypedUserData<LuaLock<T>, TAG>, args: A| {
+            let mut inner = this.0.borrow_mut();
+            method(lua, &mut *inner, args)
         });
     }
 }

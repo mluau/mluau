@@ -10,7 +10,6 @@ use std::rc::Rc as XRc;
 
 #[cfg(any(feature = "luau", doc))]
 use crate::chunk::Compiler;
-use crate::MultiValue;
 
 use super::{Lua, WeakLua};
 
@@ -58,9 +57,6 @@ pub(crate) struct ExtraData {
     pub(super) compiler: Option<Compiler>,
     #[cfg(feature = "luau-jit")]
     pub(super) enable_jit: bool,
-
-    // Values currently being yielded from Lua.yield()
-    pub(super) yielded_values: Option<MultiValue>,
 
     pub(super) on_close: Option<Box<dyn Fn() + 'static>>,
 
@@ -166,7 +162,6 @@ impl ExtraData {
             enable_jit: true,
 
             running_gc: false,
-            yielded_values: None,
             on_close: None,
 
             mem_categories: vec![std::ffi::CString::new("main").unwrap()],

@@ -690,26 +690,6 @@ fn test_thread_events() -> Result<()> {
 }
 
 #[test]
-fn test_loadstring() -> Result<()> {
-    let lua = Lua::new();
-
-    let f = lua.load(r#"loadstring("return 123")"#).eval::<Function>()?;
-    assert_eq!(f.call::<i32>(())?, 123);
-
-    let err = lua
-        .load(r#"loadstring("moon 123", "chunk")"#)
-        .exec()
-        .err()
-        .unwrap();
-    assert!(err.to_string().contains(
-        r#"syntax error: [string "chunk"]:1: Incomplete statement: expected assignment or a function call"#
-    ));
-
-    Ok(())
-}
-
-
-#[test]
 fn test_memory_category() -> Result<()> {
     let lua = Lua::new();
 

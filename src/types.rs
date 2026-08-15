@@ -1,6 +1,7 @@
 use std::os::raw::{c_int, c_void};
 use std::ptr::NonNull;
 
+use crate::{IntoLua, IntoLuaMulti, MultiValue, Value};
 use crate::error::Result;
 use crate::state::{Lua, RawLua};
 use std::ops::Deref;
@@ -166,41 +167,63 @@ impl ErasedHeader {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct LightUserData(pub *mut c_void);
 
-type CallbackFn<'a> = dyn Fn(&RawLua, c_int) -> std::result::Result<c_int, crate::Value> + 'a;
-
-pub(crate) type Callback = Box<CallbackFn<'static>>;
-pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> std::result::Result<c_int, crate::Value> + 'static>;
+pub(crate) type Callback = Box<dyn Fn(&RawLua, c_int) -> CallbackFinalizeAction>;
+pub(crate) type Continuation = Box<dyn Fn(&RawLua, c_int, c_int) -> CallbackFinalizeAction + 'static>;
 
 /// Type to set next Lua VM action after executing interrupt or hook function.
 pub enum VmState {
     Continue,
     /// Yield the current thread.
-    ///
-    /// Supported by Lua 5.3+ and Luau.
     Yield,
 }
 
+/// Explicit return type for all callback related methods
+pub enum CallbackResult {
+    /// The fn succeeded.
+    Ok(MultiValue),
+    // The fn succeeded with a single value
+    OkSingle(Value),
+    /// The fn should yield with `MultiValue`
+    Yield(MultiValue),
+    /// The method failed and should throw the specified value
+    Error(Value),
+    /// A generic Luau error
+    LuaError(crate::Error)
+}
 
-#[cfg(all(feature = "send", feature = "luau"))]
-pub(crate) type InterruptCallback = XRc<dyn Fn(&Lua) -> Result<VmState> + Send>;
+pub enum CallbackFinalizeAction {
+    Return(c_int), // n values ready for return
+    Error, // error value
+    Yield(c_int), // n results already pushed for yielding
+}
 
-#[cfg(all(not(feature = "send"), feature = "luau"))]
+impl CallbackFinalizeAction {
+    /// Should be run *outside* the catch_unwind
+    pub(crate) unsafe fn finish(self, state: *mut ffi::lua_State) -> c_int {
+        match self {
+            Self::Return(nres) => nres,
+            Self::Error => ffi::lua_error(state),
+            Self::Yield(nres) => ffi::lua_yield(state, nres)
+        }
+    }
+}
+
+/// Helper to allow returning a custom Yield value
+pub struct Yield<T: IntoLuaMulti>(pub T);
+
+/// Helper to allow returning a custom Error value
+pub struct CustomError<T: IntoLua>(pub T);
+
+/// Helper to allow returning a custom Ok value
+pub struct Ok<T: IntoLuaMulti>(pub T);
+
 pub(crate) type InterruptCallback = XRc<dyn Fn(&Lua) -> Result<VmState>>;
 
 pub(crate) type GcInterruptCallback = XRc<dyn Fn(&Lua, c_int) -> ()>;
 
-#[cfg(all(feature = "send", feature = "luau"))]
-pub(crate) type ThreadCreationCallback = XRc<dyn Fn(&Lua, crate::Thread) -> Result<()> + Send>;
-
-#[cfg(all(not(feature = "send"), feature = "luau"))]
 pub(crate) type ThreadCreationCallback = XRc<dyn Fn(&Lua, crate::Thread) -> Result<()>>;
 
-#[cfg(all(feature = "send", feature = "luau"))]
-pub(crate) type ThreadCollectionCallback = XRc<dyn Fn(crate::LightUserData) + Send>;
-
-#[cfg(all(not(feature = "send"), feature = "luau"))]
 pub(crate) type ThreadCollectionCallback = XRc<dyn Fn(crate::LightUserData)>;
-
 
 pub(crate) trait LuaType {
     const TYPE_ID: c_int;

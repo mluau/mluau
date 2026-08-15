@@ -1,6 +1,7 @@
 use std::cell::{Cell, UnsafeCell};
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int, c_void};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr::{self, NonNull};
 use std::string::String as StdString;
 
@@ -9,9 +10,7 @@ use crate::error::Result;
 use crate::function::Function;
 use crate::luau::ENABLED_FFLAGS;
 use crate::memory::{MemoryState, ALLOCATOR};
-#[allow(unused_imports)]
-use crate::state::util::callback_error_ext;
-use crate::state::util::callback_error_ext_yieldable;
+use crate::state::util::{StateGuard, extract_panic_str, push_panic_str};
 use crate::stdlib::StdLib;
 use crate::string::String;
 use crate::table::Table;
@@ -671,17 +670,20 @@ impl RawLua {
         unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
             let upvalue = ffi::lua_getcclosuredata(state) as *mut Callback;
             let extra = crate::state::extra::ExtraData::get(state);
-            callback_error_ext_yieldable(
-                state,
-                extra,
-                |extra, nargs| {
-                    // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
-                    // The lock must be already held as the callback is executed
-                    let rawlua = (*extra).raw_lua();
-                    (*upvalue)(rawlua, nargs)
-                },
-                false,
-            )
+            match catch_unwind(AssertUnwindSafe(|| {
+                // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
+                let nargs = ffi::lua_gettop(state);
+                let rawlua = (*extra).raw_lua();
+                let _guard = StateGuard::new(rawlua, state);
+                (*upvalue)(rawlua, nargs)
+            })) {
+                Ok(ret) => ret.finish(state),
+                Err(panic) => {
+                    let panic = extract_panic_str(panic);
+                    push_panic_str(state, extra, panic);
+                    ffi::lua_error(state);
+                }
+            }
         }
 
         let state = self.state();
@@ -717,35 +719,39 @@ impl RawLua {
         unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
             let upvalue = ffi::lua_getcclosuredata(state) as *mut (Callback, Continuation);
             let extra = crate::state::extra::ExtraData::get(state);
-            callback_error_ext_yieldable(
-                state,
-                extra,
-                |extra, nargs| {
-                    // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
-                    // arguments) The lock must be already held as the callback is
-                    // executed
-                    let rawlua = (*extra).raw_lua();
-                    ((*upvalue).0)(rawlua, nargs)
-                },
-                true,
-            )
+            match catch_unwind(AssertUnwindSafe(|| {
+                // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
+                let nargs = ffi::lua_gettop(state);
+                let rawlua = (*extra).raw_lua();
+                let _guard = StateGuard::new(rawlua, state);
+                ((*upvalue).0)(rawlua, nargs)
+            })) {
+                Ok(ret) => ret.finish(state),
+                Err(panic) => {
+                    let panic = extract_panic_str(panic);
+                    push_panic_str(state, extra, panic);
+                    ffi::lua_error(state);
+                }
+            }
         }
 
         unsafe extern "C-unwind" fn cont_callback(state: *mut ffi::lua_State, status: c_int) -> c_int {
             let upvalue = ffi::lua_getcclosuredata(state) as *mut (Callback, Continuation);
             let extra = crate::state::extra::ExtraData::get(state);
-            callback_error_ext_yieldable(
-                state,
-                extra,
-                |extra, nargs| {
-                    // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
-                    // arguments) The lock must be already held as the callback is
-                    // executed
-                    let rawlua = (*extra).raw_lua();
-                    ((*upvalue).1)(rawlua, nargs, status)
-                },
-                true,
-            )
+            match catch_unwind(AssertUnwindSafe(|| {
+                // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
+                let nargs = ffi::lua_gettop(state);
+                let rawlua = (*extra).raw_lua();
+                let _guard = StateGuard::new(rawlua, state);
+                ((*upvalue).1)(rawlua, nargs, status)
+            })) {
+                Ok(ret) => ret.finish(state),
+                Err(panic) => {
+                    let panic = extract_panic_str(panic);
+                    push_panic_str(state, extra, panic);
+                    ffi::lua_error(state);
+                }
+            }
         }
 
         let state = self.state();
