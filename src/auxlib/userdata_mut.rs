@@ -1,5 +1,5 @@
-use std::{cell::RefCell, ffi::c_int};
-use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaResult, IntoLuaResultMulti, Lua, LuaUserDataExt, TypedUserData, USERDATA2_TAG, UserDataMethods};
+use std::{borrow::Cow, cell::RefCell, ffi::c_int};
+use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaResult, IntoLuaResultMulti, Lua, LuaUserDataExt, TypedUserData, USERDATA2_TAG, UserDataMethods, util::short_type_name};
 
 pub struct LuaLock<T>(pub RefCell<T>);
 
@@ -10,7 +10,7 @@ impl<T> LuaLock<T> {
 }
 
 /// Method registry for [`UserDataMut`] implementors.
-pub trait UserDataMethodsMut<T, const TAG: c_int> {
+pub trait UserDataMethodsMut<T, const TAG: c_int = USERDATA2_TAG> {
     /// Add a regular method which accepts a `&T` as the first parameter.
     ///
     /// Regular methods are implemented by overriding the `__index` metamethod and returning the
@@ -73,7 +73,7 @@ pub trait UserDataMethodsMut<T, const TAG: c_int> {
 }
 
 /// Field registry for [`UserDataMut`] implementors.
-pub trait UserDataFieldsMut<T, const TAG: c_int> {
+pub trait UserDataFieldsMut<T, const TAG: c_int = USERDATA2_TAG> {
     /// Add a static field to the [`UserData`].
     ///
     /// Static fields are implemented by updating the `__index` metamethod and returning the
@@ -123,8 +123,8 @@ pub trait UserDataMut<const TAG: c_int = USERDATA2_TAG>: 'static + Sized {
     const USE_NAMECALL: bool = true;
 
     /// Type name
-    fn type_name() -> &'static str {
-        std::any::type_name::<Self>()
+    fn type_name<'a>() -> Cow<'a, str> {
+        Cow::Owned(short_type_name::<Self>())
     }
 
     /// Adds custom fields specific to this userdata.
@@ -246,7 +246,7 @@ where
 impl<const TAG: c_int, T: UserDataMut<TAG>> crate::UserData<TAG> for LuaLock<T> {
     const USE_NAMECALL: bool = true;
 
-    fn type_name() -> &'static str {
+    fn type_name<'a>() -> Cow<'a, str> {
         T::type_name()
     }
 
@@ -264,18 +264,58 @@ pub trait LuaUserDataMutExt {
     /// 
     /// The `T` is internally wrapped in a [`LuaLock`] for interior mutability purposes
     fn create_userdata_mut<const TAG: c_int, T: UserDataMut<TAG>>(&self, data: T) -> crate::Result<AnyUserData>;
-
-    /// Enriches a AnyUserData of mutable userdata of base type `T` into the underlying lock [`LuaLock<T>`] from which `borrow`/`borrow_mut` can be called
-    /// 
-    /// Will return `None` if `T` if not the type of the data within the AnyUserData
-    fn into_lock<const TAG: c_int, T: UserDataMut<TAG>>(self, ud: AnyUserData) -> Option<TypedUserData<LuaLock<T>, TAG>>;
 }
 
 impl LuaUserDataMutExt for Lua {
     fn create_userdata_mut<const TAG: c_int, T: UserDataMut<TAG>>(&self, data: T) -> crate::Result<AnyUserData> {
         self.create_userdata::<TAG, LuaLock<T>>(data.into_mut())
     }
-    fn into_lock<const TAG: c_int, T: UserDataMut<TAG>>(self, ud: AnyUserData) -> Option<TypedUserData<LuaLock<T>, TAG>> {
-        ud.into_with_tag::<LuaLock<T>, TAG>()
+}
+
+pub trait UserDataMutBorrowExt {
+    fn with_borrow<T: UserDataMut<TAG>, R, const TAG: c_int>(
+        &self, 
+        f: impl FnOnce(&T) -> R
+    ) -> crate::Result<R>;
+
+    fn with_borrow_mut<T: UserDataMut<TAG>, R, const TAG: c_int>(
+        &self, 
+        f: impl FnOnce(&mut T) -> R
+    ) -> crate::Result<R>;
+}
+
+impl UserDataMutBorrowExt for AnyUserData {
+    fn with_borrow<T: UserDataMut<TAG>, R, const TAG: c_int>(
+        &self, 
+        f: impl FnOnce(&T) -> R
+    ) -> crate::Result<R> {
+        let tref = self.borrow_with_tag::<LuaLock<T>, TAG>()
+            .ok_or_else(|| crate::Error::FromLuaConversionError { 
+                from: "userdata", 
+                to: T::type_name().to_string(), 
+                message: None 
+            })?;
+        
+        let inner = tref.0.try_borrow()
+            .map_err(|_| crate::Error::RuntimeError(format!("{} has a mutable borrow currently", T::type_name())))?;
+
+        Ok(f(&inner))
+    }
+
+    fn with_borrow_mut<T: UserDataMut<TAG>, R, const TAG: c_int>(
+        &self, 
+        f: impl FnOnce(&mut T) -> R
+    ) -> crate::Result<R> {
+        let tref = self.borrow_with_tag::<LuaLock<T>, TAG>()
+            .ok_or_else(|| crate::Error::FromLuaConversionError { 
+                from: "userdata", 
+                to: T::type_name().to_string(), 
+                message: None 
+            })?;
+        
+        let mut inner = tref.0.try_borrow_mut()
+            .map_err(|_| crate::Error::RuntimeError(format!("{} is already mutably borrowed", T::type_name())))?;
+
+        Ok(f(&mut inner))
     }
 }

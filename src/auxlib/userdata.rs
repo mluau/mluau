@@ -1,133 +1,83 @@
+use std::borrow::Cow;
 use std::ffi::c_int;
 use std::{collections::HashMap, rc::Rc};
 use std::marker::PhantomData;
-use std::fmt;
 
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
+use crate::util::short_type_name;
 use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaErr, IntoLuaMulti, IntoLuaResult, IntoLuaResultMulti, Lua, MultiValue, Table, TypedUserData, USERDATA2_TAG, Value};
 
 /// Kinds of metamethods that can be overridden.
-///
-/// Currently, this mechanism does not allow overriding the `__gc` metamethod, since there is
-/// generally no need to do so: [`UserData`] implementors can instead just implement `Drop`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum MetaMethod {
+pub struct MetaMethod;
+
+#[allow(non_upper_case_globals)]
+impl MetaMethod {
     /// The `+` operator.
-    Add,
+    pub const Add: &'static str = "__add";
+    
     /// The `-` operator.
-    Sub,
+    pub const Sub: &'static str = "__sub";
+    
     /// The `*` operator.
-    Mul,
+    pub const Mul: &'static str = "__mul";
+    
     /// The `/` operator.
-    Div,
+    pub const Div: &'static str = "__div";
+    
     /// The `%` operator.
-    Mod,
+    pub const Mod: &'static str = "__mod";
+    
     /// The `^` operator.
-    Pow,
+    pub const Pow: &'static str = "__pow";
+    
     /// The unary minus (`-`) operator.
-    Unm,
+    pub const Unm: &'static str = "__unm";
+    
     /// The floor division (//) operator.
-    IDiv,
+    pub const IDiv: &'static str = "__idiv";
+    
     /// The string concatenation operator `..`.
-    Concat,
+    pub const Concat: &'static str = "__concat";
+    
     /// The length operator `#`.
-    Len,
+    pub const Len: &'static str = "__len";
+    
     /// The `==` operator.
-    Eq,
+    pub const Eq: &'static str = "__eq";
+    
     /// The `<` operator.
-    Lt,
+    pub const Lt: &'static str = "__lt";
+    
     /// The `<=` operator.
-    Le,
+    pub const Le: &'static str = "__le";
+    
     /// Index access `obj[key]`.
-    Index,
+    pub const Index: &'static str = "__index";
+    
     /// Index write access `obj[key] = value`.
-    NewIndex,
+    pub const NewIndex: &'static str = "__newindex";
+    
     /// The call "operator" `obj(arg1, args2, ...)`.
-    Call,
+    pub const Call: &'static str = "__call";
+    
     /// The `__tostring` metamethod.
     ///
     /// This is not an operator, but will be called by methods such as `tostring` and `print`.
-    ToString,
+    pub const ToString: &'static str = "__tostring";
+    
     /// The `__iter` metamethod.
     ///
     /// Executed before the iteration begins, and should return an iterator function like `next`
     /// (or a custom one).
-    Iter,
+    pub const Iter: &'static str = "__iter";
+    
     /// The `__type` metafield.
     ///
     /// This is not a function, but it's value can be used by `tostring` and `typeof` built-in
     /// functions.
-    #[doc(hidden)]
-    Type,
-}
-
-impl PartialEq<MetaMethod> for &str {
-    fn eq(&self, other: &MetaMethod) -> bool {
-        *self == other.name()
-    }
-}
-
-impl PartialEq<MetaMethod> for String {
-    fn eq(&self, other: &MetaMethod) -> bool {
-        self == other.name()
-    }
-}
-
-impl fmt::Display for MetaMethod {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "{}", self.name())
-    }
-}
-
-impl MetaMethod {
-    /// Returns Lua metamethod name, usually prefixed by two underscores.
-    pub const fn name(self) -> &'static str {
-        match self {
-            MetaMethod::Add => "__add",
-            MetaMethod::Sub => "__sub",
-            MetaMethod::Mul => "__mul",
-            MetaMethod::Div => "__div",
-            MetaMethod::Mod => "__mod",
-            MetaMethod::Pow => "__pow",
-            MetaMethod::Unm => "__unm",
-            MetaMethod::IDiv => "__idiv",
-            MetaMethod::Concat => "__concat",
-            MetaMethod::Len => "__len",
-            MetaMethod::Eq => "__eq",
-            MetaMethod::Lt => "__lt",
-            MetaMethod::Le => "__le",
-            MetaMethod::Index => "__index",
-            MetaMethod::NewIndex => "__newindex",
-            MetaMethod::Call => "__call",
-            MetaMethod::ToString => "__tostring",
-
-            MetaMethod::Iter => "__iter",
-
-            #[rustfmt::skip]
-            MetaMethod::Type => "__type",
-        }
-    }
-}
-
-impl AsRef<str> for MetaMethod {
-    fn as_ref(&self) -> &str {
-        self.name()
-    }
-}
-
-impl Into<&'static str> for MetaMethod {
-    fn into(self) -> &'static str {
-        self.name()
-    }
-}
-
-impl From<MetaMethod> for String {
-    #[inline]
-    fn from(method: MetaMethod) -> Self {
-        method.name().to_owned()
-    }
+    pub const Type: &'static str = "__type";
 }
 
 /// Method registry for [`UserData`] implementors.
@@ -221,8 +171,8 @@ pub trait UserDataFields<T, const TAG: c_int = USERDATA2_TAG> {
 ///
 /// There are certain cases that may deoptimize userdata accesses into slower paths automatically:
 /// - Disabling namecall (forces __index then call as two separate accesses)
-/// - Adding a __index metamethod via meta-method (warning: __index as meta function will *not* work right now, this is a current impl limitation, forces all __index to go through func and not table __index)
-/// - Field getters (forces func __index)
+/// - Adding a __index metamethod via meta-method (forces func __index to allow fallback to custom __index)
+/// - Field getters (forces func __index to allow dynamic call to field getter)
 /// 
 /// Mutable userdata can be created by defining [`UserDataMut`] instead of this trait. Note that this costs about 8 bytes extra. and is slower
 /// than immutable userdata as it wraps every userdata access behind a RefCell meaning all normal RefCell guidance apply (incl. but not limited to
@@ -235,8 +185,8 @@ pub trait UserData<const TAG: c_int = USERDATA2_TAG>: 'static + Sized {
     const USE_NAMECALL: bool = true;
 
     /// Type name
-    fn type_name() -> &'static str {
-        std::any::type_name::<Self>()
+    fn type_name<'a>() -> Cow<'a, str> {
+        Cow::Owned(short_type_name::<Self>())
     }
 
     /// Adds custom fields specific to this userdata.
@@ -492,7 +442,12 @@ impl<const TAG: c_int, T: UserData<TAG>> UserDataMethods<T, TAG> for UserDataReg
     A: FromLuaMulti,
     R: IntoLuaResultMulti 
     {
-        self.mt_props.insert(name.into(), self.lua.create_function(function).map(Value::Function));
+        let name = name.into();
+        match name {
+            "__index" => panic!("__index must be registered as a meta method with add_meta_method"),
+            "__namecall" => panic!("__namecall must be registered as a meta method with add_meta_method"),
+            _ => self.mt_props.insert(name.into(), self.lua.create_function(function).map(Value::Function))
+        };
     }
 
     fn add_meta_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
@@ -503,8 +458,8 @@ impl<const TAG: c_int, T: UserData<TAG>> UserDataMethods<T, TAG> for UserDataReg
     {
         let name = name.into();
         match name {
-            "__index" => { self.index_fb = Some(wrap_method(method)); },
-            "__namecall" => { self.namecall_fb = Some(wrap_method(method)); },
+            "__index" => self.index_fb = Some(wrap_method(method)),
+            "__namecall" => self.namecall_fb = Some(wrap_method(method)),
             _ => { self.mt_props.insert(name, self.lua.create_function(move |lua, (ud, args)| method(lua, ud, args)).map(Value::Function)); }
         };
     }
@@ -519,11 +474,8 @@ impl<T: UserData> IntoLua for T {
 }
 
 pub trait LuaUserDataExt {
+    /// Creates a immutable userdata with the associated data `T`
     fn create_userdata<const TAG: c_int, T: UserData<TAG>>(&self, data: T) -> crate::Result<AnyUserData>;
-    /// Enriches a AnyUserData of mutable userdata of base type `T` into the underlying `T`
-    /// 
-    /// Will return `None` if `T` if not the type of the data within the AnyUserData
-    fn into<const TAG: c_int, T: UserData<TAG>>(self, ud: AnyUserData) -> Option<TypedUserData<T, TAG>>;
 }
 
 impl LuaUserDataExt for Lua {
@@ -531,8 +483,35 @@ impl LuaUserDataExt for Lua {
         let ud = UserDataRegistry::create_userdata(self, data)?;
         Ok(ud)
     }
-    fn into<const TAG: c_int, T: UserData<TAG>>(self, ud: AnyUserData) -> Option<TypedUserData<T, TAG>> {
-        ud.into_with_tag::<T, TAG>()
+}
+
+pub trait UserDataBorrowExt {
+    fn try_borrow<const TAG: c_int, T: UserData<TAG>>(&self) -> crate::Result<TypedUserData<T, TAG>>;
+    fn with_ref<const TAG: c_int, T: UserData<TAG>, R>(
+        &self, 
+        f: impl FnOnce(&T) -> R
+    ) -> crate::Result<R>;
+}
+
+impl UserDataBorrowExt for AnyUserData {
+    fn try_borrow<const TAG: c_int, T: UserData<TAG>>(&self) -> crate::Result<TypedUserData<T, TAG>> {
+        match self.borrow_with_tag::<T, TAG>() {
+            Some(tref) => Ok(tref),
+            None => Err(crate::Error::FromLuaConversionError { from: "userdata", to: T::type_name().to_string(), message: None })
+        }
+    }
+    fn with_ref<const TAG: c_int, T: UserData<TAG>, R>(
+        &self, 
+        f: impl FnOnce(&T) -> R
+    ) -> crate::Result<R> {
+        let tref = self.borrow_with_tag::<T, TAG>()
+            .ok_or_else(|| crate::Error::FromLuaConversionError { 
+                from: "userdata", 
+                to: T::type_name().to_string(), 
+                message: None 
+            })?;
+        
+        Ok(f(&tref))
     }
 }
 

@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use mluau::{
-    AnyUserData, Error, Function, Lua, LuaUserDataExt, MetaMethod, Result, String, UserData, UserDataMethods, TypedUserData as UserDataRef, Value, Variadic
+    AnyUserData, Error, Function, Lua, LuaUserDataExt, LuaUserDataMutExt, MetaMethod, Result, String, TypedUserData as UserDataRef, UserData, UserDataMethods, UserDataMethodsMut, UserDataMut, UserDataMutBorrowExt, Value, Variadic
 };
 
 #[test]
@@ -122,10 +122,10 @@ fn test_metamethods() -> Result<()> {
     assert!(userdata2.equals(&userdata3)?);
 
     let userdata1: AnyUserData = globals.get("userdata1")?;
-    assert!(userdata1.metatable().unwrap().contains_key(MetaMethod::Add.name())?);
-    assert!(userdata1.metatable().unwrap().contains_key(MetaMethod::Sub.name())?);
-    assert!(userdata1.metatable().unwrap().contains_key(MetaMethod::Index.name())?);
-    assert!(!userdata1.metatable().unwrap().contains_key(MetaMethod::Pow.name())?);
+    assert!(userdata1.metatable().unwrap().contains_key(MetaMethod::Add)?);
+    assert!(userdata1.metatable().unwrap().contains_key(MetaMethod::Sub)?);
+    assert!(userdata1.metatable().unwrap().contains_key(MetaMethod::Index)?);
+    assert!(!userdata1.metatable().unwrap().contains_key(MetaMethod::Pow)?);
 
     Ok(())
 }
@@ -226,13 +226,10 @@ fn test_metatable() -> Result<()> {
 
     impl UserData for MyUserData {
         const USE_NAMECALL: bool = false;
-        fn type_name() -> &'static str {
-            "MyUserData"
-        }
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
             methods.add_function("my_type_name", |_, data: AnyUserData| {
                 let metatable = data.metatable().unwrap();
-                metatable.get::<String>(MetaMethod::Type.name())
+                metatable.get::<String>(MetaMethod::Type)
             });
         }
     }
@@ -256,7 +253,7 @@ fn test_metatable() -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
     methods.sort();
 
-    assert_eq!(methods, vec!["__index", "__metatable", MetaMethod::Type.name()]);
+    assert_eq!(methods, vec!["__index", "__metatable", MetaMethod::Type]);
 
     Ok(())
 }
@@ -359,5 +356,51 @@ fn test_userdata_meta_function() -> Result<()> {
     let res2: i32 = lua.load("return 5 + my_obj").eval()?;
     assert_eq!(res2, 15);
     
+    Ok(())
+}
+
+#[test]
+fn test_methods() -> Result<()> {
+    struct MyUserData(i64);
+
+    impl UserDataMut for MyUserData {
+        fn add_methods<M: UserDataMethodsMut<Self>>(methods: &mut M) {
+            methods.add_method("get_value", |_, data, ()| Ok(data.0));
+            methods.add_method_mut("set_value", |_, data, args| {
+                data.0 = args;
+                Ok(())
+            });
+        }
+    }
+
+    fn check_methods(lua: &Lua, userdata: AnyUserData) -> Result<()> {
+        let globals = lua.globals();
+        globals.set("userdata", &userdata)?;
+        lua.load(
+            r#"
+            function get_it()
+                return userdata:get_value()
+            end
+
+            function set_it(i)
+                return userdata:set_value(i)
+            end
+        "#,
+        )
+        .exec()?;
+        let get = globals.get::<Function>("get_it")?;
+        let set = globals.get::<Function>("set_it")?;
+        assert_eq!(get.call::<i64>(())?, 42);
+        userdata.with_borrow_mut::<MyUserData, _, _>(|x| x.0 = 64)?;
+        assert_eq!(get.call::<i64>(())?, 64);
+        set.call::<()>(100)?;
+        assert_eq!(get.call::<i64>(())?, 100);
+        Ok(())
+    }
+
+    let lua = Lua::new();
+
+    check_methods(&lua, lua.create_userdata_mut(MyUserData(42))?)?;
+
     Ok(())
 }
