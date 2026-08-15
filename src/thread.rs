@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 use crate::function::Function;
 use crate::state::RawLua;
 use crate::traits::{FromLuaMulti, IntoLuaMulti};
-use crate::types::{LuaType, TypedRef, ValueRef};
+use crate::types::{LuaType, TypedRef, UnbackedTypedRef, ValueRef};
 
 use crate::util::{check_stack, error_traceback_thread, pop_error, StackGuard};
 use crate::WeakLua;
@@ -97,6 +97,10 @@ impl Thread {
     ///
     /// Returns `None` if no data was set for the current lua thread or if the provided type
     /// does not match the stored data type.
+    /// 
+    /// # Safety
+    /// 
+    /// Must not reset thread while holding onto the TypedRef
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn with_data<T: 'static>(self) -> Option<TypedRef<T, Self, 0>> {
         let lua = self.0.lua.lock();
@@ -109,6 +113,25 @@ impl Thread {
             crate::types::ErasedHeader::downcast_ref(current)
         };
         TypedRef::new_opt(lua.0, ptr, self)
+    }
+
+    /// Similar to `with_data` but takes a reference to the underlying data
+    /// 
+    /// # Safety
+    /// 
+    /// Must not reset thread while holding onto the TypedRef
+    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
+    pub fn with_data_ref<T: 'static>(&self) -> Option<UnbackedTypedRef<'_, T>> {
+        let lua = self.0.lua.lock();
+        let thread_state = self.state();
+        let ptr = unsafe {
+            let current = ffi::lua_getthreaddata(thread_state);
+            if current.is_null() {
+                return None;
+            }
+            crate::types::ErasedHeader::downcast_ref(current)
+        };
+        UnbackedTypedRef::new_opt(lua.0, ptr, &self.0)
     }
 
     /// Sets the thread data. The set thread data will automatically be dropped upon Luau GC

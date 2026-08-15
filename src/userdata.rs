@@ -1,6 +1,6 @@
 use std::{ffi::{c_int, c_void}, ptr::NonNull};
 
-use crate::{FromLua, FromLuaMulti, Function, IntoLua, IntoLuaMulti, Lua, Result, Table, USERDATA2_TAG, Value, WeakLua, state::LuaGuard, types::{TypedRef, ValueRef}, util::{StackGuard, assert_stack, check_stack, short_type_name}};
+use crate::{FromLua, FromLuaMulti, Function, IntoLua, IntoLuaMulti, Lua, Result, Table, USERDATA2_TAG, Value, WeakLua, state::LuaGuard, types::{TypedRef, UnbackedTypedRef, ValueRef}, util::{StackGuard, assert_stack, check_stack, short_type_name}};
 
 pub(crate) const fn assert_ud_tag<const TAG: c_int>() {
     assert!(TAG > 0 && TAG < ffi::LUA_UTAG_LIMIT);
@@ -82,18 +82,15 @@ impl AnyUserData {
 
     /// `borrow_with_tag` but with default tag
     #[inline(always)]
-    pub fn borrow<T: 'static>(&self) -> Option<TypedUserData<T>> {
+    pub fn borrow<T: 'static>(&self) -> Option<UnbackedTypedRef<'_, T>> {
         self.borrow_with_tag::<T, USERDATA2_TAG>()
     }
 
-    /// Same as `into` but clones the underlying AnyUserData if the borrow succeeds
-    /// 
-    /// Note: This internally has to clone the underlying AnyUserData handle in the process making it 
-    /// *slightly* less performant than `into`
+    /// Same as `into` but returns a unbacked type ref. In most cases, into/into_with_tag is preferable
     #[inline(always)]
-    pub fn borrow_with_tag<T: 'static, const TAG: c_int>(&self) -> Option<TypedRef<T, Self, TAG>> {
+    pub fn borrow_with_tag<T: 'static, const TAG: c_int>(&self) -> Option<UnbackedTypedRef<'_, T>> {
         let (ptr, lua) = self.borrow_to_ptr::<T, TAG>();
-        ptr.map(|p| TypedRef::new(lua.0, p, self.clone()))
+        ptr.map(|p| UnbackedTypedRef::new(lua.0, p, &self.0))
     }
 
     #[inline]

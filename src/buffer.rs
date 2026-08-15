@@ -5,7 +5,7 @@ use std::os::raw::c_void;
 use serde::ser::{Serialize, Serializer};
 
 use crate::state::RawLua;
-use crate::types::{TypedRef, ValueRef};
+use crate::types::{TypedRef, UnbackedTypedRef, ValueRef};
 
 /// A Luau buffer type.
 ///
@@ -74,6 +74,19 @@ impl Buffer {
             crate::types::ErasedHeader::downcast_ref(ud)
         };
         TypedRef::new_opt(lua.0, ptr, self)
+    }
+
+    /// Similar to `with_data` but takes a reference to the underlying data
+    pub fn with_data_ref<T: 'static>(&self) -> Option<UnbackedTypedRef<'_, T>> {
+        let lua = self.0.lua.lock();
+        let state = lua.state();
+        let ptr = unsafe {
+            let _sg = crate::util::StackGuard::new(state);
+            lua.push_ref_at(&self.0, state);
+            let ud = ffi::lua_getbufferuserdata(state, -1);
+            crate::types::ErasedHeader::downcast_ref(ud)
+        };
+        UnbackedTypedRef::new_opt(lua.0, ptr, &self.0)
     }
 
     /// Reads given number of bytes from the buffer at the given offset.
