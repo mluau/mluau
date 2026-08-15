@@ -2,6 +2,8 @@
 
 mod userdata;
 mod userdata_mut;
+mod function;
 
 pub use userdata::*;
 pub use userdata_mut::*;
+pub use function::*;
