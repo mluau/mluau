@@ -1,137 +1,87 @@
-use std::collections::HashMap;
+use std::borrow::Cow;
+use std::ffi::c_int;
+use std::{collections::HashMap, rc::Rc};
 use std::marker::PhantomData;
-use std::fmt;
 
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
-use crate::types::MaybeSync;
-use crate::{AnyUserData, FromLuaMulti, IntoLua, IntoLuaErr, IntoLuaMulti, IntoLuaResult, IntoLuaResultMulti, Lua, MaybeSend, MultiValue, Table, TypedUserData, Value, XRc};
+use crate::util::short_type_name;
+use crate::{AnyUserData, CallbackResult, FromLua, FromLuaMulti, IntoCallbackResult, IntoLua, Lua, MultiValue, Table, TypedUserData, USERDATA2_TAG, Value};
 
 /// Kinds of metamethods that can be overridden.
-///
-/// Currently, this mechanism does not allow overriding the `__gc` metamethod, since there is
-/// generally no need to do so: [`UserData`] implementors can instead just implement `Drop`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum MetaMethod {
+pub struct MetaMethod;
+
+#[allow(non_upper_case_globals)]
+impl MetaMethod {
     /// The `+` operator.
-    Add,
+    pub const Add: &'static str = "__add";
+    
     /// The `-` operator.
-    Sub,
+    pub const Sub: &'static str = "__sub";
+    
     /// The `*` operator.
-    Mul,
+    pub const Mul: &'static str = "__mul";
+    
     /// The `/` operator.
-    Div,
+    pub const Div: &'static str = "__div";
+    
     /// The `%` operator.
-    Mod,
+    pub const Mod: &'static str = "__mod";
+    
     /// The `^` operator.
-    Pow,
+    pub const Pow: &'static str = "__pow";
+    
     /// The unary minus (`-`) operator.
-    Unm,
+    pub const Unm: &'static str = "__unm";
+    
     /// The floor division (//) operator.
-    IDiv,
+    pub const IDiv: &'static str = "__idiv";
+    
     /// The string concatenation operator `..`.
-    Concat,
+    pub const Concat: &'static str = "__concat";
+    
     /// The length operator `#`.
-    Len,
+    pub const Len: &'static str = "__len";
+    
     /// The `==` operator.
-    Eq,
+    pub const Eq: &'static str = "__eq";
+    
     /// The `<` operator.
-    Lt,
+    pub const Lt: &'static str = "__lt";
+    
     /// The `<=` operator.
-    Le,
+    pub const Le: &'static str = "__le";
+    
     /// Index access `obj[key]`.
-    Index,
+    pub const Index: &'static str = "__index";
+    
     /// Index write access `obj[key] = value`.
-    NewIndex,
+    pub const NewIndex: &'static str = "__newindex";
+    
     /// The call "operator" `obj(arg1, args2, ...)`.
-    Call,
+    pub const Call: &'static str = "__call";
+    
     /// The `__tostring` metamethod.
     ///
     /// This is not an operator, but will be called by methods such as `tostring` and `print`.
-    ToString,
+    pub const ToString: &'static str = "__tostring";
+    
     /// The `__iter` metamethod.
     ///
     /// Executed before the iteration begins, and should return an iterator function like `next`
     /// (or a custom one).
-    Iter,
+    pub const Iter: &'static str = "__iter";
+    
     /// The `__type` metafield.
     ///
     /// This is not a function, but it's value can be used by `tostring` and `typeof` built-in
     /// functions.
-    #[doc(hidden)]
-    Type,
-}
-
-impl PartialEq<MetaMethod> for &str {
-    fn eq(&self, other: &MetaMethod) -> bool {
-        *self == other.name()
-    }
-}
-
-impl PartialEq<MetaMethod> for String {
-    fn eq(&self, other: &MetaMethod) -> bool {
-        self == other.name()
-    }
-}
-
-impl fmt::Display for MetaMethod {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "{}", self.name())
-    }
-}
-
-impl MetaMethod {
-    /// Returns Lua metamethod name, usually prefixed by two underscores.
-    pub const fn name(self) -> &'static str {
-        match self {
-            MetaMethod::Add => "__add",
-            MetaMethod::Sub => "__sub",
-            MetaMethod::Mul => "__mul",
-            MetaMethod::Div => "__div",
-            MetaMethod::Mod => "__mod",
-            MetaMethod::Pow => "__pow",
-            MetaMethod::Unm => "__unm",
-            MetaMethod::IDiv => "__idiv",
-            MetaMethod::Concat => "__concat",
-            MetaMethod::Len => "__len",
-            MetaMethod::Eq => "__eq",
-            MetaMethod::Lt => "__lt",
-            MetaMethod::Le => "__le",
-            MetaMethod::Index => "__index",
-            MetaMethod::NewIndex => "__newindex",
-            MetaMethod::Call => "__call",
-            MetaMethod::ToString => "__tostring",
-
-            MetaMethod::Iter => "__iter",
-
-            #[rustfmt::skip]
-            MetaMethod::Type => "__type",
-        }
-    }
-}
-
-impl AsRef<str> for MetaMethod {
-    fn as_ref(&self) -> &str {
-        self.name()
-    }
-}
-
-impl Into<&'static str> for MetaMethod {
-    fn into(self) -> &'static str {
-        self.name()
-    }
-}
-
-impl From<MetaMethod> for String {
-    #[inline]
-    fn from(method: MetaMethod) -> Self {
-        method.name().to_owned()
-    }
+    pub const Type: &'static str = "__type";
 }
 
 /// Method registry for [`UserData`] implementors.
-pub trait UserDataMethods<T> {
+pub trait UserDataMethods<T, const TAG: c_int = USERDATA2_TAG> {
     /// Add a regular method which accepts a `&T` as the first parameter.
     ///
     /// Regular methods are implemented by overriding the `__index` metamethod and returning the
@@ -141,25 +91,25 @@ pub trait UserDataMethods<T> {
     /// be used as a fall-back if no regular method is found.
     fn add_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
-        M: Fn(&Lua, TypedUserData<T>, A) -> R + MaybeSend + MaybeSync + 'static,
+        M: Fn(&Lua, TypedUserData<T, TAG>, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti;
+        R: IntoCallbackResult;
 
     /// Add a regular function which accepts generic arguments.
     ///
     /// The first argument will be a [`AnyUserData`] of type `T` if the method if it is passed in as 
     /// the first argument: `my_userdata.my_method(my_userdata, arg1, arg2)`.
     fn add_function<F, A, R>(&mut self, name: impl Into<&'static str>, function: F) where
-        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
+        F: Fn(&Lua, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti;
+        R: IntoCallbackResult;
 
     /// Add a metamethod which accepts a `&T` as the first parameter.
     fn add_meta_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
-        M: Fn(&Lua, TypedUserData<T>, A) -> R + MaybeSend + MaybeSync + 'static,
+        M: Fn(&Lua, TypedUserData<T, TAG>, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti;
+        R: IntoCallbackResult;
 
     /// Add a metamethod which accepts generic arguments.
     ///
@@ -168,13 +118,13 @@ pub trait UserDataMethods<T> {
     /// userdata of type `T`.
     fn add_meta_function<F, A, R>(&mut self, name: impl Into<&'static str>, function: F)
     where
-        F: Fn(&Lua, A) -> R + MaybeSend + 'static,
+        F: Fn(&Lua, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti;
+        R: IntoCallbackResult;
 }
 
 /// Field registry for [`UserData`] implementors.
-pub trait UserDataFields<T> {
+pub trait UserDataFields<T, const TAG: c_int = USERDATA2_TAG> {
     /// Add a static field to the [`UserData`].
     ///
     /// Static fields are implemented by updating the `__index` metamethod and returning the
@@ -200,29 +150,38 @@ pub trait UserDataFields<T> {
     ///
     /// Regular field getters are implemented by overriding the `__index` metamethod and returning
     /// the accessed field. This allows them to be used with the expected `userdata.field` syntax.
-    ///
-    /// If `add_meta_method` is used to set the `__index` metamethod, the `__index` metamethod will
-    /// be used as a fall-back if no regular index property is found.
     fn add_field_method_get<M, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
-        M: Fn(&Lua, TypedUserData<T>) -> R + MaybeSend + MaybeSync + 'static,
-        R: IntoLuaResult;
+        M: Fn(&Lua, TypedUserData<T, TAG>) -> R + 'static,
+        R: IntoCallbackResult;
+
+    /// Add a regular field setter as a method which accepts a `&T` as the parameter.
+    ///
+    /// Regular field setters are implemented by overriding the `__newindex` metamethod and returning
+    /// the accessed field. This allows them to be used with the expected `userdata.field` syntax.
+    fn add_field_method_set<M, A>(&mut self, name: impl Into<&'static str>, method: M)
+    where
+        M: Fn(&Lua, TypedUserData<T, TAG>, A) -> Result<(), crate::Error> + 'static,
+        A: FromLua;
 }
 
 /// Trait for custom userdata types.
 ///
 /// By implementing this trait, a struct becomes eligible for use inside Lua code.
 ///
-/// Implementation of [`IntoLua`] is automatically provided, [`FromLua`] needs to be implemented
-/// manually.
+/// Implementation of [`IntoLua`] is automatically provided, Use `TypedUserData<T>` for a [`FromLua`] implementation
 /// 
 /// Deoptimization notes:
 ///
 /// There are certain cases that may deoptimize userdata accesses into slower paths automatically:
 /// - Disabling namecall (forces __index then call as two separate accesses)
-/// - Adding a __index metamethod via meta-method (warning: __index as meta function will *not* work right now, this is a current impl limitation, forces all __index to go through func and not table __index)
-/// - Field getters (forces func __index)
-pub trait UserData: 'static + Sized + MaybeSend + MaybeSync {
+/// - Adding a __index metamethod via meta-method (forces func __index to allow fallback to custom __index)
+/// - Field getters (forces func __index to allow dynamic call to field getter)
+/// 
+/// Mutable userdata can be created by defining [`UserDataMut`] instead of this trait. Note that this costs about 8 bytes extra. and is slower
+/// than immutable userdata as it wraps every userdata access behind a RefCell meaning all normal RefCell guidance apply (incl. but not limited to
+/// never holding the mutable ref to `T` beyond a await point)
+pub trait UserData<const TAG: c_int = USERDATA2_TAG>: 'static + Sized {
     /// Whether or not to use __namecall optimization
     /// 
     /// When using namecall optimization:
@@ -230,71 +189,24 @@ pub trait UserData: 'static + Sized + MaybeSend + MaybeSync {
     const USE_NAMECALL: bool = true;
 
     /// Type name
-    fn type_name() -> &'static str {
-        std::any::type_name::<Self>()
+    fn type_name<'a>() -> Cow<'a, str> {
+        Cow::Owned(short_type_name::<Self>())
     }
 
     /// Adds custom fields specific to this userdata.
     #[allow(unused_variables)]
-    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {}
+    fn add_fields<F: UserDataFields<Self, TAG>>(fields: &mut F) {}
 
     /// Adds custom methods and operators specific to this userdata.
     #[allow(unused_variables)]
-    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {}
+    fn add_methods<M: UserDataMethods<Self, TAG>>(methods: &mut M) {}
 }
 
-// Internal impl
-enum UdError {
-    Value(Value),
-    Error(crate::Error)
-}
+type MethodCb<T, const TAG: c_int> = Rc<dyn Fn(&Lua, TypedUserData<T, TAG>, MultiValue) -> CallbackResult + 'static>;
+type FieldGetter<T, const TAG: c_int> = Rc<dyn Fn(&Lua, TypedUserData<T, TAG>) -> CallbackResult + 'static>;
+type FieldSetter<T, const TAG: c_int> = Rc<dyn Fn(&Lua, TypedUserData<T, TAG>, Value) -> CallbackResult + 'static>;
 
-impl IntoLuaErr for UdError {
-    fn into_lua_err(self, lua: &Lua) -> crate::Result<Value> {
-        match self {
-            UdError::Value(v) => Ok(v),
-            UdError::Error(e) => e.into_lua_err(lua),
-        }
-    }
-}
-
-impl IntoLuaResultMulti for Result<MultiValue, UdError> {
-    type Item = MultiValue;
-    type Error = UdError;
-
-    fn into_result(self) -> std::result::Result<Self::Item, UdError> { self }
-}
-
-enum IndexResult {
-    Value(Value),
-    MultiValue(MultiValue),
-}
-
-impl IntoLuaResultMulti for Result<IndexResult, UdError> {
-    type Item = MultiValue;
-    type Error = UdError;
-
-    fn into_result(self) -> std::result::Result<Self::Item, Self::Error> {
-        self.map(|x| {
-            match x {
-                IndexResult::Value(v) => MultiValue::from_iter([v]),
-                IndexResult::MultiValue(v) => v
-            }
-        })
-    }
-}
-
-#[cfg(not(feature = "send"))]
-type MethodCb<T> = XRc<dyn Fn(&Lua, TypedUserData<T>, MultiValue) -> Result<MultiValue, UdError> + 'static>;
-#[cfg(feature = "send")]
-type MethodCb<T> = XRc<dyn Fn(&Lua, TypedUserData<T>, MultiValue) -> Result<MultiValue, UdError> + Send + Sync + 'static>;
-
-#[cfg(not(feature = "send"))]
-type FieldGetter<T> = XRc<dyn Fn(&Lua, TypedUserData<T>) -> Result<Value, UdError> + 'static>;
-#[cfg(feature = "send")]
-type FieldGetter<T> = XRc<dyn Fn(&Lua, TypedUserData<T>) -> Result<Value, UdError> + Send + Sync + 'static>;
-
-struct UserDataRegistry<'a, T: UserData> {
+struct UserDataRegistry<'a, const TAG: c_int, T: UserData<TAG>> {
     lua: &'a Lua,
 
     // __index props
@@ -303,13 +215,15 @@ struct UserDataRegistry<'a, T: UserData> {
     mt_props: FxHashMap<&'static str, crate::Result<Value>>,
     
     // special cases
-    namecall_methods: FxHashMap<&'static str, MethodCb<T>>, // Namecall methods (special cases that need namecall optimization)
-    namecall_fb: Option<MethodCb<T>>, // a fallback namecall metamethod
-    index_fb: Option<MethodCb<T>>, // a fallback index metamethod
-    field_method_get: FxHashMap<&'static str, FieldGetter<T>> // fallback index metamethod
+    namecall_methods: FxHashMap<&'static str, MethodCb<T, TAG>>, // Namecall methods (special cases that need namecall optimization)
+    namecall_fb: Option<MethodCb<T, TAG>>, // a fallback namecall metamethod
+    index_fb: Option<MethodCb<T, TAG>>, // a fallback index metamethod
+    newindex_fb: Option<MethodCb<T, TAG>>, // a fallback newindex metamethod
+    field_method_get: FxHashMap<&'static str, FieldGetter<T, TAG>>, // fallback index metamethod
+    field_method_set: FxHashMap<&'static str, FieldSetter<T, TAG>> // newindex
 }
 
-impl<'a, T: UserData> UserDataRegistry<'a, T> {
+impl<'a, const TAG: c_int, T: UserData<TAG>> UserDataRegistry<'a, TAG, T> {
     /// Sets up the metatable for a ud
     fn new_metatable(lua: &'a Lua) -> crate::Result<Table> {
         let mut reg = Self {
@@ -319,7 +233,9 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
             namecall_methods: FxHashMap::default(),
             namecall_fb: None,
             index_fb: None,
+            newindex_fb: None,
             field_method_get: FxHashMap::default(),
+            field_method_set: FxHashMap::default()
         };
 
         // Collect into reg
@@ -327,50 +243,6 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
         T::add_methods(&mut reg);
 
         reg.finalize_metatable()
-    }
-
-    #[inline]
-    /// Wraps a method into a type-erased MethodCb<T>
-    fn wrap_method<M, A, R>(method: M) -> MethodCb<T>
-    where
-        M: Fn(&Lua, TypedUserData<T>, A) -> R + MaybeSend + MaybeSync + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaResultMulti,
-    {
-        XRc::new(move |lua, this, args| {
-            let args = match A::from_lua_multi(args, lua) {
-                Ok(a) => a,
-                Err(e) => return Err(UdError::Error(e)),
-            };
-            
-            // Call method and normalize
-            match method(lua, this, args).into_result() {
-                Ok(item) => item.into_lua_multi(lua).map_err(UdError::Error),
-                Err(err) => match err.into_lua_err(lua) {
-                    Ok(v) => Err(UdError::Value(v)),
-                    Err(e) => Err(UdError::Error(e)),
-                }
-            }
-        })
-    }
-
-    #[inline]
-    /// Wraps a method into a type-erased MethodCb<T>
-    fn wrap_field_getter<M, R>(method: M) -> FieldGetter<T>
-    where
-        M: Fn(&Lua, TypedUserData<T>) -> R + MaybeSend + MaybeSync + 'static,
-        R: IntoLuaResult,
-    {
-        XRc::new(move |lua, this| {
-            // Call method and normalize
-            match method(lua, this).into_result() {
-                Ok(item) => item.into_lua(lua).map_err(UdError::Error),
-                Err(err) => match err.into_lua_err(lua) {
-                    Ok(v) => Err(UdError::Value(v)),
-                    Err(e) => Err(UdError::Error(e)),
-                }
-            }
-        })
     }
 
     fn finalize_metatable(self) -> crate::Result<Table> {
@@ -381,7 +253,7 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
         let index_as_fn = self.index_fb.is_some() || !self.field_method_get.is_empty();
         let index = if index_as_fn {
             // Build up the index_mt_props hashmap with values resolved
-            let index_mt_props = XRc::new({
+            let index_mt_props = Rc::new({
                 let mut new_index_mt_props = HashMap::with_capacity_and_hasher(self.index_mt_props.len(), FxBuildHasher);
                 for (k, v) in self.index_mt_props {
                     new_index_mt_props.insert(k, v?);
@@ -390,21 +262,24 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
             });
             let index_fb = self.index_fb;
             let field_getters = self.field_method_get;
-            let indexfn = self.lua.create_function_with_debug(move |lua, (ud, key): (TypedUserData<T>, crate::String)| {
-                let key_str = key.to_str().map_err(UdError::Error)?;
+            let indexfn = self.lua.create_function_with_debug(move |lua, (ud, key): (TypedUserData<T, TAG>, crate::String)| {
+                let key_str = match key.to_str() {
+                    Ok(k) => k,
+                    Err(e) => return CallbackResult::LuaError(e)
+                };
                 // Case 1: prop is in index_mt_props directly
                 if let Some(prop) = index_mt_props.get(key_str.as_ref()) {
-                    return Ok(IndexResult::Value(prop.clone()))
+                    return CallbackResult::OkSingle(prop.clone())
                 }
                 // Case 2: field getter
                 if let Some(ref getter) = field_getters.get(key_str.as_ref()) {
-                    return getter(lua, ud).map(IndexResult::Value)
+                    return getter(lua, ud)
                 }
                 // Lastly, check for custom index
                 if let Some(ref ifb) = index_fb {
-                    return ifb(lua, ud, MultiValue::from_iter([Value::String(key)])).map(IndexResult::MultiValue)
+                    return ifb(lua, ud, MultiValue::from_iter([Value::String(key)]))
                 }
-                Ok(IndexResult::Value(Value::Nil))
+                CallbackResult::OkSingle(Value::Nil)
             }, Some(c"__index"))?;
 
             Value::Function(indexfn)
@@ -426,6 +301,10 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
         let mt = self.lua.create_table_from(mt)?;
         
         mt.set("__index", index)?;
+
+        if !self.field_method_set.is_empty() || self.newindex_fb.is_some() {
+            mt.set("__newindex", Self::newindex_cb(self.lua, Rc::new(self.field_method_set), self.newindex_fb)?)?;
+        }
         
         // Inject __type if not explicitly set
         if !mt.raw_get("__type")? {
@@ -433,7 +312,7 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
         }
 
         if T::USE_NAMECALL {
-            let namecall_cbs = XRc::new(self.namecall_methods);
+            let namecall_cbs = Rc::new(self.namecall_methods);
             mt.set("__namecall", Self::namecall_cb(self.lua, namecall_cbs, self.namecall_fb)?)?;
         }
 
@@ -443,9 +322,9 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
         Ok(mt)
     }
 
-    fn namecall_cb(lua: &Lua, namecall_methods: XRc<FxHashMap<&'static str, MethodCb<T>>>, namecall_fb: Option<MethodCb<T>>) -> crate::Result<crate::Function> {
-        lua.create_function(move |lua, (ud, args): (TypedUserData<T>, MultiValue)| {
-            let func = lua.with_namecall(|method| -> Result<_, crate::Error> {
+    fn namecall_cb(lua: &Lua, namecall_methods: Rc<FxHashMap<&'static str, MethodCb<T, TAG>>>, namecall_fb: Option<MethodCb<T, TAG>>) -> crate::Result<crate::Function> {
+        lua.create_function(move |lua, (ud, args): (TypedUserData<T, TAG>, MultiValue)| {
+            match lua.with_namecall(|method| -> Result<_, crate::Error> {
                 let s = method.ok_or_else(|| crate::Error::external("internal error: no method set for namecall"))?.to_str().map_err(crate::Error::external)?;
                 match namecall_methods.get(s) {
                     Some(s) => Ok(s.clone()),
@@ -457,8 +336,31 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
                         }
                     }
                 }
-            }).map_err(UdError::Error)?;
-            func(lua, ud, args)
+            }) {
+                Ok(call) => call(lua, ud, args),
+                Err(e) => CallbackResult::LuaError(e)
+            }
+        })
+    }
+
+    fn newindex_cb(lua: &Lua, field_setters: Rc<FxHashMap<&'static str, FieldSetter<T, TAG>>>, newindex_fb: Option<MethodCb<T, TAG>>) -> crate::Result<crate::Function> {
+        lua.create_function(move |lua, (ud, key, arg): (TypedUserData<T, TAG>, crate::String, Value)| {
+            let key_str = match key.to_str() {
+                Ok(k) => k,
+                Err(e) => return CallbackResult::LuaError(e)
+            };
+            match field_setters.get(key_str.as_ref()) {
+                Some(s) => {
+                    s(lua, ud, arg)
+                },
+                None => {
+                    if let Some(fb) = &newindex_fb {
+                        fb(lua, ud, MultiValue::from_iter([Value::String(key)]))
+                    } else {
+                        CallbackResult::LuaError(crate::Error::runtime(format!("{}: cannot find property `{}`", T::type_name(), key_str)))
+                    }
+                }
+            }
         })
     }
 
@@ -472,7 +374,7 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
             _phantom: PhantomData<T>
         }
         if let Some(tab) = lua.try_app_data_ref::<Ud<T>>().map_err(crate::Error::external)? {
-            return lua.create_any_userdata(data, Some(&tab.tab));
+            return lua.create_any_userdata_with_tag::<_, TAG>(data, Some(&tab.tab));
         }
 
         let mt = Self::new_metatable(lua)?;
@@ -480,11 +382,11 @@ impl<'a, T: UserData> UserDataRegistry<'a, T> {
             tab: mt.clone(),
             _phantom: PhantomData::<T>
         });
-        lua.create_any_userdata(data, Some(&mt))
+        lua.create_any_userdata_with_tag::<_, TAG>(data, Some(&mt))
     }
 }
 
-impl<T: UserData> UserDataFields<T> for UserDataRegistry<'_, T> {
+impl<const TAG: c_int, T: UserData<TAG>> UserDataFields<T, TAG> for UserDataRegistry<'_, TAG, T> {
     fn add_field<V>(&mut self, name: impl Into<&'static str>, value: V)
     where V: IntoLua + 'static 
     {
@@ -500,63 +402,75 @@ impl<T: UserData> UserDataFields<T> for UserDataRegistry<'_, T> {
 
     fn add_field_method_get<M, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
-        M: Fn(&Lua, TypedUserData<T>) -> R + MaybeSend + MaybeSync + 'static,
-        R: IntoLuaResult
+        M: Fn(&Lua, TypedUserData<T, TAG>) -> R + 'static,
+        R: IntoCallbackResult
     {
-        self.field_method_get.insert(name.into(), Self::wrap_field_getter(method));
+        self.field_method_get.insert(name.into(), wrap_field_getter::<TAG, T, M, R>(method));
+    }
+
+    fn add_field_method_set<M, A>(&mut self, name: impl Into<&'static str>, method: M)
+    where
+        M: Fn(&Lua, TypedUserData<T, TAG>, A) -> Result<(), crate::Error> + 'static,
+        A: FromLua
+    {
+        self.field_method_set.insert(name.into(), wrap_field_setter::<TAG, T, A, M>(method));
     }
 }
 
-impl<T: UserData> UserDataMethods<T> for UserDataRegistry<'_, T> {
+impl<const TAG: c_int, T: UserData<TAG>> UserDataMethods<T, TAG> for UserDataRegistry<'_, TAG, T> {
     fn add_function<F, A, R>(&mut self, name: impl Into<&'static str>, function: F) where
-    F: Fn(&Lua, A) -> R + MaybeSend + 'static,
+    F: Fn(&Lua, A) -> R + 'static,
     A: FromLuaMulti,
-    R: IntoLuaResultMulti 
+    R: IntoCallbackResult 
     {
         self.index_mt_props.insert(name.into(), self.lua.create_function(function).map(Value::Function));
     }
 
     fn add_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
-        M: Fn(&Lua, TypedUserData<T>, A) -> R + MaybeSend + MaybeSync + 'static,
+        M: Fn(&Lua, TypedUserData<T, TAG>, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti 
+        R: IntoCallbackResult 
     {
         // Methods are a bit special due to __namecall optimization which normal functions don't get
         //
         // If namecall optimization is enabled, we need to wrap methods to get a namecall repr for __namecall optimization
-        let wrapped = Self::wrap_method(method);
+        let wrapped = wrap_method(method);
         let name = name.into();
         self.namecall_methods.insert(name, wrapped.clone());
-        self.index_mt_props.insert(name, self.lua.create_function(move |lua: &Lua, (ud, args): (TypedUserData<T>, MultiValue)| {
+        self.index_mt_props.insert(name, self.lua.create_function(move |lua: &Lua, (ud, args): (TypedUserData<T, TAG>, MultiValue)| {
             wrapped(lua, ud, args)
         }).map(Value::Function));
     }
 
     fn add_meta_function<F, A, R>(&mut self, name: impl Into<&'static str>, function: F) where
-    F: Fn(&Lua, A) -> R + MaybeSend + 'static,
+    F: Fn(&Lua, A) -> R + 'static,
     A: FromLuaMulti,
-    R: IntoLuaResultMulti 
+    R: IntoCallbackResult 
     {
-        self.mt_props.insert(name.into(), self.lua.create_function(function).map(Value::Function));
+        let name = name.into();
+        match name {
+            "__index" => panic!("__index must be registered as a meta method with add_meta_method"),
+            "__namecall" => panic!("__namecall must be registered as a meta method with add_meta_method"),
+            _ => self.mt_props.insert(name.into(), self.lua.create_function(function).map(Value::Function))
+        };
     }
 
     fn add_meta_method<M, A, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
-        M: Fn(&Lua, TypedUserData<T>, A) -> R + MaybeSend + MaybeSync + 'static,
+        M: Fn(&Lua, TypedUserData<T, TAG>, A) -> R + 'static,
         A: FromLuaMulti,
-        R: IntoLuaResultMulti 
+        R: IntoCallbackResult 
     {
         let name = name.into();
         match name {
-            "__index" => { self.index_fb = Some(Self::wrap_method(method)); },
-            "__namecall" => { self.namecall_fb = Some(Self::wrap_method(method)); },
+            "__index" => self.index_fb = Some(wrap_method(method)),
+            "__namecall" => self.namecall_fb = Some(wrap_method(method)),
             _ => { self.mt_props.insert(name, self.lua.create_function(move |lua, (ud, args)| method(lua, ud, args)).map(Value::Function)); }
         };
     }
 }
 
-// Conversion impls
 impl<T: UserData> IntoLua for T {
     #[inline]
     fn into_lua(self, lua: &Lua) -> crate::Result<Value> {
@@ -566,12 +480,96 @@ impl<T: UserData> IntoLua for T {
 }
 
 pub trait LuaUserDataExt {
-    fn create_userdata<T: UserData>(&self, data: T) -> crate::Result<AnyUserData>;
+    /// Creates a immutable userdata with the associated data `T`
+    fn create_userdata<const TAG: c_int, T: UserData<TAG>>(&self, data: T) -> crate::Result<AnyUserData>;
 }
 
 impl LuaUserDataExt for Lua {
-    fn create_userdata<T: UserData>(&self, data: T) -> crate::Result<AnyUserData> {
+    fn create_userdata<const TAG: c_int, T: UserData<TAG>>(&self, data: T) -> crate::Result<AnyUserData> {
         let ud = UserDataRegistry::create_userdata(self, data)?;
         Ok(ud)
     }
+}
+
+pub trait UserDataBorrowExt {
+    fn try_borrow<const TAG: c_int, T: UserData<TAG>>(&self) -> crate::Result<TypedUserData<T, TAG>>;
+    fn with_ref<const TAG: c_int, T: UserData<TAG>, R>(
+        &self, 
+        f: impl FnOnce(&T) -> R
+    ) -> crate::Result<R>;
+}
+
+impl UserDataBorrowExt for AnyUserData {
+    fn try_borrow<const TAG: c_int, T: UserData<TAG>>(&self) -> crate::Result<TypedUserData<T, TAG>> {
+        match self.borrow_with_tag::<T, TAG>() {
+            Some(tref) => Ok(tref),
+            None => Err(crate::Error::FromLuaConversionError { from: "userdata", to: T::type_name().to_string(), message: None })
+        }
+    }
+    fn with_ref<const TAG: c_int, T: UserData<TAG>, R>(
+        &self, 
+        f: impl FnOnce(&T) -> R
+    ) -> crate::Result<R> {
+        let tref = self.borrow_with_tag::<T, TAG>()
+            .ok_or_else(|| crate::Error::FromLuaConversionError { 
+                from: "userdata", 
+                to: T::type_name().to_string(), 
+                message: None 
+            })?;
+        
+        Ok(f(&tref))
+    }
+}
+
+// Helpers for wrapping fn's/cb's
+
+#[inline]
+/// Wraps a method into a type-erased MethodCb<T>
+pub(super) fn wrap_method<const TAG: c_int, T, M, A, R>(method: M) -> MethodCb<T, TAG>
+where
+    T: UserData<TAG>,
+    M: Fn(&Lua, TypedUserData<T, TAG>, A) -> R + 'static,
+    A: FromLuaMulti,
+    R: IntoCallbackResult,
+{
+    Rc::new(move |lua, this, args| {
+        let args = match A::from_lua_multi(args, lua) {
+            Ok(a) => a,
+            Err(e) => return CallbackResult::LuaError(e),
+        };
+
+        method(lua, this, args).into_callback_result(lua)
+    })
+}
+
+#[inline]
+/// Wraps a field getter into a type-erased FieldGetter<T>
+pub(super) fn wrap_field_getter<const TAG: c_int, T, M, R>(method: M) -> FieldGetter<T, TAG>
+where
+    T: UserData<TAG>,
+    M: Fn(&Lua, TypedUserData<T, TAG>) -> R + 'static,
+    R: IntoCallbackResult,
+{
+    Rc::new(move |lua, this| {
+        // Call method and normalize
+        method(lua, this).into_callback_result(lua)
+    })
+}
+
+#[inline]
+/// Wraps a field setter into a type-erased FieldSetter<T>
+pub(super) fn wrap_field_setter<const TAG: c_int, T, A, M>(method: M) -> FieldSetter<T, TAG>
+where
+    T: UserData<TAG>,
+    M: Fn(&Lua, TypedUserData<T, TAG>, A) -> Result<(), crate::Error> + 'static,
+    A: FromLua,
+{
+    Rc::new(move |lua, this, value| {
+        let args = match A::from_lua(value, lua) {
+            Ok(a) => a,
+            Err(e) => return CallbackResult::LuaError(e),
+        };
+
+        method(lua, this, args).into_callback_result(lua)
+    })
 }

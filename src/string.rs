@@ -558,12 +558,8 @@ unsafe impl ExternalString for bstr::BString {
 // SAFETY: `Vec<u8>` manages a heap allocation. We append a null byte and then heap-allocate
 // the `Vec` struct itself so it can be safely retrieved in the free callback.
 unsafe impl ExternalString for Vec<u8> {
-    fn into_ext_parts(mut self) -> Result<(*const u8, usize, *mut c_void)> {
-        self.push(0);
-        let s_len = self.len() - 1;
-        let bytes_ud = Box::into_raw(Box::new(self));
-        let s_ptr = unsafe { (*bytes_ud).as_ptr() };
-        Ok((s_ptr, s_len, bytes_ud as *mut c_void))
+    fn into_ext_parts(self) -> Result<(*const u8, usize, *mut c_void)> {
+        Ok(vec_into_ext_parts_infailable(self))
     }
 
     unsafe extern "C" fn free_string(
@@ -574,6 +570,15 @@ unsafe impl ExternalString for Vec<u8> {
     ) {
         let _ = Box::from_raw(userdata as *mut Vec<u8>);
     }
+}
+
+pub(super) fn vec_into_ext_parts_infailable(mut vec: Vec<u8>) -> (*const u8, usize, *mut c_void) {
+    vec.push(0);
+    let s_len = vec.len() - 1;
+    let bytes_ud = Box::into_raw(Box::new(vec));
+    let s_ptr = unsafe { (*bytes_ud).as_ptr() };
+    (s_ptr, s_len, bytes_ud as *mut c_void)
+
 }
 
 #[cfg(feature = "bytes")]
@@ -628,12 +633,5 @@ unsafe impl ExternalString for bytes::BytesMut {
 mod assertions {
     use super::*;
 
-    #[cfg(not(feature = "send"))]
     static_assertions::assert_not_impl_any!(String: Send);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(String: Send, Sync);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(BorrowedBytes: Send, Sync);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(BorrowedStr: Send, Sync);
 }

@@ -522,8 +522,5 @@ impl_tuple!(A B C D E F G H I J K L M N O P);
 mod assertions {
     use super::*;
 
-    #[cfg(not(feature = "send"))]
     static_assertions::assert_not_impl_any!(MultiValue: Send);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(MultiValue: Send, Sync);
 }

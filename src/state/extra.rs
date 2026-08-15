@@ -1,15 +1,15 @@
-use std::cell::UnsafeCell;
+use std::cell::{Cell, UnsafeCell};
 use std::mem::MaybeUninit;
 use std::os::raw::c_int;
 
 use crate::error::Result;
 use crate::state::RawLua;
 use crate::stdlib::StdLib;
-use crate::types::{AppData, ErasedHeader, ReentrantMutex, XRc};
+use crate::types::{AppData, ErasedHeader};
+use std::rc::Rc as XRc;
 
 #[cfg(any(feature = "luau", doc))]
 use crate::chunk::Compiler;
-use crate::MultiValue;
 
 use super::{Lua, WeakLua};
 
@@ -58,16 +58,11 @@ pub(crate) struct ExtraData {
     #[cfg(feature = "luau-jit")]
     pub(super) enable_jit: bool,
 
-    // Values currently being yielded from Lua.yield()
-    pub(super) yielded_values: Option<MultiValue>,
-
-    // Callback called when lua VM is about to be closed
-    #[cfg(feature = "send")]
-    pub(super) on_close: Option<Box<dyn Fn() + Send + 'static>>,
-    #[cfg(not(feature = "send"))]
     pub(super) on_close: Option<Box<dyn Fn() + 'static>>,
 
     pub(crate) mem_categories: Vec<std::ffi::CString>,
+
+    pub(crate) registered_tags: [Cell<bool>; ffi::LUA_UTAG_LIMIT as usize],
 }
 
 impl Drop for ExtraData {
@@ -83,7 +78,7 @@ impl Drop for ExtraData {
 }
 
 impl ExtraData {
-    pub(super) unsafe fn init(state: *mut ffi::lua_State, owned: bool) -> XRc<UnsafeCell<Self>> {
+    pub(crate) unsafe fn set_userdata_dtor(state: *mut ffi::lua_State, tag: c_int) {
         // Set global dtor for userdata v2, the data `ud` is guaranteed to be a ErasedHeader vtable
         //
         // All mluau owned userdata v2 will use this dtor for cleanup
@@ -99,7 +94,11 @@ impl ExtraData {
             ErasedHeader::drop(ud); // Note: panicking in the dtor for a userdata is not allowed and will call abort() bc this is a extern "C"
             (*extra).running_gc = prev_gc;
         }
-        ffi::lua_setuserdatadtor(state, USERDATA2_TAG, Some(userdata2_dtor));
+        ffi::lua_setuserdatadtor(state, tag, Some(userdata2_dtor));
+    }
+
+    pub(super) unsafe fn init(state: *mut ffi::lua_State, owned: bool) -> XRc<UnsafeCell<Self>> {
+        Self::set_userdata_dtor(state, USERDATA2_TAG); // Base userdata dtor
 
         #[allow(clippy::arc_with_non_send_sync)]
         let extra = XRc::new(UnsafeCell::new(ExtraData {
@@ -163,10 +162,14 @@ impl ExtraData {
             enable_jit: true,
 
             running_gc: false,
-            yielded_values: None,
             on_close: None,
 
             mem_categories: vec![std::ffi::CString::new("main").unwrap()],
+            registered_tags: {
+                let tags = [const { Cell::new(false) }; _];
+                tags[USERDATA2_TAG as usize].set(true); // USERDATA2_TAG is a default registered tag
+                tags
+            }
         }));
 
         // Store it in the registry
@@ -175,7 +178,7 @@ impl ExtraData {
         extra
     }
 
-    pub(super) unsafe fn set_lua(&mut self, raw: &XRc<ReentrantMutex<RawLua>>) {
+    pub(super) unsafe fn set_lua(&mut self, raw: &XRc<RawLua>) {
         self.lua.write(Lua {
             raw: XRc::clone(raw),
             collect_garbage: false,
@@ -199,7 +202,7 @@ impl ExtraData {
 
     #[inline(always)]
     pub(crate) unsafe fn raw_lua(&self) -> &RawLua {
-        &*self.lua.assume_init_ref().raw.data_ptr()
+        &*self.lua.assume_init_ref().raw
     }
 
     #[inline(always)]

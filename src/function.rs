@@ -4,14 +4,12 @@ use std::{mem, ptr, slice};
 
 use crate::error::{Error, Result};
 
-use crate::state::Lua;
 use crate::table::Table;
-use crate::traits::{FromLuaMulti, IntoLua, IntoLuaMulti, LuaNativeFn, LuaNativeFnMut};
-use crate::types::{Callback, LuaType, MaybeSend, ValueRef};
+use crate::traits::{FromLuaMulti, IntoLuaMulti};
+use crate::types::{LuaType, ValueRef};
 use crate::util::{
     assert_stack, check_stack, linenumber_to_usize, pop_error, ptr_to_lossy_str, ptr_to_str, StackGuard,
 };
-use crate::value::Value;
 use crate::WeakLua;
 
 /// Handle to an internal Lua function.
@@ -393,100 +391,6 @@ impl Function {
     }
 }
 
-struct WrappedFunction(pub(crate) Callback);
-
-impl Function {
-    /// Wraps a Rust function or closure, returning an opaque type that implements [`IntoLua`]
-    /// trait.
-    #[inline]
-    pub fn wrap<F, A, R>(func: F) -> impl IntoLua
-    where
-        F: LuaNativeFn<A, Output = Result<R>> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let wrap = || -> crate::error::Result<c_int> {
-                let state = lua.state();
-                let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
-                func.call(args)?.push_into_specified_stack_multi(lua, state)
-            };
-            wrap().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
-        }))
-    }
-
-    /// Wraps a Rust mutable closure, returning an opaque type that implements [`IntoLua`] trait.
-    pub fn wrap_mut<F, A, R>(func: F) -> impl IntoLua
-    where
-        F: LuaNativeFnMut<A, Output = Result<R>> + MaybeSend + 'static,
-        A: FromLuaMulti,
-        R: IntoLuaMulti,
-    {
-        let func = RefCell::new(func);
-        WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let wrap = || -> crate::error::Result<c_int> {
-                let mut func = func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
-                let state = lua.state();
-                let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
-                func.call(args)?.push_into_specified_stack_multi(lua, state)
-            };
-            wrap().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
-        }))
-    }
-
-    /// Wraps a Rust function or closure, returning an opaque type that implements [`IntoLua`]
-    /// trait.
-    ///
-    /// This function is similar to [`Function::wrap`] but any returned `Result` will be converted
-    /// to a `ok, err` tuple without throwing an exception.
-    #[inline]
-    pub fn wrap_raw<F, A>(func: F) -> impl IntoLua
-    where
-        F: LuaNativeFn<A> + MaybeSend + 'static,
-        F::Output: IntoLuaMulti,
-        A: FromLuaMulti,
-    {
-        WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let wrap = || -> crate::error::Result<c_int> {
-                let state = lua.state();
-                let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
-                func.call(args).push_into_specified_stack_multi(lua, state)
-            };
-            wrap().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
-        }))
-    }
-
-    /// Wraps a Rust mutable closure, returning an opaque type that implements [`IntoLua`] trait.
-    ///
-    /// This function is similar to [`Function::wrap_mut`] but any returned `Result` will be
-    /// converted to a `ok, err` tuple without throwing an exception.
-    #[inline]
-    pub fn wrap_raw_mut<F, A>(func: F) -> impl IntoLua
-    where
-        F: LuaNativeFnMut<A> + MaybeSend + 'static,
-        F::Output: IntoLuaMulti,
-        A: FromLuaMulti,
-    {
-        let func = RefCell::new(func);
-        WrappedFunction(Box::new(move |lua, nargs| unsafe {
-            let wrap = || -> crate::error::Result<c_int> {
-                let mut func = func.try_borrow_mut().map_err(|_| Error::RecursiveMutCallback)?;
-                let state = lua.state();
-                let args = A::from_specified_stack_args(nargs, 1, None, lua, state)?;
-                func.call(args).push_into_specified_stack_multi(lua, state)
-            };
-            wrap().map_err(|e| crate::state::util::map_err_to_value(lua.lua(), e))
-        }))
-    }
-}
-
-impl IntoLua for WrappedFunction {
-    #[inline]
-    fn into_lua(self, lua: &Lua) -> Result<Value> {
-        lua.lock().create_callback(self.0, std::ptr::null()).map(Value::Function)
-    }
-}
-
 impl LuaType for Function {
     const TYPE_ID: c_int = ffi::LUA_TFUNCTION;
 }
@@ -495,8 +399,5 @@ impl LuaType for Function {
 mod assertions {
     use super::*;
 
-    #[cfg(not(feature = "send"))]
     static_assertions::assert_not_impl_any!(Function: Send);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(Function: Send, Sync);
 }

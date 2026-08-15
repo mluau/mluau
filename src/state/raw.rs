@@ -1,6 +1,7 @@
 use std::cell::{Cell, UnsafeCell};
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int, c_void};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr::{self, NonNull};
 use std::string::String as StdString;
 
@@ -9,9 +10,7 @@ use crate::error::Result;
 use crate::function::Function;
 use crate::luau::ENABLED_FFLAGS;
 use crate::memory::{MemoryState, ALLOCATOR};
-#[allow(unused_imports)]
-use crate::state::util::callback_error_ext;
-use crate::state::util::callback_error_ext_yieldable;
+use crate::state::util::{StateGuard, extract_panic_str, push_panic_str};
 use crate::stdlib::StdLib;
 use crate::string::String;
 use crate::table::Table;
@@ -19,8 +18,9 @@ use crate::thread::Thread;
 use crate::traits::IntoLua;
 use crate::types::{
     AppDataRef, AppDataRefMut, Callback, Integer, LightUserData,
-    LuaType, MaybeSend, ReentrantMutex, ValueRef, XRc,
+    LuaType, ValueRef
 };
+use std::rc::Rc as XRc;
 
 use crate::types::Continuation;
 
@@ -78,9 +78,6 @@ impl Drop for RawLua {
     }
 }
 
-#[cfg(feature = "send")]
-unsafe impl Send for RawLua {}
-
 impl RawLua {
     #[inline(always)]
     pub(crate) fn lua(&self) -> &Lua {
@@ -115,7 +112,7 @@ impl RawLua {
         self.extra.get()
     }
 
-    pub(super) unsafe fn new(libs: StdLib) -> XRc<ReentrantMutex<Self>> {
+    pub(super) unsafe fn new(libs: StdLib) -> XRc<Self> {
         // init needed fflags
         {
             static INIT_FFLAGS: std::sync::Once = std::sync::Once::new();
@@ -132,7 +129,7 @@ impl RawLua {
     pub(super) unsafe fn new_ext(
         libs: StdLib,
         owned: bool,
-    ) -> XRc<ReentrantMutex<Self>> {
+    ) -> XRc<Self> {
         let mem_state: *mut MemoryState = Box::into_raw(Box::default());
         let mut state = ffi::lua_newstate(ALLOCATOR, mem_state as *mut c_void);
         // If state is null then switch to Lua internal allocator
@@ -152,7 +149,7 @@ impl RawLua {
         }
 
         let rawlua = Self::init_from_ptr(state, owned);
-        let extra = rawlua.lock().extra.get();
+        let extra = rawlua.extra.get();
 
         mlua_expect!(
             load_std_libs(state, libs),
@@ -163,7 +160,7 @@ impl RawLua {
         rawlua
     }
 
-    pub(super) unsafe fn init_from_ptr(state: *mut ffi::lua_State, owned: bool) -> XRc<ReentrantMutex<Self>> {
+    pub(super) unsafe fn init_from_ptr(state: *mut ffi::lua_State, owned: bool) -> XRc<Self> {
         assert!(!state.is_null(), "Lua state is NULL");
         if let Some(lua) = Self::try_from_ptr(state) {
             return lua;
@@ -182,13 +179,13 @@ impl RawLua {
         assert_stack(main_state, ffi::LUA_MINSTACK);
 
         #[allow(clippy::arc_with_non_send_sync)]
-        let rawlua = XRc::new(ReentrantMutex::new(RawLua {
+        let rawlua = XRc::new(RawLua {
             state: Cell::new(state),
             // Make sure that we don't store current state as main state (if it's not available)
             main_state: get_main_state(state).and_then(NonNull::new),
             extra: XRc::clone(&extra),
             owned,
-        }));
+        });
         (*extra.get()).set_lua(&rawlua);
         if owned {
             // If Lua state is managed by us, then make internal `RawLua` reference "weak"
@@ -202,7 +199,7 @@ impl RawLua {
         rawlua
     }
 
-    unsafe fn try_from_ptr(state: *mut ffi::lua_State) -> Option<XRc<ReentrantMutex<Self>>> {
+    unsafe fn try_from_ptr(state: *mut ffi::lua_State) -> Option<XRc<Self>> {
         match ExtraData::get(state) {
             extra if extra.is_null() => None,
             extra => Some(XRc::clone(&(*extra).lua().raw)),
@@ -238,7 +235,7 @@ impl RawLua {
 
     /// Private version of [`Lua::try_set_app_data`]
     #[inline]
-    pub(crate) fn set_priv_app_data<T: MaybeSend + 'static>(&self, data: T) -> Option<T> {
+    pub(crate) fn set_priv_app_data<T: 'static>(&self, data: T) -> Option<T> {
         let extra = unsafe { &*self.extra.get() };
         extra.app_data_priv.insert(data)
     }
@@ -643,11 +640,6 @@ impl RawLua {
 
     // Pops the topmost element of the stack and stores a reference to it. This pins the object,
     // preventing garbage collection until the returned `ValueRef` is dropped.
-    //
-    // References are stored on the stack of a specially created auxiliary thread that exists only
-    // to store reference values. This is much faster than storing these in the registry, and also
-    // much more flexible and requires less bookkeeping than storing them directly in the currently
-    // used stack.
     #[inline]
     pub(crate) unsafe fn pop_ref(&self) -> ValueRef {
         self.pop_ref_at(self.state())
@@ -678,17 +670,20 @@ impl RawLua {
         unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
             let upvalue = ffi::lua_getcclosuredata(state) as *mut Callback;
             let extra = crate::state::extra::ExtraData::get(state);
-            callback_error_ext_yieldable(
-                state,
-                extra,
-                |extra, nargs| {
-                    // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
-                    // The lock must be already held as the callback is executed
-                    let rawlua = (*extra).raw_lua();
-                    (*upvalue)(rawlua, nargs)
-                },
-                false,
-            )
+            match catch_unwind(AssertUnwindSafe(|| {
+                // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
+                let nargs = ffi::lua_gettop(state);
+                let rawlua = (*extra).raw_lua();
+                let _guard = StateGuard::new(rawlua, state);
+                (*upvalue)(rawlua, nargs)
+            })) {
+                Ok(ret) => ret.finish(state),
+                Err(panic) => {
+                    let panic = extract_panic_str(panic);
+                    push_panic_str(state, extra, panic);
+                    ffi::lua_error(state);
+                }
+            }
         }
 
         let state = self.state();
@@ -724,35 +719,39 @@ impl RawLua {
         unsafe extern "C-unwind" fn call_callback(state: *mut ffi::lua_State) -> c_int {
             let upvalue = ffi::lua_getcclosuredata(state) as *mut (Callback, Continuation);
             let extra = crate::state::extra::ExtraData::get(state);
-            callback_error_ext_yieldable(
-                state,
-                extra,
-                |extra, nargs| {
-                    // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
-                    // arguments) The lock must be already held as the callback is
-                    // executed
-                    let rawlua = (*extra).raw_lua();
-                    ((*upvalue).0)(rawlua, nargs)
-                },
-                true,
-            )
+            match catch_unwind(AssertUnwindSafe(|| {
+                // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
+                let nargs = ffi::lua_gettop(state);
+                let rawlua = (*extra).raw_lua();
+                let _guard = StateGuard::new(rawlua, state);
+                ((*upvalue).0)(rawlua, nargs)
+            })) {
+                Ok(ret) => ret.finish(state),
+                Err(panic) => {
+                    let panic = extract_panic_str(panic);
+                    push_panic_str(state, extra, panic);
+                    ffi::lua_error(state);
+                }
+            }
         }
 
         unsafe extern "C-unwind" fn cont_callback(state: *mut ffi::lua_State, status: c_int) -> c_int {
             let upvalue = ffi::lua_getcclosuredata(state) as *mut (Callback, Continuation);
             let extra = crate::state::extra::ExtraData::get(state);
-            callback_error_ext_yieldable(
-                state,
-                extra,
-                |extra, nargs| {
-                    // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing
-                    // arguments) The lock must be already held as the callback is
-                    // executed
-                    let rawlua = (*extra).raw_lua();
-                    ((*upvalue).1)(rawlua, nargs, status)
-                },
-                true,
-            )
+            match catch_unwind(AssertUnwindSafe(|| {
+                // Lua ensures that `LUA_MINSTACK` stack spaces are available (after pushing arguments)
+                let nargs = ffi::lua_gettop(state);
+                let rawlua = (*extra).raw_lua();
+                let _guard = StateGuard::new(rawlua, state);
+                ((*upvalue).1)(rawlua, nargs, status)
+            })) {
+                Ok(ret) => ret.finish(state),
+                Err(panic) => {
+                    let panic = extract_panic_str(panic);
+                    push_panic_str(state, extra, panic);
+                    ffi::lua_error(state);
+                }
+            }
         }
 
         let state = self.state();

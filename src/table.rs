@@ -1260,8 +1260,5 @@ impl<V: FromLua> Iterator for TableSequence<'_, V> {
 mod assertions {
     use super::*;
 
-    #[cfg(not(feature = "send"))]
     static_assertions::assert_not_impl_any!(Table: Send);
-    #[cfg(feature = "send")]
-    static_assertions::assert_impl_all!(Table: Send, Sync);
 }

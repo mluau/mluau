@@ -1241,33 +1241,3 @@ impl<L: FromLua, R: FromLua> FromLua for Either<L, R> {
         }
     }
 }
-
-use crate::traits::IntoLuaErr;
-
-impl IntoLuaErr for StdString {
-    #[inline]
-    fn into_lua_err(self, lua: &Lua) -> Result<Value> {
-        self.into_lua(lua)
-    }
-}
-
-impl IntoLuaErr for Box<dyn std::error::Error + Send + Sync> {
-    #[inline]
-    fn into_lua_err(self, lua: &Lua) -> Result<Value> {
-        self.to_string().into_lua_err(lua)
-    }
-}
-
-impl IntoLuaErr for crate::error::Error {
-    #[inline]
-    fn into_lua_err(self, lua: &Lua) -> Result<Value> {
-        self.to_string().into_lua_err(lua)
-    }
-}
-
-impl IntoLuaErr for () {
-    #[inline]
-    fn into_lua_err(self, _lua: &Lua) -> Result<Value> {
-        Ok(Value::Nil)
-    }
-}

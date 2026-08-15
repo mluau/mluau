@@ -259,7 +259,7 @@ fn userdata_call_index(c: &mut Criterion) {
     struct UserData(#[allow(unused)] i64);
     impl LuaUserData for UserData {
         fn add_methods<M: LuaUserDataMethods<Self>>(methods: &mut M) {
-            methods.add_meta_method(LuaMetaMethod::Index.name(), move |_, _, key: LuaString| Ok(key));
+            methods.add_meta_method(LuaMetaMethod::Index, move |_, _, key: LuaString| Ok(key));
         }
     }
 

@@ -2,42 +2,144 @@ use std::os::raw::c_int;
 use std::string::String as StdString;
 use std::sync::Arc;
 
+use either::Either;
+
+use crate::state::util::push_panic_str;
+use crate::{CallbackFinalizeAction, CallbackResult, CustomError, Ok as LuaOk, Yield};
 use crate::error::{Error, Result};
 use crate::multi::MultiValue;
-use crate::state::{Lua, RawLua};
-use crate::types::MaybeSend;
+use crate::state::{ExtraData, Lua, RawLua};
 use crate::util::{check_stack, short_type_name};
 use crate::value::Value;
 
-/// Trait for types convertible to a Lua error value.
-pub trait IntoLuaErr: Sized {
-    /// Performs the conversion.
-    fn into_lua_err(self, lua: &Lua) -> Result<Value>;
+#[inline]
+unsafe fn finalize_error(state: *mut ffi::lua_State, extra: *mut ExtraData, err: impl std::fmt::Display) -> CallbackFinalizeAction {
+    push_panic_str(state, extra, err.to_string());
+    CallbackFinalizeAction::Error
 }
 
-pub trait IntoLuaResultMulti {
-    type Item: IntoLuaMulti;
-    type Error: crate::traits::IntoLuaErr;
-    fn into_result(self) -> std::result::Result<Self::Item, Self::Error>;
+pub trait IntoCallbackResult: Sized {
+    /// Converts the type into a CallbackResult
+    fn into_callback_result(self, lua: &Lua) -> CallbackResult;
+
+    /// Pushes the result to the stack cleaning it out on yields if needed
+    #[doc(hidden)]
+    #[inline]
+    unsafe fn finalize(self, lua: &RawLua, state: *mut ffi::lua_State) -> CallbackFinalizeAction {
+        let extra = lua.extra();
+
+        match self.into_callback_result(lua.lua()) {
+            CallbackResult::Ok(v) => match v.push_into_specified_stack_multi(lua, state) {
+                Ok(n) => CallbackFinalizeAction::Return(n),
+                Err(e) => finalize_error(state, extra, e),
+            },
+            
+            CallbackResult::OkSingle(v) => match v.push_into_specified_stack(lua, state) {
+                Ok(()) => CallbackFinalizeAction::Return(1),
+                Err(e) => finalize_error(state, extra, e),
+            },
+
+            CallbackResult::Yield(v) => {
+                ffi::lua_pop(state, -1); // pop everything before yielding to avoid leaks
+                match v.push_into_specified_stack_multi(lua, state) {
+                    Ok(n) => CallbackFinalizeAction::Yield(n),
+                    Err(e) => finalize_error(state, extra, e),
+                }
+            },
+            
+            CallbackResult::Error(v) => {
+                lua.push_value_at(&v, state);
+                CallbackFinalizeAction::Error
+            }
+
+            CallbackResult::LuaError(le) => finalize_error(state, extra, le)
+        }
+    }
 }
 
-// For backwards compat, we only impl IntoLuaResult for Result<T, mluau::Error>
-impl<T: IntoLuaMulti> IntoLuaResultMulti for std::result::Result<T, crate::Error> {
-    type Item = T;
-    type Error = crate::Error;
-    fn into_result(self) -> std::result::Result<Self::Item, Self::Error> { self }
+/// Passthrough for users who explicitly return `CallbackResult`
+impl IntoCallbackResult for CallbackResult {
+    fn into_callback_result(self, _lua: &Lua) -> CallbackResult { self }
 }
 
-pub trait IntoLuaResult {
-    type Item: IntoLua;
-    type Error: crate::traits::IntoLuaErr;
-    fn into_result(self) -> std::result::Result<Self::Item, Self::Error>;
+impl<T: IntoLuaMulti> IntoCallbackResult for LuaOk<T> {
+    fn into_callback_result(self, lua: &Lua) -> CallbackResult {
+        match self.0.into_lua_multi(lua) {
+            Ok(mv) => CallbackResult::Ok(mv),
+            Err(e) => CallbackResult::LuaError(e)
+        }
+    }
+
+    unsafe fn finalize(self, lua: &RawLua, state: *mut ffi::lua_State) -> CallbackFinalizeAction {
+        match self.0.push_into_specified_stack_multi(lua, state) {
+            Ok(nres) => CallbackFinalizeAction::Return(nres),
+            Err(e) => finalize_error(state, ExtraData::get(state), e)
+        }
+    }
+} 
+
+impl<T: IntoLuaMulti> IntoCallbackResult for Yield<T> {
+    fn into_callback_result(self, lua: &Lua) -> CallbackResult {
+        match self.0.into_lua_multi(lua) {
+            Ok(mv) => CallbackResult::Yield(mv),
+            Err(e) => CallbackResult::LuaError(e)
+        }
+    }
+
+    unsafe fn finalize(self, lua: &RawLua, state: *mut ffi::lua_State) -> CallbackFinalizeAction {
+        ffi::lua_pop(state, -1); // pop everything before yielding to avoid leaks
+        match self.0.push_into_specified_stack_multi(lua, state) {
+            Ok(nres) => CallbackFinalizeAction::Yield(nres),
+            Err(e) => finalize_error(state, ExtraData::get(state), e)
+        }
+    }
 }
 
-impl<T: IntoLua> IntoLuaResult for std::result::Result<T, crate::Error> {
-    type Item = T;
-    type Error = crate::Error;
-    fn into_result(self) -> std::result::Result<Self::Item, Self::Error> { self }
+impl<T: IntoCallbackResult, U: IntoCallbackResult> IntoCallbackResult for Either<T, U> {
+    fn into_callback_result(self, lua: &Lua) -> CallbackResult {
+        match self {
+            Self::Left(l) => l.into_callback_result(lua),
+            Self::Right(r) => r.into_callback_result(lua)
+        }
+    }
+
+    unsafe fn finalize(self, lua: &RawLua, state: *mut ffi::lua_State) -> CallbackFinalizeAction {
+        match self {
+            Self::Left(l) => l.finalize(lua, state),
+            Self::Right(r) => r.finalize(lua, state)
+        }
+    }
+}
+
+impl<T: IntoLua> IntoCallbackResult for CustomError<T> {
+    fn into_callback_result(self, lua: &Lua) -> CallbackResult {
+        match self.0.into_lua(lua) {
+            Ok(mv) => CallbackResult::Error(mv),
+            Err(e) => CallbackResult::LuaError(e)
+        }
+    }
+
+    unsafe fn finalize(self, lua: &RawLua, state: *mut ffi::lua_State) -> CallbackFinalizeAction {
+        match self.0.push_into_specified_stack(lua, state) {
+            Ok(_) => CallbackFinalizeAction::Error,
+            Err(e) => finalize_error(state, ExtraData::get(state), e)
+        }
+    }
+}
+
+impl<T> IntoCallbackResult for std::result::Result<T, crate::Error>
+where
+    T: IntoLuaMulti,
+{
+    fn into_callback_result(self, lua: &Lua) -> CallbackResult {
+        match self {
+            Ok(success) => match success.into_lua_multi(lua) {
+                Ok(mv) => CallbackResult::Ok(mv),
+                Err(err) => CallbackResult::LuaError(err)
+            },
+            Err(error) => CallbackResult::LuaError(error)
+        }
+    }
 }
 
 /// Trait for types convertible to [`Value`].
@@ -114,7 +216,6 @@ pub trait IntoLuaMulti: Sized {
     /// Pushes the values directly into a Lua stack
     ///
     /// Returns number of pushed values.
-    #[doc(hidden)]
     #[inline]
     unsafe fn push_into_specified_stack_multi(
         self,
@@ -192,70 +293,6 @@ pub trait FromLuaMulti: Sized {
         })
     }
 }
-
-/// A trait for types that can be used as Lua functions.
-pub trait LuaNativeFn<A: FromLuaMulti> {
-    type Output;
-
-    fn call(&self, args: A) -> Self::Output;
-}
-
-/// A trait for types with mutable state that can be used as Lua functions.
-pub trait LuaNativeFnMut<A: FromLuaMulti> {
-    type Output;
-
-    fn call(&mut self, args: A) -> Self::Output;
-}
-
-macro_rules! impl_lua_native_fn {
-    ($($A:ident),*) => {
-        impl<FN, $($A,)* R> LuaNativeFn<($($A,)*)> for FN
-        where
-            FN: Fn($($A,)*) -> R + MaybeSend + 'static,
-            ($($A,)*): FromLuaMulti,
-        {
-            type Output = R;
-
-            #[allow(non_snake_case)]
-            fn call(&self, args: ($($A,)*)) -> Self::Output {
-                let ($($A,)*) = args;
-                self($($A,)*)
-            }
-        }
-
-        impl<FN, $($A,)* R> LuaNativeFnMut<($($A,)*)> for FN
-        where
-            FN: FnMut($($A,)*) -> R + MaybeSend + 'static,
-            ($($A,)*): FromLuaMulti,
-        {
-            type Output = R;
-
-            #[allow(non_snake_case)]
-            fn call(&mut self, args: ($($A,)*)) -> Self::Output {
-                let ($($A,)*) = args;
-                self($($A,)*)
-            }
-        }
-    };
-}
-
-impl_lua_native_fn!();
-impl_lua_native_fn!(A);
-impl_lua_native_fn!(A, B);
-impl_lua_native_fn!(A, B, C);
-impl_lua_native_fn!(A, B, C, D);
-impl_lua_native_fn!(A, B, C, D, E);
-impl_lua_native_fn!(A, B, C, D, E, F);
-impl_lua_native_fn!(A, B, C, D, E, F, G);
-impl_lua_native_fn!(A, B, C, D, E, F, G, H);
-impl_lua_native_fn!(A, B, C, D, E, F, G, H, I);
-impl_lua_native_fn!(A, B, C, D, E, F, G, H, I, J);
-impl_lua_native_fn!(A, B, C, D, E, F, G, H, I, J, K);
-impl_lua_native_fn!(A, B, C, D, E, F, G, H, I, J, K, L);
-impl_lua_native_fn!(A, B, C, D, E, F, G, H, I, J, K, L, M);
-impl_lua_native_fn!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
-impl_lua_native_fn!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
-impl_lua_native_fn!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 
 pub(crate) trait ShortTypeName {
     #[inline(always)]

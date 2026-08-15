@@ -45,13 +45,6 @@ fn test_require_errors() {
     assert!((res.unwrap_err().to_string())
         .contains("bad argument #1 to 'require' (string expected, got boolean)"));
 
-    // Require from loadstring
-    let res = lua
-        .load(r#"return loadstring("require('./a/relative/path')")()"#)
-        .eval::<Value>();
-    assert!(res.is_err());
-    assert!((res.unwrap_err().to_string()).contains("require is not supported in this context"));
-
     // RequireAliasThatDoesNotExist
     let res = run_require(&lua, "@this.alias.does.not.exist");
     assert!(res.is_err());

@@ -1,8 +1,8 @@
 [luau]
 no-default-features = true
-features = "luau,send,serde"
+features = "luau,serde"
 
 [luau_with_memory_limit]
 no-default-features = true
-features = "luau,send,serde"
+features = "luau,serde"
 rustflags = "--cfg force_memory_limit"
