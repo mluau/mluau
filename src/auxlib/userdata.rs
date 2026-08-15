@@ -150,15 +150,19 @@ pub trait UserDataFields<T, const TAG: c_int = USERDATA2_TAG> {
     ///
     /// Regular field getters are implemented by overriding the `__index` metamethod and returning
     /// the accessed field. This allows them to be used with the expected `userdata.field` syntax.
-    ///
-    /// If `add_meta_method` is used to set the `__index` metamethod, the `__index` metamethod will
-    /// be used as a fall-back if no regular index property is found.
     fn add_field_method_get<M, R>(&mut self, name: impl Into<&'static str>, method: M)
     where
         M: Fn(&Lua, TypedUserData<T, TAG>) -> R + 'static,
         R: IntoLuaResult;
 
-    // TODO: Add field method setters
+    /// Add a regular field setter as a method which accepts a `&T` as the parameter.
+    ///
+    /// Regular field setters are implemented by overriding the `__newindex` metamethod and returning
+    /// the accessed field. This allows them to be used with the expected `userdata.field` syntax.
+    fn add_field_method_set<M, R>(&mut self, name: impl Into<&'static str>, method: M)
+    where
+        M: Fn(&Lua, TypedUserData<T, TAG>, Value) -> Result<(), R> + 'static,
+        R: IntoLuaErr;
 }
 
 /// Trait for custom userdata types.
@@ -241,6 +245,7 @@ impl IntoLuaResultMulti for Result<IndexResult, UdError> {
 
 type MethodCb<T, const TAG: c_int> = Rc<dyn Fn(&Lua, TypedUserData<T, TAG>, MultiValue) -> Result<MultiValue, UdError> + 'static>;
 type FieldGetter<T, const TAG: c_int> = Rc<dyn Fn(&Lua, TypedUserData<T, TAG>) -> Result<Value, UdError> + 'static>;
+type FieldSetter<T, const TAG: c_int> = Rc<dyn Fn(&Lua, TypedUserData<T, TAG>, Value) -> Result<(), UdError> + 'static>;
 
 struct UserDataRegistry<'a, const TAG: c_int, T: UserData<TAG>> {
     lua: &'a Lua,
@@ -254,7 +259,9 @@ struct UserDataRegistry<'a, const TAG: c_int, T: UserData<TAG>> {
     namecall_methods: FxHashMap<&'static str, MethodCb<T, TAG>>, // Namecall methods (special cases that need namecall optimization)
     namecall_fb: Option<MethodCb<T, TAG>>, // a fallback namecall metamethod
     index_fb: Option<MethodCb<T, TAG>>, // a fallback index metamethod
-    field_method_get: FxHashMap<&'static str, FieldGetter<T, TAG>> // fallback index metamethod
+    newindex_fb: Option<MethodCb<T, TAG>>, // a fallback newindex metamethod
+    field_method_get: FxHashMap<&'static str, FieldGetter<T, TAG>>, // fallback index metamethod
+    field_method_set: FxHashMap<&'static str, FieldSetter<T, TAG>> // newindex
 }
 
 impl<'a, const TAG: c_int, T: UserData<TAG>> UserDataRegistry<'a, TAG, T> {
@@ -267,7 +274,9 @@ impl<'a, const TAG: c_int, T: UserData<TAG>> UserDataRegistry<'a, TAG, T> {
             namecall_methods: FxHashMap::default(),
             namecall_fb: None,
             index_fb: None,
+            newindex_fb: None,
             field_method_get: FxHashMap::default(),
+            field_method_set: FxHashMap::default()
         };
 
         // Collect into reg
@@ -330,6 +339,10 @@ impl<'a, const TAG: c_int, T: UserData<TAG>> UserDataRegistry<'a, TAG, T> {
         let mt = self.lua.create_table_from(mt)?;
         
         mt.set("__index", index)?;
+
+        if !self.field_method_set.is_empty() || self.newindex_fb.is_some() {
+            mt.set("__newindex", Self::newindex_cb(self.lua, Rc::new(self.field_method_set), self.newindex_fb)?)?;
+        }
         
         // Inject __type if not explicitly set
         if !mt.raw_get("__type")? {
@@ -363,6 +376,26 @@ impl<'a, const TAG: c_int, T: UserData<TAG>> UserDataRegistry<'a, TAG, T> {
                 }
             }).map_err(UdError::Error)?;
             func(lua, ud, args)
+        })
+    }
+
+    fn newindex_cb(lua: &Lua, field_setters: Rc<FxHashMap<&'static str, FieldSetter<T, TAG>>>, newindex_fb: Option<MethodCb<T, TAG>>) -> crate::Result<crate::Function> {
+        lua.create_function(move |lua, (ud, key, arg): (TypedUserData<T, TAG>, crate::String, Value)| {
+            let key_str = key.to_str().map_err(UdError::Error)?;
+            match field_setters.get(key_str.as_ref()) {
+                Some(s) => {
+                    s(lua, ud, arg)?;
+                    Ok(MultiValue::with_capacity(0))
+                },
+                None => {
+                    if let Some(fb) = &newindex_fb {
+                        fb(lua, ud, MultiValue::from_iter([Value::String(key)]))?;
+                        Ok(MultiValue::with_capacity(0))
+                    } else {
+                        Err(UdError::Error(crate::Error::runtime(format!("{}: cannot find property `{}`", T::type_name(), key_str))))
+                    }
+                }
+            }
         })
     }
 
@@ -408,6 +441,14 @@ impl<const TAG: c_int, T: UserData<TAG>> UserDataFields<T, TAG> for UserDataRegi
         R: IntoLuaResult
     {
         self.field_method_get.insert(name.into(), wrap_field_getter::<TAG, T, M, R>(method));
+    }
+
+    fn add_field_method_set<M, R>(&mut self, name: impl Into<&'static str>, method: M)
+    where
+        M: Fn(&Lua, TypedUserData<T, TAG>, Value) -> Result<(), R> + 'static,
+        R: IntoLuaErr
+    {
+        self.field_method_set.insert(name.into(), wrap_field_setter::<TAG, T, M, R>(method));
     }
 }
 
@@ -544,7 +585,7 @@ where
 }
 
 #[inline]
-/// Wraps a method into a type-erased MethodCb<T>
+/// Wraps a field getter into a type-erased FieldGetter<T>
 pub(super) fn wrap_field_getter<const TAG: c_int, T, M, R>(method: M) -> FieldGetter<T, TAG>
 where
     T: UserData<TAG>,
@@ -555,6 +596,25 @@ where
         // Call method and normalize
         match method(lua, this).into_result() {
             Ok(item) => item.into_lua(lua).map_err(UdError::Error),
+            Err(err) => match err.into_lua_err(lua) {
+                Ok(v) => Err(UdError::Value(v)),
+                Err(e) => Err(UdError::Error(e)),
+            }
+        }
+    })
+}
+
+#[inline]
+/// Wraps a field setter into a type-erased FieldSetter<T>
+pub(super) fn wrap_field_setter<const TAG: c_int, T, M, R>(method: M) -> FieldSetter<T, TAG>
+where
+    T: UserData<TAG>,
+    M: Fn(&Lua, TypedUserData<T, TAG>, Value) -> Result<(), R> + 'static,
+    R: IntoLuaErr,
+{
+    Rc::new(move |lua, this, value| {
+        match method(lua, this, value) {
+            Ok(_) => Ok(()),
             Err(err) => match err.into_lua_err(lua) {
                 Ok(v) => Err(UdError::Value(v)),
                 Err(e) => Err(UdError::Error(e)),
