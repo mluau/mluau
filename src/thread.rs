@@ -503,11 +503,12 @@ impl Thread {
         if Rc::strong_count(&callback) > 2 {
             return; // Don't allow recursion
         }
-        let main_th = (*extra).raw_lua().state();
-        ffi::lua_pushthread(main_th);
-        let value = Thread((*extra).raw_lua().pop_ref_at(main_th), L);
+        ffi::lua_pushthread(L);
+        let value = Thread((*extra).raw_lua().pop_ref_at(L), L);
         
-        callback_error_ext(L, extra, move |extra, nargs| {
+        let main_th = (*extra).raw_lua().main_state();
+        callback_error_ext(main_th, extra, move |extra| {
+            let nargs = ffi::lua_gettop(L);
             let args = crate::traits::FromLuaMulti::from_specified_stack_multi(nargs, (*extra).raw_lua(), L)?;
             let thread_status = match status {
                 ffi::LUA_YIELD => crate::ThreadStatus::Resumable,

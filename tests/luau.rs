@@ -750,7 +750,7 @@ fn test_thread_state_change_event() -> Result<()> {
     let state_changes = Arc::new(std::sync::Mutex::new(Vec::new()));
 
     let changes2 = state_changes.clone();
-    lua.set_thread_state_change_callback(move |_, _thread, status, args| {
+    lua.set_thread_state_change_callback(move |lua, _thread, status, args| {
         let mut changes = changes2.lock().unwrap();
         if status == mluau::ThreadStatus::Resumable {
             changes.push(("yield", args.into_vec().len()));
@@ -759,6 +759,7 @@ fn test_thread_state_change_event() -> Result<()> {
         } else {
             changes.push(("error", args.into_vec().len()));
         }
+        lua.create_function(|lua, _: ()| Ok(1u32))?;
         Ok(())
     });
 

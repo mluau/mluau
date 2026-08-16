@@ -1,7 +1,4 @@
-use std::os::raw::c_int;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-
-
 use crate::state::{ExtraData, RawLua};
 use crate::string::vec_into_ext_parts_infailable;
 
@@ -69,18 +66,16 @@ pub(crate) unsafe fn callback_error_ext<F, R>(
     f: F,
 ) -> R
 where
-    F: FnOnce(*mut ExtraData, c_int) -> crate::Result<R>,
+    F: FnOnce(*mut ExtraData) -> crate::Result<R>,
 {
     if extra.is_null() {
         extra = ExtraData::get(state);
     }
 
-    let nargs = ffi::lua_gettop(state);
-
     match catch_unwind(AssertUnwindSafe(|| {
         let rawlua = (*extra).raw_lua();
         let _guard = StateGuard::new(rawlua, state);
-        f(extra, nargs)
+        f(extra)
     })) {
         Ok(Ok(r)) => {
             r

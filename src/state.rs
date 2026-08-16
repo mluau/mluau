@@ -402,7 +402,7 @@ impl Lua {
                 }
                 return;
             }
-            let result = callback_error_ext(state, ptr::null_mut(), move |extra, _| {
+            let result = callback_error_ext(state, ptr::null_mut(), move |extra| {
                 let interrupt_cb = (*extra).interrupt_callback.clone();
                 let interrupt_cb = mlua_expect!(interrupt_cb, "no interrupt callback set in interrupt_proc");
                 if XRc::strong_count(&interrupt_cb) > 2 {
@@ -530,7 +530,7 @@ impl Lua {
             }
             ffi::lua_pushthread(child);
             let value = Thread((*extra).raw_lua().pop_ref_at(child), child);
-            callback_error_ext(parent, extra, move |extra, _| {
+            callback_error_ext(parent, extra, move |extra| {
                 callback((*extra).lua(), value)
             })
         } else {
