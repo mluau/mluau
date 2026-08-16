@@ -1,4 +1,4 @@
-use mluau::{Error, Function, IntoLua, Lua, Result, Thread, ThreadStatus, Value, Yield};
+use mluau::{Error, ErrorWithTraceback, Function, IntoLua, Lua, Result, Thread, ThreadStatus, Value, Yield};
 
 #[test]
 fn test_thread() -> Result<()> {
@@ -20,15 +20,15 @@ fn test_thread() -> Result<()> {
     )?;
 
     assert_eq!(thread.status(), ThreadStatus::Resumable);
-    assert_eq!(thread.resume::<i64>(0)?, 0);
+    assert_eq!(thread.resume::<i64, crate::Error>(0)?, 0);
     assert_eq!(thread.status(), ThreadStatus::Resumable);
-    assert_eq!(thread.resume::<i64>(1)?, 1);
+    assert_eq!(thread.resume::<i64, crate::Error>(1)?, 1);
     assert_eq!(thread.status(), ThreadStatus::Resumable);
-    assert_eq!(thread.resume::<i64>(2)?, 3);
+    assert_eq!(thread.resume::<i64, crate::Error>(2)?, 3);
     assert_eq!(thread.status(), ThreadStatus::Resumable);
-    assert_eq!(thread.resume::<i64>(3)?, 6);
+    assert_eq!(thread.resume::<i64, crate::Error>(3)?, 6);
     assert_eq!(thread.status(), ThreadStatus::Resumable);
-    assert_eq!(thread.resume::<i64>(4)?, 10);
+    assert_eq!(thread.resume::<i64, crate::Error>(4)?, 10);
     assert_eq!(thread.status(), ThreadStatus::Finished);
 
     let accumulate = lua.create_thread(
@@ -45,11 +45,11 @@ fn test_thread() -> Result<()> {
     )?;
 
     for i in 0..4 {
-        accumulate.resume::<()>(i)?;
+        accumulate.resume::<(), crate::Error>(i)?;
     }
-    assert_eq!(accumulate.resume::<i64>(4)?, 10);
+    assert_eq!(accumulate.resume::<i64, crate::Error>(4)?, 10);
     assert_eq!(accumulate.status(), ThreadStatus::Resumable);
-    assert!(accumulate.resume::<()>("error").is_err());
+    assert!(accumulate.resume::<(), crate::Error>("error").is_err());
     assert_eq!(accumulate.status(), ThreadStatus::Error);
 
     let thread = lua
@@ -64,7 +64,7 @@ fn test_thread() -> Result<()> {
         )
         .eval::<Thread>()?;
     assert_eq!(thread.status(), ThreadStatus::Resumable);
-    assert_eq!(thread.resume::<i64>(())?, 42);
+    assert_eq!(thread.resume::<i64, crate::Error>(())?, 42);
 
     let thread: Thread = lua
         .load(
@@ -79,10 +79,10 @@ fn test_thread() -> Result<()> {
         )
         .eval()?;
 
-    assert_eq!(thread.resume::<u32>(42)?, 123);
-    assert_eq!(thread.resume::<u32>(43)?, 987);
+    assert_eq!(thread.resume::<u32, crate::Error>(42)?, 123);
+    assert_eq!(thread.resume::<u32, crate::Error>(43)?, 987);
 
-    match thread.resume::<u32>(()) {
+    match thread.resume::<u32, crate::Error>(()) {
         Err(Error::CoroutineUnresumable) => {}
         Err(_) => panic!("resuming dead coroutine error is not CoroutineInactive kind"),
         _ => panic!("resuming dead coroutine did not return error"),
@@ -91,14 +91,14 @@ fn test_thread() -> Result<()> {
     // Already running thread must be unresumable
     let thread = lua.create_thread(lua.create_function(|lua, ()| {
         assert_eq!(lua.current_thread().status(), ThreadStatus::Running);
-        let result = lua.current_thread().resume::<()>(());
+        let result = lua.current_thread().resume::<(), crate::Error>(());
         assert!(
             matches!(result, Err(Error::CoroutineUnresumable)),
             "unexpected result: {result:?}",
         );
         Ok(())
     })?)?;
-    let result = thread.resume::<()>(());
+    let result = thread.resume::<(), crate::Error>(());
     assert!(result.is_ok(), "unexpected result: {result:?}");
 
     Ok(())
@@ -122,10 +122,10 @@ fn test_thread_reset() -> Result<()> {
 
     for _ in 0..2 {
         assert_eq!(thread.status(), ThreadStatus::Resumable);
-        let _ = thread.resume::<AnyUserData>(MyUserData(arc.clone()))?;
+        let _ = thread.resume::<AnyUserData, crate::Error>(MyUserData(arc.clone()))?;
         assert_eq!(thread.status(), ThreadStatus::Resumable);
         assert_eq!(Arc::strong_count(&arc), 2);
-        thread.resume::<()>(())?;
+        thread.resume::<(), crate::Error>(())?;
         assert_eq!(thread.status(), ThreadStatus::Finished);
         thread.reset(func.clone())?;
         lua.gc_collect()?;
@@ -135,7 +135,7 @@ fn test_thread_reset() -> Result<()> {
     // Check for errors
     let func: Function = lua.load(r#"function(ud) error("test error") end"#).eval()?;
     let thread = lua.create_thread(func.clone())?;
-    let _ = thread.resume::<AnyUserData>(MyUserData(arc.clone()));
+    let _ = thread.resume::<AnyUserData, crate::Error>(MyUserData(arc.clone()));
     assert_eq!(thread.status(), ThreadStatus::Error);
     assert_eq!(Arc::strong_count(&arc), 2);
 
@@ -150,7 +150,7 @@ fn test_thread_reset() -> Result<()> {
         this.reset(lua.create_function(|_, ()| Ok(()))?)?;
         Ok(())
     })?)?;
-    let result = thread.resume::<()>(());
+    let result = thread.resume::<(), crate::Error>(());
     assert!(
         matches!(result, Err(Error::RuntimeError(ref msg)) if msg.contains("cannot reset a running thread")),
         "unexpected result: {result:?}",
@@ -168,7 +168,7 @@ fn test_coroutine_from_closure() -> Result<()> {
 
     let thrd: Thread = lua.load("coroutine.create(main)").eval()?;
 
-    thrd.resume::<()>(())?;
+    thrd.resume::<(), crate::Error>(())?;
 
     Ok(())
 }
@@ -206,8 +206,8 @@ fn test_thread_resume_error() -> Result<()> {
         )
         .eval::<Thread>()?;
 
-    assert_eq!(thread.resume::<i64>(())?, 123);
-    let status = thread.resume_error::<String>("myerror").unwrap();
+    assert_eq!(thread.resume::<i64, crate::Error>(())?, 123);
+    let status = thread.resume_error::<String, crate::Error>("myerror").unwrap();
     assert_eq!(status, "success");
 
     Ok(())
@@ -226,9 +226,9 @@ fn test_thread_resume_bad_arg() -> Result<()> {
     }
 
     let f = lua.create_thread(lua.create_function(|_, ()| Ok("okay"))?)?;
-    let res = f.resume::<()>((123, BadArg));
+    let res = f.resume::<(), crate::Error>((123, BadArg));
     assert!(matches!(res, Err(Error::RuntimeError(msg)) if msg == "bad arg"));
-    let res = f.resume::<String>(()).unwrap();
+    let res = f.resume::<String, crate::Error>(()).unwrap();
     assert_eq!(res, "okay");
 
     Ok(())
@@ -237,11 +237,11 @@ fn test_thread_resume_bad_arg() -> Result<()> {
 #[test]
 fn test_thread_yield_args() -> Result<()> {
     let lua = Lua::new();
-    let always_yield = lua.create_function(|lua, ()| Yield((42, "69420".to_string(), 45.6)))?;
+    let always_yield = lua.create_function(|_lua, ()| Yield((42, "69420".to_string(), 45.6)))?;
 
     let thread = lua.create_thread(always_yield)?;
     assert_eq!(
-        thread.resume::<(i32, String, f32)>(())?,
+        thread.resume::<(i32, String, f32), crate::Error>(())?,
         (42, String::from("69420"), 45.6)
     );
 
@@ -257,14 +257,14 @@ fn test_thread_yield_args() -> Result<()> {
 
     let thread = lua.create_thread(my_lua_func)?;
     let intermediate =
-        thread.resume::<mluau::MultiValue>(lua.create_function(|lua, ()| Yield(100))?);
+        thread.resume::<mluau::MultiValue, crate::Error>(lua.create_function(|_lua, ()| Yield(100))?);
     assert!(
         intermediate.is_ok(),
         "Failed to resume thread: {:?}",
         intermediate
     );
     assert_eq!(thread.status(), ThreadStatus::Resumable);
-    let result = thread.resume::<i32>(intermediate.unwrap());
+    let result = thread.resume::<i32, crate::Error>(intermediate.unwrap());
     assert!(result.is_ok(), "Failed to resume thread: {:?}", result);
     assert_eq!(result.unwrap(), 100, "Unexpected yield value");
     assert_eq!(thread.status(), ThreadStatus::Finished);
@@ -294,7 +294,7 @@ fn test_thread_yield_args() -> Result<()> {
         .into_function()?;
 
     let thread = lua.create_thread(my_lua_func)?;
-    let intermediate = thread.resume::<mluau::MultiValue>(my_data);
+    let intermediate = thread.resume::<mluau::MultiValue, crate::Error>(my_data);
     println!("intermediate={:?}", intermediate);
     assert!(
         intermediate.is_ok(),
@@ -302,7 +302,7 @@ fn test_thread_yield_args() -> Result<()> {
         intermediate
     );
     assert_eq!(thread.status(), ThreadStatus::Resumable);
-    let result = thread.resume::<i32>(intermediate.unwrap());
+    let result = thread.resume::<i32, crate::Error>(intermediate.unwrap());
     assert!(result.is_ok(), "Failed to resume thread: {:?}", result);
     assert_eq!(result.unwrap(), 100, "Unexpected yield value");
     assert_eq!(thread.status(), ThreadStatus::Finished);
@@ -311,9 +311,9 @@ fn test_thread_yield_args() -> Result<()> {
     let func = lua.create_function(|_lua, ()| Yield("yielded value"))?;
 
     let thread = lua.create_thread(func)?;
-    assert_eq!(thread.resume::<String>(())?, "yielded value");
+    assert_eq!(thread.resume::<String, crate::Error>(())?, "yielded value");
     assert_eq!(thread.status(), ThreadStatus::Resumable);
-    thread.resume::<()>(())?;
+    thread.resume::<(), crate::Error>(())?;
     assert_eq!(thread.status(), ThreadStatus::Finished);
 
     Ok(())
@@ -326,7 +326,7 @@ fn test_continuation() {
     // No yielding continuation fflag test
     let cont_func = lua
         .create_function_with_continuation(
-            |lua, a: u64| Yield(a),
+            |_lua, a: u64| Yield(a),
             |_lua, _status, a: u64| {
                 println!("Reached cont");
                 Ok(a + 39)
@@ -351,16 +351,16 @@ fn test_continuation() {
         .expect("Failed to create luau thread");
 
     let v = th
-        .resume::<mluau::MultiValue>(cont_func)
+        .resume::<mluau::MultiValue, crate::Error>(cont_func)
         .expect("Failed to resume");
-    let v = th.resume::<i32>(v).expect("Failed to load continuation");
+    let v = th.resume::<i32, crate::Error>(v).expect("Failed to load continuation");
 
     assert_eq!(v, 41);
 
     // empty yield args test
     let cont_func = lua
         .create_function_with_continuation(
-            |lua, _: ()| Yield(()),
+            |_lua, _: ()| Yield(()),
             |_lua, _status, mv: mluau::MultiValue| Ok(mv.len()),
             Some(c"test2"),
         )
@@ -382,10 +382,10 @@ fn test_continuation() {
         .expect("Failed to create luau thread");
 
     let v = th
-        .resume::<mluau::MultiValue>(cont_func)
+        .resume::<mluau::MultiValue, crate::Error>(cont_func)
         .expect("Failed to resume");
     assert!(v.is_empty());
-    let v = th.resume::<i32>(v).expect("Failed to load continuation");
+    let v = th.resume::<i32, crate::Error>(v).expect("Failed to load continuation");
     assert_eq!(v, -1);
 
     let cont_func = lua
@@ -409,19 +409,19 @@ fn test_continuation() {
 
     // basic yield test before we go any further
     let always_yield = lua
-        .create_function(|lua, ()| Yield((42, "69420".to_string(), 45.6)))
+        .create_function(|_lua, ()| Yield((42, "69420".to_string(), 45.6)))
         .unwrap();
 
     let thread = lua.create_thread(always_yield).unwrap();
     assert_eq!(
-        thread.resume::<(i32, String, f32)>(()).unwrap(),
+        thread.resume::<(i32, String, f32), crate::Error>(()).unwrap(),
         (42, String::from("69420"), 45.6)
     );
 
     // Trigger the continuation
     let cont_func = lua
         .create_function_with_continuation(
-            |lua, a: u64| Yield(a),
+            |_lua, a: u64| Yield(a),
             |_lua, _status, a: u64| {
                 println!("Reached cont");
                 Ok(a + 39)
@@ -446,15 +446,15 @@ fn test_continuation() {
         .expect("Failed to create luau thread");
 
     let v = th
-        .resume::<mluau::MultiValue>(cont_func)
+        .resume::<mluau::MultiValue, crate::Error>(cont_func)
         .expect("Failed to resume");
-    let v = th.resume::<i32>(v).expect("Failed to load continuation");
+    let v = th.resume::<i32, crate::Error>(v).expect("Failed to load continuation");
 
     assert_eq!(v, 41);
 
     let always_yield = lua
         .create_function_with_continuation(
-            |lua, ()| Yield((42, "69420".to_string(), 45.6)),
+            |_lua, ()| Yield((42, "69420".to_string(), 45.6)),
             |_lua, _, mv: mluau::MultiValue| {
                 println!("Reached second continuation");
                 if mv.is_empty() {
@@ -467,17 +467,17 @@ fn test_continuation() {
         .unwrap();
 
     let thread = lua.create_thread(always_yield).unwrap();
-    let mv = thread.resume::<mluau::MultiValue>(()).unwrap();
+    let mv = thread.resume::<mluau::MultiValue, crate::Error>(()).unwrap();
     assert!(thread
-        .resume::<String>(mv)
+        .resume::<String, crate::Error>(mv)
         .unwrap_err()
         .to_string()
         .contains("a3"));
 
     let cont_func = lua
         .create_function_with_continuation(
-            |lua, a: u64| Yield((a + 1, 1)),
-            |lua, status, args: mluau::MultiValue| {
+            |_lua, a: u64| Yield((a + 1, 1)),
+            |_lua, status, args: mluau::MultiValue| {
                 use mluau::Either;
                 println!("Reached cont recursive/multiple: {:?}", args);
 
@@ -508,33 +508,33 @@ fn test_continuation() {
         .expect("Failed to create luau thread");
 
     let v = th
-        .resume::<mluau::MultiValue>(cont_func)
+        .resume::<mluau::MultiValue, crate::Error>(cont_func)
         .expect("Failed to resume");
     println!("v={:?}", v);
 
     let v = th
-        .resume::<mluau::MultiValue>(v)
+        .resume::<mluau::MultiValue, crate::Error>(v)
         .expect("Failed to load continuation");
     println!("v={:?}", v);
     let v = th
-        .resume::<mluau::MultiValue>(v)
+        .resume::<mluau::MultiValue, crate::Error>(v)
         .expect("Failed to load continuation");
     println!("v={:?}", v);
     let v = th
-        .resume::<mluau::MultiValue>(v)
+        .resume::<mluau::MultiValue, crate::Error>(v)
         .expect("Failed to load continuation");
 
     // (2, 1) followed by ()
     assert_eq!(v.len(), 2 + 3);
 
-    let v = th.resume::<i32>(v).expect("Failed to load continuation");
+    let v = th.resume::<i32, crate::Error>(v).expect("Failed to load continuation");
 
     assert_eq!(v, 7);
 
     // test panics
     let cont_func = lua
         .create_function_with_continuation(
-            |lua, a: u64| Yield(a),
+            |_lua, a: u64| Yield(a),
             |_lua, _status, _a: u64| {
                 panic!("Reached continuation which should panic!");
                 #[allow(unreachable_code)]
@@ -561,10 +561,10 @@ fn test_continuation() {
         .expect("Failed to create luau thread");
 
     let v = th
-        .resume::<mluau::MultiValue>(cont_func)
+        .resume::<mluau::MultiValue, crate::Error>(cont_func)
         .expect("Failed to resume");
 
-    let v = th.resume::<String>(v).expect("Failed to load continuation");
+    let v = th.resume::<String, crate::Error>(v).expect("Failed to load continuation");
     assert!(v.contains("Reached continuation which should panic!"));
 }
 
@@ -675,6 +675,30 @@ pub fn test_thread_set_thread_data() -> Result<()> {
     drop(lua); // This should also lead to thread being collected
 
     assert_eq!(count_2.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    Ok(())
+}
+
+#[test]
+fn test_resume_with_error_value() -> Result<()> {
+    let lua = Lua::new();
+
+    let thrd_main = lua.create_function(|_, ()| Ok(()))?;
+    lua.globals().set("main", thrd_main)?;
+
+    let thrd: Thread = lua.create_thread(lua.load("error({a=1, b=2})").into_function()?)?;
+
+    let ert = thrd.resume::<(), ErrorWithTraceback>(()).unwrap_err();
+
+    match ert {
+        ErrorWithTraceback::BaseError(e) => return Err(e),
+        ErrorWithTraceback::Error { traceback, value, err_code: _ } => {
+            let tab = value.as_table().unwrap();
+            assert_eq!(tab.raw_get::<i64>("a")?, 1i64);
+            assert_eq!(tab.raw_get::<i64>("b")?, 2i64);
+            assert!(traceback.contains("in function 'error'"))
+        }
+    }
 
     Ok(())
 }

@@ -105,14 +105,15 @@ pub use crate::table::{Table, TablePairs, TablePairsOwned, TableSequence};
 pub use crate::thread::{ContinuationStatus, Thread, ThreadStatus};
 pub use crate::traits::{
     FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, IntoCallbackResult,
+    FromLuaErr
 };
 pub use crate::types::{
-    AppDataRef, AppDataRefMut, Either, Integer, LightUserData, TypedRef, UnbackedTypedRef, Number, VmState, CallbackResult, CallbackFinalizeAction, Yield, CustomError, Ok
+    AppDataRef, AppDataRefMut, Either, Integer, LightUserData, TypedRef, UnbackedTypedRef, Number, VmState, CallbackResult, CallbackFinalizeAction, Yield, CustomError, Ok,
+    ErrorWithTraceback
 };
 pub use crate::state::extra::USERDATA2_TAG; // embedders should not use this tag
 pub use crate::auxlib::*;
 pub use crate::userdata::{AnyUserData, TypedUserData, TypedUserData as UserDataRef};
-
 pub use crate::value::{Nil, Value};
 
 #[cfg(any(feature = "luau", doc))]

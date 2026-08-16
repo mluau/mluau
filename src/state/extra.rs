@@ -35,6 +35,8 @@ pub(crate) struct ExtraData {
     pub(super) libs: StdLib,
 
     pub(crate) error_traceback_ref: c_int,
+    pub(crate) func_call_error_traceback: c_int,
+    pub(crate) func_call_error: c_int,
     pub(crate) memory_error_ref: c_int,
     pub(crate) call_trampoline_ref: c_int,
     pub(crate) original_globals_ref: c_int,
@@ -112,6 +114,18 @@ impl ExtraData {
             libs: StdLib::NONE,
             error_traceback_ref: {
                 ffi::lua_pushcfunction(state, crate::util::error_traceback);
+                let r = ffi::lua_refpool(state, -1);
+                ffi::lua_pop(state, 1);
+                r
+            },
+            func_call_error_traceback: {
+                ffi::lua_pushcfunction(state, crate::util::func_call_error_traceback);
+                let r = ffi::lua_refpool(state, -1);
+                ffi::lua_pop(state, 1);
+                r
+            },
+            func_call_error: {
+                ffi::lua_pushcfunction(state, crate::util::func_call_error);
                 let r = ffi::lua_refpool(state, -1);
                 ffi::lua_pop(state, 1);
                 r

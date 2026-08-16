@@ -534,10 +534,10 @@ impl RawLua {
         }
     }
 
-    pub unsafe fn pop_value_at(&self, state: *mut ffi::lua_State) -> Result<Value> {
-        let value = self.stack_value_at(-1, None, state)?;
+    pub unsafe fn pop_value_at(&self, state: *mut ffi::lua_State) -> Value {
+        let value = self.stack_value_at(-1, None, state);
         ffi::lua_pop(state, 1);
-        Ok(value)
+        value
     }
 
     /// Returns value at given stack index without popping it.
@@ -546,83 +546,83 @@ impl RawLua {
         idx: c_int,
         type_hint: Option<c_int>,
         state: *mut ffi::lua_State,
-    ) -> Result<Value> {
+    ) -> Value {
         match type_hint.unwrap_or_else(|| ffi::lua_type(state, idx)) {
-            ffi::LUA_TNIL => Ok(Nil),
+            ffi::LUA_TNIL => Nil,
             #[cfg(feature = "none-primitive")]
-            ffi::LUA_TSYMNONE => Ok(Value::None),
+            ffi::LUA_TSYMNONE => Value::None,
 
-            ffi::LUA_TBOOLEAN => Ok(Value::Boolean(ffi::lua_toboolean(state, idx) != 0)),
+            ffi::LUA_TBOOLEAN => Value::Boolean(ffi::lua_toboolean(state, idx) != 0),
 
-            ffi::LUA_TLIGHTUSERDATA => Ok(Value::LightUserData(LightUserData(ffi::lua_touserdata(
+            ffi::LUA_TLIGHTUSERDATA => Value::LightUserData(LightUserData(ffi::lua_touserdata(
                 state, idx,
-            )))),
+            ))),
 
             ffi::LUA_TNUMBER => {
                 use crate::types::Number;
 
                 let n = ffi::lua_tonumber(state, idx);
                 match num_traits::cast(n) {
-                    Some(i) if n.to_bits() == (i as Number).to_bits() => Ok(Value::Integer(i)),
-                    _ => Ok(Value::Number(n)),
+                    Some(i) if n.to_bits() == (i as Number).to_bits() => Value::Integer(i),
+                    _ => Value::Number(n),
                 }
             }
 
-            ffi::LUA_TINTEGER => Ok(Value::Int64(ffi::lua_tointeger64(state, idx))),
+            ffi::LUA_TINTEGER => Value::Int64(ffi::lua_tointeger64(state, idx)),
 
             ffi::LUA_TVECTOR => {
                 let v = ffi::lua_tovector(state, idx);
                 mlua_debug_assert!(!v.is_null(), "vector is null");
                 #[cfg(not(feature = "luau-vector4"))]
-                return Ok(Value::Vector(crate::Vector([*v, *v.add(1), *v.add(2)])));
+                return Value::Vector(crate::Vector([*v, *v.add(1), *v.add(2)]));
                 #[cfg(feature = "luau-vector4")]
-                return Ok(Value::Vector(crate::Vector([
+                return Value::Vector(crate::Vector([
                     *v,
                     *v.add(1),
                     *v.add(2),
                     *v.add(3),
-                ])));
+                ]));
             }
 
             ffi::LUA_TSTRING => {
-                Ok(Value::String(String(self.new_value_ref_from(state, idx))))
+                Value::String(String(self.new_value_ref_from(state, idx)))
             }
 
             ffi::LUA_TTABLE => {
-                Ok(Value::Table(Table(self.new_value_ref_from(state, idx))))
+                Value::Table(Table(self.new_value_ref_from(state, idx)))
             }
 
             ffi::LUA_TFUNCTION => {
-                Ok(Value::Function(Function(self.new_value_ref_from(state, idx))))
+                Value::Function(Function(self.new_value_ref_from(state, idx)))
             }
             ffi::LUA_TUSERDATA => {
-                Ok(Value::UserData(AnyUserData(self.new_value_ref_from(state, idx))))
+                Value::UserData(AnyUserData(self.new_value_ref_from(state, idx)))
             }
 
             ffi::LUA_TTHREAD => {
                 let thread_state = ffi::lua_tothread(state, idx);
-                Ok(Value::Thread(Thread(
+                Value::Thread(Thread(
                     self.new_value_ref_from(state, idx),
                     thread_state,
-                )))
+                ))
             }
 
             ffi::LUA_TBUFFER => {
-                Ok(Value::Buffer(crate::Buffer(self.new_value_ref_from(state, idx))))
+                Value::Buffer(crate::Buffer(self.new_value_ref_from(state, idx)))
             }
 
             #[cfg(feature = "luau-classes")]
             ffi::LUA_TCLASS => {
-                Ok(Value::Class(crate::Class(self.new_value_ref_from(state, idx))))
+                Value::Class(crate::Class(self.new_value_ref_from(state, idx)))
             }
 
             #[cfg(feature = "luau-classes")]
             ffi::LUA_TOBJECT => {
-                Ok(Value::Object(crate::Object(self.new_value_ref_from(state, idx))))
+                Value::Object(crate::Object(self.new_value_ref_from(state, idx)))
             }
 
             _ => {
-                Ok(Value::Other(self.new_value_ref_from(state, idx)))
+                Value::Other(self.new_value_ref_from(state, idx))
             }
         }
     }
@@ -659,10 +659,6 @@ impl RawLua {
 
     pub unsafe fn drop_ref(&self, vref: &ValueRef) {
         ffi::lua_unrefpool(self.state(), vref.ref_id);
-    }
-
-    pub(crate) unsafe fn push_error_traceback_at(&self, state: *mut ffi::lua_State) {
-        ffi::lua_getrefpool(state, (*self.extra.get()).error_traceback_ref);
     }
 
     // Creates a Function out of a Callback containing a 'static Fn.
