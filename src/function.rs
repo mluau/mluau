@@ -133,16 +133,19 @@ impl Function {
                     let err_ref_id = (ptr as u64 & 0xFFFFFFFF) as c_int;
                     ffi::lua_getrefpool(state, err_ref_id);
                     let err_value = lua.pop_value_at(state);
+                    ffi::lua_unrefpool(state, err_ref_id);
 
                     let tb_ref_id = (ptr as u64 >> 32) as c_int;
                     ffi::lua_getrefpool(state, tb_ref_id);
                     let tb = to_string(state, -1);
                     ffi::lua_pop(state, 1);
+                    ffi::lua_unrefpool(state, tb_ref_id);
                     return Err(E::from_lua_err(err_value, ret, tb));
                 } else {
                     let err_ref_id = ptr as u64 as c_int;
                     ffi::lua_getrefpool(state, err_ref_id);
                     let err_value = lua.pop_value_at(state);
+                    ffi::lua_unrefpool(state, err_ref_id);
                     return Err(E::from_lua_err(err_value, ret, String::with_capacity(0)));
                 }
             }
