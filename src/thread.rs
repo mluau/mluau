@@ -1,10 +1,11 @@
 use std::fmt;
 use std::os::raw::{c_int, c_void};
+use std::rc::Rc;
 use std::string::String as StdString;
 
 use crate::error::{Error, Result};
 use crate::function::Function;
-use crate::state::RawLua;
+use crate::state::{ExtraData, RawLua, callback_error_ext};
 use crate::traits::{FromLuaMulti, IntoLuaMulti};
 use crate::types::{LuaType, TypedRef, UnbackedTypedRef, ValueRef};
 
@@ -480,6 +481,42 @@ impl Thread {
     #[doc(hidden)]
     pub fn weak_lua(&self) -> WeakLua {
         self.0.lua.clone()
+    }
+
+    /// Attach the global user thread state change callback to the thread
+    pub fn attach_thread_state_change_callback(&self) {
+        unsafe {
+            ffi::lua_setthreadstatechangecb(self.state(), Some(Self::userthreadstatechange_proc));
+        }
+    }
+
+    pub(crate) unsafe extern "C-unwind" fn userthreadstatechange_proc(
+        #[allow(non_snake_case)]
+        L: *mut ffi::lua_State,
+        status: c_int,
+    ) {
+        let extra = ExtraData::get(L);
+        let callback = match (*extra).thread_state_change_callback {
+            Some(ref cb) => cb.clone(),
+            None => return,
+        };
+        if Rc::strong_count(&callback) > 2 {
+            return; // Don't allow recursion
+        }
+        ffi::lua_pushthread(L);
+        let value = Thread((*extra).raw_lua().pop_ref_at(L), L);
+        
+        let main_th = (*extra).raw_lua().main_state();
+        callback_error_ext(main_th, extra, move |extra| {
+            let nargs = ffi::lua_gettop(L);
+            let args = crate::traits::FromLuaMulti::from_specified_stack_multi(nargs, (*extra).raw_lua(), L)?;
+            let thread_status = match status {
+                ffi::LUA_YIELD => crate::ThreadStatus::Resumable,
+                ffi::LUA_OK => crate::ThreadStatus::Finished,
+                _ => crate::ThreadStatus::Error,
+            };
+            callback((*extra).lua(), value, thread_status, args)
+        });
     }
 }
 

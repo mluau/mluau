@@ -743,5 +743,64 @@ fn test_heap_dump() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn test_thread_state_change_event() -> Result<()> {
+    let lua = Lua::new();
+
+    let state_changes = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+    let changes2 = state_changes.clone();
+    lua.set_thread_state_change_callback(move |lua, _thread, status, args| {
+        let mut changes = changes2.lock().unwrap();
+        if status == mluau::ThreadStatus::Resumable {
+            changes.push(("yield", args.into_vec().len()));
+        } else if status == mluau::ThreadStatus::Finished {
+            changes.push(("ok", args.into_vec().len()));
+        } else {
+            changes.push(("error", args.into_vec().len()));
+        }
+        lua.create_function(|lua, _: ()| Ok(1u32))?;
+        Ok(())
+    });
+
+    lua.set_thread_creation_callback(|_lua, th| {
+        th.attach_thread_state_change_callback(); 
+        Ok(())
+    });
+
+    let thread = lua.create_thread(lua.load(r#"
+        coroutine.yield(1, 2)
+        return 3, 4, 5
+    "#).into_function()?)?;
+
+    thread.resume::<()>(())?;
+    thread.resume::<()>(())?;
+
+    {
+        let changes = state_changes.lock().unwrap();
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[0], ("yield", 2));
+        assert_eq!(changes[1], ("ok", 3));
+    }
+
+    // Check error case
+    let thread2 = lua.create_thread(lua.load(r#"
+        local a = 1
+        local b = 2
+        error("test error")
+    "#).into_function()?)?;
+
+    let _ = thread2.resume::<()>(());
+    let changes = state_changes.lock().unwrap();
+    assert_eq!(changes.len(), 3);
+    assert_eq!(changes[2].0, "error");
+    // We expect the stack to have the error, maybe some locals. We just check it's > 0.
+    assert!(changes[2].1 > 0);
+
+    lua.remove_thread_state_change_callback();
+
+    Ok(())
+}
+
 #[path = "luau/require.rs"]
 mod require;

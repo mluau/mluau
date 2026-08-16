@@ -107,7 +107,7 @@ pub use crate::traits::{
     FromLua, FromLuaMulti, IntoLua, IntoLuaMulti, IntoCallbackResult,
 };
 pub use crate::types::{
-    AppDataRef, AppDataRefMut, Either, Integer, LightUserData, TypedRef, Number, VmState, CallbackResult, CallbackFinalizeAction, Yield, CustomError, Ok
+    AppDataRef, AppDataRefMut, Either, Integer, LightUserData, TypedRef, UnbackedTypedRef, Number, VmState, CallbackResult, CallbackFinalizeAction, Yield, CustomError, Ok
 };
 pub use crate::state::extra::USERDATA2_TAG; // embedders should not use this tag
 pub use crate::auxlib::*;

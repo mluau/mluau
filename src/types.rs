@@ -256,6 +256,7 @@ pub(crate) type InterruptCallback = XRc<dyn Fn(&Lua) -> Result<VmState>>;
 pub(crate) type GcInterruptCallback = XRc<dyn Fn(&Lua, c_int) -> ()>;
 
 pub(crate) type ThreadCreationCallback = XRc<dyn Fn(&Lua, crate::Thread) -> Result<()>>;
+pub(crate) type ThreadStateChangeCallback = XRc<dyn Fn(&Lua, crate::Thread, crate::ThreadStatus, crate::MultiValue) -> Result<()>>;
 
 pub(crate) type ThreadCollectionCallback = XRc<dyn Fn(crate::LightUserData)>;
 

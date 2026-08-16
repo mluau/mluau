@@ -91,9 +91,16 @@ pub type lua_Integer = i64;
 /// A Lua unsigned integer, equivalent to `u32`.
 pub type lua_Unsigned = c_uint;
 
+/*
+typedef void (*lua_ThreadStateChangeCb)(lua_State* L, int status);
+lua_ThreadStateChangeCb lua_getthreadstatechangecb(lua_State* L); // gets called when L returns from lua_resume)
+void lua_setthreadstatechangecb(lua_State* L, lua_ThreadStateChangeCb cb); // gets called when L returns from lua_resume)
+ */
+
 /// Type for native C functions that can be passed to Lua.
 pub type lua_CFunction = unsafe extern "C-unwind" fn(L: *mut lua_State) -> c_int;
 pub type lua_Continuation = unsafe extern "C-unwind" fn(L: *mut lua_State, status: c_int) -> c_int;
+pub type lua_ThreadStateChangeCb = unsafe extern "C-unwind" fn(L: *mut lua_State, status: c_int);
 
 /// Type for userdata destructor functions (no unwinding).
 pub type lua_Destructor = unsafe extern "C" fn(L: *mut lua_State, *mut c_void);
@@ -302,8 +309,10 @@ unsafe extern "C-unwind" {
     pub fn lua_resumeerror(L: *mut lua_State, from: *mut lua_State) -> c_int;
     pub fn lua_status(L: *mut lua_State) -> c_int;
     pub fn lua_isyieldable(L: *mut lua_State) -> c_int;
-    pub fn lua_getthreaddata(L: *mut lua_State) -> *mut c_void;
+    pub unsafe fn lua_getthreaddata(L: *mut lua_State) -> *mut c_void;
     pub fn lua_setthreaddata(L: *mut lua_State, data: *mut c_void);
+    pub fn lua_getthreadstatechangecb(L: *mut lua_State) -> Option<lua_ThreadStateChangeCb>;
+    pub fn lua_setthreadstatechangecb(L: *mut lua_State, cb: Option<lua_ThreadStateChangeCb>);
 }
 
 //

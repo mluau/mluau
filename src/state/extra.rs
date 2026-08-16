@@ -45,6 +45,7 @@ pub(crate) struct ExtraData {
     pub(super) gc_interrupt_callback: Option<crate::types::GcInterruptCallback>,
 
     pub(super) thread_creation_callback: Option<crate::types::ThreadCreationCallback>,
+    pub(crate) thread_state_change_callback: Option<crate::types::ThreadStateChangeCallback>,
 
     pub(super) thread_collection_callback: Option<crate::types::ThreadCollectionCallback>,
 
@@ -150,6 +151,7 @@ impl ExtraData {
             gc_interrupt_callback: None,
 
             thread_creation_callback: None,
+            thread_state_change_callback: None,
 
             thread_collection_callback: None,
 
@@ -196,7 +198,7 @@ impl ExtraData {
     }
 
     #[inline(always)]
-    pub(super) unsafe fn lua(&self) -> &Lua {
+    pub(crate) unsafe fn lua(&self) -> &Lua {
         self.lua.assume_init_ref()
     }
 
