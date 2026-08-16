@@ -4,7 +4,6 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use crate::state::{ExtraData, RawLua};
 use crate::string::vec_into_ext_parts_infailable;
-use crate::util::check_stack;
 
 pub(super) struct StateGuard<'a>(&'a RawLua, *mut ffi::lua_State);
 
@@ -37,7 +36,6 @@ pub(crate) unsafe fn push_panic_str(state: *mut ffi::lua_State, extra: *mut Extr
     if res.is_err() {
         // Fallback case: we have no space to even copy the traceback as a external string so we have to
         // push the fallback memory error
-        let _ = check_stack(state, 1);
         let memory_error_ref = (*extra).memory_error_ref;
         ffi::lua_getrefpool(state, memory_error_ref);
     }
@@ -64,8 +62,7 @@ pub(crate) fn extract_panic_str(p: Box<dyn std::any::Any + Send + 'static>) -> S
     err_msg
 }
 
-// An optimized version of `callback_error` that does not allocate `WrappedFailure` userdata
-// and instead reuses unused values from previous calls (or allocates new).
+// Deprecated
 pub(crate) unsafe fn callback_error_ext<F, R>(
     state: *mut ffi::lua_State,
     mut extra: *mut ExtraData,

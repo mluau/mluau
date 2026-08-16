@@ -762,6 +762,11 @@ fn test_thread_state_change_event() -> Result<()> {
         Ok(())
     });
 
+    lua.set_thread_creation_callback(|_lua, th| {
+        th.attach_thread_state_change_callback(); 
+        Ok(())
+    });
+
     let thread = lua.create_thread(lua.load(r#"
         coroutine.yield(1, 2)
         return 3, 4, 5
@@ -770,11 +775,13 @@ fn test_thread_state_change_event() -> Result<()> {
     thread.resume::<()>(())?;
     thread.resume::<()>(())?;
 
-    let changes = state_changes.lock().unwrap();
-    assert_eq!(changes.len(), 2);
-    assert_eq!(changes[0], ("yield", 2));
-    assert_eq!(changes[1], ("ok", 3));
-    
+    {
+        let changes = state_changes.lock().unwrap();
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[0], ("yield", 2));
+        assert_eq!(changes[1], ("ok", 3));
+    }
+
     // Check error case
     let thread2 = lua.create_thread(lua.load(r#"
         local a = 1

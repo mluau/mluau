@@ -501,7 +501,7 @@ impl Lua {
             (*ffi::lua_callbacks(lua.main_state())).userthread = Some(Self::userthread_proc);
         }
     }
-    /// Sets a thread state change callback that will be called when a thread suspends or completes.
+    /// Sets a thread state change callback that will be called when a attached thread suspends or completes.
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_thread_state_change_callback<F>(&self, callback: F)
@@ -511,35 +511,7 @@ impl Lua {
         let lua = &self.raw;
         unsafe {
             (*lua.extra.get()).thread_state_change_callback = Some(XRc::new(callback));
-            (*ffi::lua_callbacks(lua.main_state())).userthreadstatechange = Some(Self::userthreadstatechange_proc);
         }
-    }
-
-    pub(crate) unsafe extern "C-unwind" fn userthreadstatechange_proc(
-        #[allow(non_snake_case)]
-        L: *mut ffi::lua_State,
-        status: c_int,
-    ) {
-        let extra = ExtraData::get(L);
-        let callback = match (*extra).thread_state_change_callback {
-            Some(ref cb) => cb.clone(),
-            None => return,
-        };
-        if XRc::strong_count(&callback) > 2 {
-            return; // Don't allow recursion
-        }
-        ffi::lua_pushthread(L);
-        let value = Thread((*extra).raw_lua().pop_ref_at(L), L);
-        
-        callback_error_ext(L, extra, move |extra, nargs| {
-            let args = crate::traits::FromLuaMulti::from_specified_stack_multi(nargs, (*extra).raw_lua(), L)?;
-            let thread_status = match status {
-                ffi::LUA_YIELD => crate::ThreadStatus::Resumable,
-                ffi::LUA_OK => crate::ThreadStatus::Finished,
-                _ => crate::ThreadStatus::Error,
-            };
-            callback((*extra).lua(), value, thread_status, args)
-        });
     }
 
     pub(crate) unsafe extern "C-unwind" fn userthread_proc(
@@ -600,7 +572,7 @@ impl Lua {
         }
     }
 
-    /// Removes any thread state change callback previously set by
+    /// Removes the thread state change callback
     /// [`Lua::set_thread_state_change_callback`].
     #[cfg(any(feature = "luau", doc))]
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
@@ -609,7 +581,6 @@ impl Lua {
         unsafe {
             let extra = lua.extra.get();
             (*extra).thread_state_change_callback = None;
-            (*ffi::lua_callbacks(lua.main_state())).userthreadstatechange = None;
         }
     }
 
@@ -627,7 +598,6 @@ impl Lua {
             (*extra).thread_creation_callback = None;
             (*extra).thread_collection_callback = None;
             (*extra).thread_state_change_callback = None;
-            (*ffi::lua_callbacks(lua.main_state())).userthreadstatechange = None;
             if !(*extra).have_thread_data {
                 (*ffi::lua_callbacks(lua.main_state())).userthread = None;
             }
@@ -1752,7 +1722,6 @@ impl Lua {
     /// the stack.
     ///
     /// This function is safe because all unsafe actions with RawLua can only be done with unsafe
-    #[doc(hidden)]
     pub fn exec_raw_lua<R>(&self, f: impl FnOnce(&RawLua) -> R) -> R {
         let lua = self.lock();
         f(&lua)
