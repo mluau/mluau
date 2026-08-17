@@ -10,7 +10,7 @@ use crate::{CallbackFinalizeAction, CallbackResult, CustomError, Ok as LuaOk, Yi
 use crate::error::{Error, Result};
 use crate::multi::MultiValue;
 use crate::state::{ExtraData, Lua, RawLua};
-use crate::util::{check_stack, short_type_name};
+use crate::util::{check_stack, get_error, short_type_name};
 use crate::value::Value;
 
 #[inline]
@@ -24,36 +24,17 @@ pub trait IntoCallbackResult: Sized {
     fn into_callback_result(self, lua: &Lua) -> CallbackResult;
 
     /// Pushes the result to the stack cleaning it out on yields if needed
+    /// 
+    /// Can be implemented as a fast-path but in general, best not to
     #[doc(hidden)]
-    #[inline]
+    #[inline(always)]
     unsafe fn finalize(self, lua: &RawLua, state: *mut ffi::lua_State) -> CallbackFinalizeAction {
-        let extra = lua.extra();
-
         match self.into_callback_result(lua.lua()) {
-            CallbackResult::Ok(v) => match v.push_into_specified_stack_multi(lua, state) {
-                Ok(n) => CallbackFinalizeAction::Return(n),
-                Err(e) => finalize_error(state, extra, e),
-            },
-            
-            CallbackResult::OkSingle(v) => match v.push_into_specified_stack(lua, state) {
-                Ok(()) => CallbackFinalizeAction::Return(1),
-                Err(e) => finalize_error(state, extra, e),
-            },
-
-            CallbackResult::Yield(v) => {
-                ffi::lua_pop(state, -1); // pop everything before yielding to avoid leaks
-                match v.push_into_specified_stack_multi(lua, state) {
-                    Ok(n) => CallbackFinalizeAction::Yield(n),
-                    Err(e) => finalize_error(state, extra, e),
-                }
-            },
-            
-            CallbackResult::Error(v) => {
-                lua.push_value_at(&v, state);
-                CallbackFinalizeAction::Error
-            }
-
-            CallbackResult::LuaError(le) => finalize_error(state, extra, le)
+            CallbackResult::Ok(v) => LuaOk(v).finalize(lua, state),
+            CallbackResult::OkSingle(v) => LuaOk(v).finalize(lua, state),
+            CallbackResult::Yield(v) => Yield(v).finalize(lua, state),
+            CallbackResult::Error(v) => CustomError(v).finalize(lua, state),
+            CallbackResult::LuaError(le) => le.finalize(lua, state)
         }
     }
 }
@@ -74,7 +55,7 @@ impl<T: IntoLuaMulti> IntoCallbackResult for LuaOk<T> {
     unsafe fn finalize(self, lua: &RawLua, state: *mut ffi::lua_State) -> CallbackFinalizeAction {
         match self.0.push_into_specified_stack_multi(lua, state) {
             Ok(nres) => CallbackFinalizeAction::Return(nres),
-            Err(e) => finalize_error(state, ExtraData::get(state), e)
+            Err(e) => finalize_error(state, lua.extra(), e)
         }
     }
 } 
@@ -91,7 +72,7 @@ impl<T: IntoLuaMulti> IntoCallbackResult for Yield<T> {
         ffi::lua_pop(state, -1); // pop everything before yielding to avoid leaks
         match self.0.push_into_specified_stack_multi(lua, state) {
             Ok(nres) => CallbackFinalizeAction::Yield(nres),
-            Err(e) => finalize_error(state, ExtraData::get(state), e)
+            Err(e) => finalize_error(state, lua.extra(), e)
         }
     }
 }
@@ -123,9 +104,15 @@ impl<T: IntoLua> IntoCallbackResult for CustomError<T> {
     unsafe fn finalize(self, lua: &RawLua, state: *mut ffi::lua_State) -> CallbackFinalizeAction {
         match self.0.push_into_specified_stack(lua, state) {
             Ok(_) => CallbackFinalizeAction::Error,
-            Err(e) => finalize_error(state, ExtraData::get(state), e)
+            Err(e) => finalize_error(state, lua.extra(), e)
         }
     }
+}
+
+impl IntoCallbackResult for crate::Error {
+    fn into_callback_result(self, _lua: &Lua) -> CallbackResult { CallbackResult::LuaError(self) }
+
+    unsafe fn finalize(self, lua: &RawLua, state: *mut ffi::lua_State) -> CallbackFinalizeAction { finalize_error(state, lua.extra(), self) }
 }
 
 impl<T> IntoCallbackResult for std::result::Result<T, crate::Error>
@@ -233,10 +220,7 @@ impl FromLuaErr for crate::Error {
             Value::UserData(u) => format!("<userdata {:?}>", u.to_pointer()),
             Value::Thread(t) => format!("<thread {:?}>", t.to_pointer()),
             Value::Buffer(b) => format!("<buffer {:?}>", b.to_pointer()),
-            Value::LightUserData(l) => {
-                // LightUserData usually wraps a raw pointer tuple struct in mlua
-                format!("<lightuserdata {:?}>", l.0)
-            }
+            Value::LightUserData(l) => format!("<lightuserdata {:?}>", l.0),
             #[cfg(not(feature = "luau-vector4"))]
             Value::Vector(v) => format!("vector({}, {}, {})", v.x(), v.y(), v.z()),
             #[cfg(feature = "luau-vector4")]
@@ -244,26 +228,7 @@ impl FromLuaErr for crate::Error {
             _ => "<unknown>".to_string(),
         };
 
-        match errcode {
-            ffi::LUA_ERRRUN => Error::RuntimeError(error_string),
-            ffi::LUA_ERRSYNTAX => {
-                Error::SyntaxError {
-                    // This seems terrible, but as far as I can tell, this is exactly what the
-                    // stock Lua REPL does.
-                    incomplete_input: error_string.ends_with("<eof>") || error_string.ends_with("'<eof>'"),
-                    message: error_string,
-                }
-            }
-            ffi::LUA_ERRERR => {
-                // This error is raised when the error handler raises an error too many times
-                // recursively, and continuing to trigger the error handler would cause a stack
-                // overflow. It is not very useful to differentiate between this and "ordinary"
-                // runtime errors, so we handle them the same way.
-                Error::RuntimeError(error_string)
-            }
-            ffi::LUA_ERRMEM => Error::MemoryError(error_string),
-            _ => mlua_panic!("unrecognized lua error code"),
-        }
+        get_error(error_string, errcode)
     }
 
     fn from_rust_err(error: crate::Error) -> Self { error }

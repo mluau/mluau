@@ -9,17 +9,8 @@ use crate::util::to_string;
 /// Pops an error off of the stack and returns it.
 /// 
 /// Uses 2 stack spaces
-pub(crate) unsafe fn pop_error(state: *mut ffi::lua_State, err_code: c_int) -> Error {
-    let err = get_error(state, err_code);
-    ffi::lua_pop(state, 1);
-    err
-}
-
-/// Gets an error off of the stack and returns it without popping
-/// 
-/// Uses 2 stack spaces
 #[inline]
-pub(crate) unsafe fn get_error(state: *mut ffi::lua_State, err_code: c_int) -> Error {
+pub(crate) unsafe fn pop_error(state: *mut ffi::lua_State, err_code: c_int) -> Error {
     mlua_debug_assert!(
         err_code != ffi::LUA_OK && err_code != ffi::LUA_YIELD,
         "pop_error called with non-error return code"
@@ -27,6 +18,14 @@ pub(crate) unsafe fn get_error(state: *mut ffi::lua_State, err_code: c_int) -> E
 
     let err_string = to_string(state, -1);
 
+    let err = get_error(err_string, err_code);
+    ffi::lua_pop(state, 1);
+    err
+}
+
+/// Returns the error given err_string and err_code
+#[inline]
+pub(crate) fn get_error(err_string: String, err_code: c_int) -> Error {
     match err_code {
         ffi::LUA_ERRRUN => Error::RuntimeError(err_string),
         ffi::LUA_ERRSYNTAX => {
