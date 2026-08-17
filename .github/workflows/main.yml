@@ -38,6 +38,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends liblua5.4-dev liblua5.3-dev liblua5.2-dev liblua5.1-0-dev libluajit-5.1-dev
           cargo build --features "${{ matrix.lua }}" --no-default-features
+      - name: Setup tmate session for debugging
+        if: failure()
+        uses: mxschmitt/action-tmate@v3
 
   test:
     name: Test
@@ -69,6 +72,9 @@ jobs:
           cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde"
           cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde"
         shell: bash
+      - name: Setup tmate session for debugging
+        if: failure()
+        uses: mxschmitt/action-tmate@v3
 
   test_with_sanitizer:
     name: Test with address sanitizer
