@@ -168,6 +168,8 @@ pub(crate) unsafe extern "C-unwind" fn func_call_error_traceback(state: *mut ffi
         return 0;
     }
 
+    //if ffi::lua_checkstack(state, 3) == 0 { return 1; }
+
     if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {
         ffi::luaL_traceback(state, state, std::ptr::null(), 0);
     } else {

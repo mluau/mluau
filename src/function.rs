@@ -125,21 +125,18 @@ impl Function {
             let ret = ffi::lua_pcallmulti(state, nargs, ffi::LUA_MULTRET, stack_start);
             
             if ret != ffi::LUA_OK {
-                // Guard against a catastrophically empty stack, just in case
-                if ffi::lua_gettop(state) > stack_start {
-                    if E::NEEDS_TRACEBACK {
-                        // Stack: [..., error_object, traceback_string]
-                        let tb = to_string(state, -1);
-                        let err_value = lua.stack_value_at(-2, None, state);
-                        
-                        return Err(E::from_lua_err(err_value, ret, tb));
-                    } else {
-                        // Stack: [..., error_object]
-                        let err_value = lua.stack_value_at(-1, None, state);
-                        
-                        return Err(E::from_lua_err(err_value, ret, String::with_capacity(0)));
-                    }
+                let num_err_retvals = ffi::lua_gettop(state) - stack_start;
+                if num_err_retvals == 2 {
+                    // Stack: [..., error_object, traceback_string]
+                    let tb = to_string(state, -1);
+                    let err_value = lua.stack_value_at(-2, None, state);            
+                    return Err(E::from_lua_err(err_value, ret, tb));
+                } else if num_err_retvals == 1 {
+                    // Stack: [..., error_object]
+                    let err_value = lua.stack_value_at(-1, None, state);         
+                    return Err(E::from_lua_err(err_value, ret, String::with_capacity(0)));
                 } else {
+                    // No results, catastrophic failure
                     return Err(E::from_lua_err(crate::Value::Nil, ret, String::with_capacity(0)));
                 }
             }
