@@ -5,7 +5,7 @@ use std::{slice, str};
 
 use crate::error::{Error, Result};
 pub(crate) use error::{
-    error_traceback, func_call_error_traceback, FUNC_CALL_ERROR_TB_LUD, 
+    error_traceback, func_call_error_traceback, 
     func_call_error, protect_lua_closure, call_trampoline, pop_error,
 };
 pub(crate) use short_names::short_type_name;

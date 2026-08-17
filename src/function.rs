@@ -7,7 +7,7 @@ use crate::error::Result;
 use crate::traits::{FromLuaMulti, IntoLuaMulti};
 use crate::types::{LuaType, ValueRef};
 use crate::util::{
-    FUNC_CALL_ERROR_TB_LUD, StackGuard, assert_stack, check_stack, linenumber_to_usize, ptr_to_lossy_str, ptr_to_str, to_string
+    StackGuard, assert_stack, check_stack, linenumber_to_usize, ptr_to_lossy_str, ptr_to_str, to_string
 };
 use crate::{FromLuaErr, WeakLua};
 
@@ -107,7 +107,7 @@ impl Function {
         let state = lua.state();
         unsafe {
             let _sg = StackGuard::new(state);
-            check_stack(state, 2).map_err(E::from_error)?;
+            check_stack(state, 2).map_err(E::from_rust_err)?;
 
             // Push error handler
             if E::NEEDS_TRACEBACK {
@@ -119,40 +119,34 @@ impl Function {
             let stack_start = ffi::lua_gettop(state);
             // Push function and the arguments
             lua.push_ref_at(&self.0, state);
-            let nargs = args.push_into_specified_stack_multi(&lua, state).map_err(E::from_error)?;
+            let nargs = args.push_into_specified_stack_multi(&lua, state).map_err(E::from_rust_err)?;
             
             // Call the function
-            let ret = ffi::lua_pcall(state, nargs, ffi::LUA_MULTRET, stack_start);
+            let ret = ffi::lua_pcallmulti(state, nargs, ffi::LUA_MULTRET, stack_start);
+            
             if ret != ffi::LUA_OK {
-                let ptr = ffi::lua_tolightuserdatatagged(state, -1, FUNC_CALL_ERROR_TB_LUD);
-                if ptr.is_null() {
-                    let err_value = if ffi::lua_gettop(state) > 0 { lua.stack_value_at(-1, None, state) } else { crate::Value::Nil };
-                    return Err(E::from_lua_err(err_value, ret, String::with_capacity(0)));
-                }
-                if E::NEEDS_TRACEBACK {
-                    let err_ref_id = (ptr as u64 & 0xFFFFFFFF) as c_int;
-                    ffi::lua_getrefpool(state, err_ref_id);
-                    let err_value = lua.pop_value_at(state);
-                    ffi::lua_unrefpool(state, err_ref_id);
-
-                    let tb_ref_id = (ptr as u64 >> 32) as c_int;
-                    ffi::lua_getrefpool(state, tb_ref_id);
-                    let tb = to_string(state, -1);
-                    ffi::lua_pop(state, 1);
-                    ffi::lua_unrefpool(state, tb_ref_id);
-                    return Err(E::from_lua_err(err_value, ret, tb));
+                // Guard against a catastrophically empty stack, just in case
+                if ffi::lua_gettop(state) > stack_start {
+                    if E::NEEDS_TRACEBACK {
+                        // Stack: [..., error_object, traceback_string]
+                        let tb = to_string(state, -1);
+                        let err_value = lua.stack_value_at(-2, None, state);
+                        
+                        return Err(E::from_lua_err(err_value, ret, tb));
+                    } else {
+                        // Stack: [..., error_object]
+                        let err_value = lua.stack_value_at(-1, None, state);
+                        
+                        return Err(E::from_lua_err(err_value, ret, String::with_capacity(0)));
+                    }
                 } else {
-                    let err_ref_id = ptr as u64 as c_int;
-                    ffi::lua_getrefpool(state, err_ref_id);
-                    let err_value = lua.pop_value_at(state);
-                    ffi::lua_unrefpool(state, err_ref_id);
-                    return Err(E::from_lua_err(err_value, ret, String::with_capacity(0)));
+                    return Err(E::from_lua_err(crate::Value::Nil, ret, String::with_capacity(0)));
                 }
             }
 
             // Get the results
             let nresults = ffi::lua_gettop(state) - stack_start;
-            R::from_specified_stack_multi(nresults, &lua, state).map_err(E::from_error)
+            R::from_specified_stack_multi(nresults, &lua, state).map_err(E::from_rust_err)
         }
     }
 

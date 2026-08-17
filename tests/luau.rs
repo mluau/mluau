@@ -380,9 +380,6 @@ fn test_fflags() {
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_fflag_does_not_panic() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     // This used to panic with:
     // "Error configuring Luau (this is a bug, please file an issue):
     //  SyntaxError { message: \"attempt to load a text chunk (mode is 'b')\" ... }"
@@ -400,9 +397,6 @@ fn test_classes_fflag_does_not_panic() -> Result<()> {
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_lib_registered_when_fflag_enabled() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     let lua = Lua::new();
 
     let has_class: bool = lua.load("return class ~= nil").eval()?;
@@ -425,9 +419,6 @@ fn test_classes_lib_registered_when_fflag_enabled() -> Result<()> {
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_instantiate_and_roundtrip_through_rust() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     let lua = Lua::new();
 
     let receive_class = lua.create_function(|_, class: mluau::Class| Ok(class))?;
@@ -475,9 +466,6 @@ fn test_classes_instantiate_and_roundtrip_through_rust() -> Result<()> {
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_value_enum_roundtrip() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     let lua = Lua::new();
 
     let seen_class: Arc<std::sync::Mutex<Option<Value>>> = Arc::new(std::sync::Mutex::new(None));
@@ -548,9 +536,6 @@ fn test_classes_value_enum_roundtrip() -> Result<()> {
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_get_set_object_field_from_rust() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     let lua = Lua::new();
 
     let bump_score = lua.create_function(|_, object: mluau::Object| {

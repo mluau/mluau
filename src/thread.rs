@@ -217,7 +217,7 @@ impl Thread {
                 has_yielded = true;
                 nargs
             }
-            _ => return Err(E::from_error(Error::CoroutineUnresumable)),
+            _ => return Err(E::from_rust_err(Error::CoroutineUnresumable)),
         };
 
         let state = lua.state();
@@ -227,21 +227,21 @@ impl Thread {
 
             if has_yielded {
                 // We need to use the mainthread here as pcall over a yielded thread is not allowed
-                let nargs = args.push_into_specified_stack_multi(&lua, state).map_err(E::from_error)?;
+                let nargs = args.push_into_specified_stack_multi(&lua, state).map_err(E::from_rust_err)?;
                 if nargs > 0 {
-                    check_stack(thread_state, nargs).map_err(E::from_error)?;
+                    check_stack(thread_state, nargs).map_err(E::from_rust_err)?;
                     ffi::lua_xmove(state, thread_state, nargs);
                 }
                 pushed_nargs += nargs;
             } else {
-                let nargs = args.push_into_specified_stack_multi(&lua, thread_state).map_err(E::from_error)?;
+                let nargs = args.push_into_specified_stack_multi(&lua, thread_state).map_err(E::from_rust_err)?;
                 pushed_nargs += nargs;
             }
 
             let _thread_sg = StackGuard::with_top(thread_state, 0);
             let (_, nresults) = self.resume_inner(&lua, pushed_nargs)?;
 
-            R::from_specified_stack_multi(nresults, &lua, thread_state).map_err(E::from_error)
+            R::from_specified_stack_multi(nresults, &lua, thread_state).map_err(E::from_rust_err)
         }
     }
 
@@ -260,7 +260,7 @@ impl Thread {
         match self.status_inner(&lua) {
             ThreadStatusInner::New(_) => {}
             ThreadStatusInner::Yielded(_) => has_yielded = true,
-            _ => return Err(E::from_error(Error::CoroutineUnresumable)),
+            _ => return Err(E::from_rust_err(Error::CoroutineUnresumable)),
         };
 
         let state = lua.state();
@@ -270,18 +270,18 @@ impl Thread {
 
             if has_yielded {
                 // We need to use the mainthread here as pcall over a yielded thread is not allowed
-                check_stack(state, 1).map_err(E::from_error)?;
-                error.push_into_specified_stack(&lua, state).map_err(E::from_error)?;
+                check_stack(state, 1).map_err(E::from_rust_err)?;
+                error.push_into_specified_stack(&lua, state).map_err(E::from_rust_err)?;
                 ffi::lua_xmove(state, thread_state, 1);
             } else {
-                check_stack(thread_state, 1).map_err(E::from_error)?;
-                error.push_into_specified_stack(&lua, thread_state).map_err(E::from_error)?;
+                check_stack(thread_state, 1).map_err(E::from_rust_err)?;
+                error.push_into_specified_stack(&lua, thread_state).map_err(E::from_rust_err)?;
             }
 
             let _thread_sg = StackGuard::with_top(thread_state, 0);
             let (_, nresults) = self.resume_inner(&lua, ffi::LUA_RESUMEERROR)?;
 
-            R::from_specified_stack_multi(nresults, &lua, thread_state).map_err(E::from_error)
+            R::from_specified_stack_multi(nresults, &lua, thread_state).map_err(E::from_rust_err)
         }
     }
 
@@ -304,7 +304,7 @@ impl Thread {
             }
             _ => {
                 let tb_string = if E::NEEDS_TRACEBACK {
-                    check_stack(state, 3).map_err(E::from_error)?;
+                    check_stack(state, 3).map_err(E::from_rust_err)?;
                     protect_lua!(state, 0, 1, |state| {
                         if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {
                             ffi::luaL_traceback(state, thread_state, std::ptr::null(), 0);
@@ -312,7 +312,7 @@ impl Thread {
                             // Fallback if we can't allocate stack space
                             ffi::lua_pushstring(state, cstr!(""));
                         }
-                    }).map_err(E::from_error)?;
+                    }).map_err(E::from_rust_err)?;
                     to_string(state, -1)
                 } else {
                     StdString::with_capacity(0)

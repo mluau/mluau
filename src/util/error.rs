@@ -161,7 +161,6 @@ pub(crate) unsafe extern "C-unwind" fn error_traceback(state: *mut ffi::lua_Stat
     1
 }
 
-pub(crate) const FUNC_CALL_ERROR_TB_LUD: c_int = 123;
 pub(crate) unsafe extern "C-unwind" fn func_call_error_traceback(state: *mut ffi::lua_State) -> c_int {
     // Luau calls error handler for memory allocation errors, skip it
     // See https://github.com/luau-lang/luau/issues/880
@@ -175,17 +174,16 @@ pub(crate) unsafe extern "C-unwind" fn func_call_error_traceback(state: *mut ffi
         return 1;
     }
 
-    let err_ref_id = ffi::lua_refpool(state, -1);
     if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {
         ffi::luaL_traceback(state, state, std::ptr::null(), 0);
     } else {
         // Fallback if we can't allocate stack space
         ffi::lua_pushstring(state, cstr!(""));
     }
-    let tb_ref_id = ffi::lua_refpool(state, -1);
-    let packed_ref_ids = ((tb_ref_id as u64) << 32) | (err_ref_id as u32 as u64);
-    ffi::lua_pushlightuserdatatagged(state, packed_ref_ids as *mut std::ffi::c_void, FUNC_CALL_ERROR_TB_LUD);
-    1
+    // Stack consists of [error object, traceback]
+    //
+    // This works bc of lua_pcallmulti in luwu
+    2
 }
 
 pub(crate) unsafe extern "C-unwind" fn func_call_error(state: *mut ffi::lua_State) -> c_int {
@@ -195,13 +193,6 @@ pub(crate) unsafe extern "C-unwind" fn func_call_error(state: *mut ffi::lua_Stat
         return 0;
     }
 
-    if ffi::lua_checkstack(state, 2) == 0 {
-        // If we don't have enough stack space to even check the error type, do
-        // nothing so we don't risk shadowing a rust panic.
-        return 1;
-    }
-
-    let err_ref_id = ffi::lua_refpool(state, -1);
-    ffi::lua_pushlightuserdatatagged(state, err_ref_id as *mut std::ffi::c_void, FUNC_CALL_ERROR_TB_LUD);
+    // Stack consists of [error object]
     1
 }
