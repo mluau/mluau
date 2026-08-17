@@ -168,12 +168,6 @@ pub(crate) unsafe extern "C-unwind" fn func_call_error_traceback(state: *mut ffi
         return 0;
     }
 
-    if ffi::lua_checkstack(state, 3) == 0 {
-        // If we don't have enough stack space to even check the error type, do
-        // nothing so we don't risk shadowing a rust panic.
-        return 1;
-    }
-
     if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {
         ffi::luaL_traceback(state, state, std::ptr::null(), 0);
     } else {
