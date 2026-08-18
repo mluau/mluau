@@ -590,7 +590,7 @@ fn test_too_many_recursions() -> Result<()> {
 
     Ok(())
 }
-
+ 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_ref_stack_exhaustion() {

@@ -5,11 +5,12 @@ use std::sync::Arc;
 use either::Either;
 
 use crate::state::util::push_panic_str;
+use crate::types::ErrorWithTraceback;
 use crate::{CallbackFinalizeAction, CallbackResult, CustomError, Ok as LuaOk, Yield};
 use crate::error::{Error, Result};
 use crate::multi::MultiValue;
 use crate::state::{ExtraData, Lua, RawLua};
-use crate::util::{check_stack, short_type_name};
+use crate::util::{check_stack, get_error, short_type_name};
 use crate::value::Value;
 
 #[inline]
@@ -23,36 +24,17 @@ pub trait IntoCallbackResult: Sized {
     fn into_callback_result(self, lua: &Lua) -> CallbackResult;
 
     /// Pushes the result to the stack cleaning it out on yields if needed
+    /// 
+    /// Can be implemented as a fast-path but in general, best not to
     #[doc(hidden)]
-    #[inline]
+    #[inline(always)]
     unsafe fn finalize(self, lua: &RawLua, state: *mut ffi::lua_State) -> CallbackFinalizeAction {
-        let extra = lua.extra();
-
         match self.into_callback_result(lua.lua()) {
-            CallbackResult::Ok(v) => match v.push_into_specified_stack_multi(lua, state) {
-                Ok(n) => CallbackFinalizeAction::Return(n),
-                Err(e) => finalize_error(state, extra, e),
-            },
-            
-            CallbackResult::OkSingle(v) => match v.push_into_specified_stack(lua, state) {
-                Ok(()) => CallbackFinalizeAction::Return(1),
-                Err(e) => finalize_error(state, extra, e),
-            },
-
-            CallbackResult::Yield(v) => {
-                ffi::lua_pop(state, -1); // pop everything before yielding to avoid leaks
-                match v.push_into_specified_stack_multi(lua, state) {
-                    Ok(n) => CallbackFinalizeAction::Yield(n),
-                    Err(e) => finalize_error(state, extra, e),
-                }
-            },
-            
-            CallbackResult::Error(v) => {
-                lua.push_value_at(&v, state);
-                CallbackFinalizeAction::Error
-            }
-
-            CallbackResult::LuaError(le) => finalize_error(state, extra, le)
+            CallbackResult::Ok(v) => LuaOk(v).finalize(lua, state),
+            CallbackResult::OkSingle(v) => LuaOk(v).finalize(lua, state),
+            CallbackResult::Yield(v) => Yield(v).finalize(lua, state),
+            CallbackResult::Error(v) => CustomError(v).finalize(lua, state),
+            CallbackResult::LuaError(le) => le.finalize(lua, state)
         }
     }
 }
@@ -73,7 +55,7 @@ impl<T: IntoLuaMulti> IntoCallbackResult for LuaOk<T> {
     unsafe fn finalize(self, lua: &RawLua, state: *mut ffi::lua_State) -> CallbackFinalizeAction {
         match self.0.push_into_specified_stack_multi(lua, state) {
             Ok(nres) => CallbackFinalizeAction::Return(nres),
-            Err(e) => finalize_error(state, ExtraData::get(state), e)
+            Err(e) => finalize_error(state, lua.extra(), e)
         }
     }
 } 
@@ -90,7 +72,7 @@ impl<T: IntoLuaMulti> IntoCallbackResult for Yield<T> {
         ffi::lua_pop(state, -1); // pop everything before yielding to avoid leaks
         match self.0.push_into_specified_stack_multi(lua, state) {
             Ok(nres) => CallbackFinalizeAction::Yield(nres),
-            Err(e) => finalize_error(state, ExtraData::get(state), e)
+            Err(e) => finalize_error(state, lua.extra(), e)
         }
     }
 }
@@ -122,9 +104,15 @@ impl<T: IntoLua> IntoCallbackResult for CustomError<T> {
     unsafe fn finalize(self, lua: &RawLua, state: *mut ffi::lua_State) -> CallbackFinalizeAction {
         match self.0.push_into_specified_stack(lua, state) {
             Ok(_) => CallbackFinalizeAction::Error,
-            Err(e) => finalize_error(state, ExtraData::get(state), e)
+            Err(e) => finalize_error(state, lua.extra(), e)
         }
     }
+}
+
+impl IntoCallbackResult for crate::Error {
+    fn into_callback_result(self, _lua: &Lua) -> CallbackResult { CallbackResult::LuaError(self) }
+
+    unsafe fn finalize(self, lua: &RawLua, state: *mut ffi::lua_State) -> CallbackFinalizeAction { finalize_error(state, lua.extra(), self) }
 }
 
 impl<T> IntoCallbackResult for std::result::Result<T, crate::Error>
@@ -183,7 +171,7 @@ pub trait FromLua: Sized {
     #[doc(hidden)]
     #[inline]
     unsafe fn from_specified_stack(idx: c_int, lua: &RawLua, state: *mut ffi::lua_State) -> Result<Self> {
-        Self::from_lua(lua.stack_value_at(idx, None, state)?, lua.lua())
+        Self::from_lua(lua.stack_value_at(idx, None, state), lua.lua())
     }
 
     /// Same as `from_lua_arg` but for a value in the Lua stack at index `idx`.
@@ -203,6 +191,59 @@ pub trait FromLua: Sized {
             cause: Arc::new(err),
         })
     }
+}
+
+/// Trait for types convertible from error Value + tb
+pub trait FromLuaErr: Sized {
+    /// Whether or not we need the traceback string at all
+    const NEEDS_TRACEBACK: bool = true;
+
+    /// Performs the conversion using a safe Lua Value and an traceback.
+    fn from_lua_err(err: Value, errcode: c_int, tb: String) -> Self;
+
+    /// Converts from a Error type generated by mluau (due to safety invariants being violated etc)
+    /// into the error type
+    fn from_rust_err(error: crate::Error) -> Self;
+}
+
+impl FromLuaErr for crate::Error {
+    const NEEDS_TRACEBACK: bool = false;
+    fn from_lua_err(err: Value, errcode: c_int, _tb: String) -> Self {
+        let error_string = match err {
+            Value::Nil => "<nil>".to_string(),
+            Value::Boolean(b) => b.to_string(),            
+            Value::Integer(i) => i.to_string(),
+            Value::Number(n) => n.to_string(),
+            Value::String(s) => s.to_string_lossy(),
+            Value::Table(t) => format!("<table {:?}>", t.to_pointer()),
+            Value::Function(f) => format!("<function {:?}>", f.to_pointer()),
+            Value::UserData(u) => format!("<userdata {:?}>", u.to_pointer()),
+            Value::Thread(t) => format!("<thread {:?}>", t.to_pointer()),
+            Value::Buffer(b) => format!("<buffer {:?}>", b.to_pointer()),
+            Value::LightUserData(l) => format!("<lightuserdata {:?}>", l.0),
+            #[cfg(not(feature = "luau-vector4"))]
+            Value::Vector(v) => format!("vector({}, {}, {})", v.x(), v.y(), v.z()),
+            #[cfg(feature = "luau-vector4")]
+            Value::Vector(v) => format!("vector({}, {}, {}, {})", v.x(), v.y(), v.z(), v.w()),
+            _ => "<unknown>".to_string(),
+        };
+
+        get_error(error_string, errcode)
+    }
+
+    fn from_rust_err(error: crate::Error) -> Self { error }
+}
+
+impl FromLuaErr for ErrorWithTraceback {
+    fn from_lua_err(err: Value, errcode: c_int, tb: String) -> Self {
+        Self::Error {
+            traceback: tb,
+            value: err,
+            err_code: errcode
+        }
+    }
+
+    fn from_rust_err(error: crate::Error) -> Self { ErrorWithTraceback::BaseError(error) }
 }
 
 /// Trait for types convertible to any number of Lua values.
@@ -269,7 +310,7 @@ pub trait FromLuaMulti: Sized {
     ) -> Result<Self> {
         let mut values = MultiValue::with_capacity(nvals as usize);
         for idx in 0..nvals {
-            values.push_back(lua.stack_value_at(-nvals + idx, None, state)?);
+            values.push_back(lua.stack_value_at(-nvals + idx, None, state));
         }
         Self::from_lua_multi(values, lua.lua())
     }

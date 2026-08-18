@@ -1,5 +1,5 @@
 
-use mluau::{Error, Function, Lua, Result, String, Table, Variadic};
+use mluau::{Error, ErrorWithTraceback, Function, Lua, Result, String};
 
 #[test]
 fn test_function_call() -> Result<()> {
@@ -24,119 +24,6 @@ fn test_function_call_error() -> Result<()> {
         Err(Error::RuntimeError(msg)) if msg.contains("concat error") => {}
         other => panic!("unexpected result: {other:?}"),
     }
-
-    Ok(())
-}
-
-#[test]
-fn test_function_bind() -> Result<()> {
-    let lua = Lua::new();
-
-    let globals = lua.globals();
-    lua.load(
-        r#"
-        function concat(...)
-            local res = ""
-            for _, s in pairs({...}) do
-                res = res..s
-            end
-            return res
-        end
-    "#,
-    )
-    .exec()?;
-
-    let mut concat = globals.get::<Function>("concat")?;
-    concat = concat.bind("foo")?;
-    concat = concat.bind("bar")?;
-    concat = concat.bind(("baz", "baf"))?;
-    assert_eq!(concat.call::<String>(())?, "foobarbazbaf");
-    assert_eq!(concat.call::<String>(("hi", "wut"))?, "foobarbazbafhiwut");
-
-    let mut concat2 = globals.get::<Function>("concat")?;
-    concat2 = concat2.bind(())?;
-    assert_eq!(concat2.call::<String>(())?, "");
-    assert_eq!(concat2.call::<String>(("ab", "cd"))?, "abcd");
-
-    Ok(())
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_function_bind_error() -> Result<()> {
-    let lua = Lua::new();
-
-    let func = lua.load(r#"function(...) end"#).eval::<Function>()?;
-    assert!(func.bind(Variadic::from_iter(1..1000000)).is_err());
-    assert!(func.call::<()>(Variadic::from_iter(1..1000000)).is_err());
-
-    Ok(())
-}
-
-#[test]
-fn test_function_environment() -> Result<()> {
-    let lua = Lua::new();
-    let globals = lua.globals();
-
-    // We must not get or set environment for C functions
-    let rust_func = lua.create_function(|_, ()| Ok("hello"))?;
-    assert_eq!(rust_func.environment(), None);
-    assert_eq!(rust_func.set_environment(globals.clone()).ok(), Some(false));
-
-    // Test getting Lua function environment
-    globals.set("hello", "global")?;
-    let lua_func = lua
-        .load(
-            r#"
-        local t = ""
-        return function()
-            -- two upvalues
-            return t .. hello
-        end
-    "#,
-        )
-        .eval::<Function>()?;
-    let lua_func2 = lua.load("return hello").into_function()?;
-    assert_eq!(lua_func.call::<String>(())?, "global");
-    assert_eq!(lua_func.environment().as_ref(), Some(&globals));
-
-    // Test changing the environment
-    let env = lua.create_table_from([("hello", "local")])?;
-    assert!(lua_func.set_environment(env.clone())?);
-    assert_eq!(lua_func.call::<String>(())?, "local");
-    assert_eq!(lua_func2.call::<String>(())?, "global");
-
-    // More complex case
-    lua.load(
-        r#"
-        local number = 15
-        function lucky() return tostring("number is "..number) end
-        new_env = {
-            tostring = function() return tostring(number) end,
-        }
-    "#,
-    )
-    .exec()?;
-    let lucky = globals.get::<Function>("lucky")?;
-    assert_eq!(lucky.call::<String>(())?, "number is 15");
-    let new_env = globals.get::<Table>("new_env")?;
-    lucky.set_environment(new_env)?;
-    assert_eq!(lucky.call::<String>(())?, "15");
-
-    // Test inheritance
-    let lua_func2 = lua
-        .load(r#"return function() return (function() return hello end)() end"#)
-        .eval::<Function>()?;
-    assert!(lua_func2.set_environment(env.clone())?);
-    lua.gc_collect()?;
-    assert_eq!(lua_func2.call::<String>(())?, "local");
-
-    // Test getting environment set by chunk loader
-    let chunk = lua
-        .load("return hello")
-        .set_environment(lua.create_table_from([("hello", "chunk")])?)
-        .into_function()?;
-    assert_eq!(chunk.environment().unwrap().get::<String>("hello")?, "chunk");
 
     Ok(())
 }
@@ -299,6 +186,30 @@ fn test_function_deep_clone() -> Result<()> {
     let rust_func = lua.create_function(|_, ()| Ok(42))?;
     let rust_func2 = rust_func.deep_clone()?;
     assert_eq!(rust_func.to_pointer(), rust_func2.to_pointer());
+
+    Ok(())
+}
+
+#[test]
+fn test_call_with_error_value() -> Result<()> {
+    let lua = Lua::new();
+
+    let thrd_main = lua.create_function(|_, ()| Ok(()))?;
+    lua.globals().set("main", thrd_main)?;
+
+    let func = lua.load("error({a=1, b=2})").into_function()?;
+
+    let ert = func.call_with_err::<(), ErrorWithTraceback>(()).unwrap_err();
+
+    match ert {
+        ErrorWithTraceback::BaseError(e) => return Err(e),
+        ErrorWithTraceback::Error { traceback, value, err_code: _ } => {
+            let tab = value.as_table().unwrap();
+            assert_eq!(tab.raw_get::<i64>("a")?, 1i64);
+            assert_eq!(tab.raw_get::<i64>("b")?, 2i64);
+            assert!(traceback.contains("in function 'error'"))
+        }
+    }
 
     Ok(())
 }

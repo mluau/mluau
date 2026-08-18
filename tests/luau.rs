@@ -203,12 +203,12 @@ fn test_sandbox() -> Result<()> {
     // Threads should inherit "main" globals
     let f = lua.create_function(|lua, ()| lua.globals().get::<i32>("global"))?;
     let co = lua.create_thread(f.clone())?;
-    assert_eq!(co.resume::<Option<i32>>(())?, Some(123));
+    assert_eq!(co.resume::<Option<i32>, crate::Error>(())?, Some(123));
 
     // Sandboxed threads should also inherit "main" globals
     let co = lua.create_thread(f)?;
     co.sandbox()?;
-    assert_eq!(co.resume::<Option<i32>>(())?, Some(123));
+    assert_eq!(co.resume::<Option<i32>, crate::Error>(())?, Some(123));
 
     // collectgarbage should be restricted in sandboxed mode
     let collectgarbage = lua.globals().get::<Function>("collectgarbage")?;
@@ -272,19 +272,19 @@ fn test_sandbox_threads() -> Result<()> {
     let f = lua.create_function(|lua, v: Value| lua.globals().set("global", v))?;
 
     let co = lua.create_thread(f.clone())?;
-    co.resume::<()>(321)?;
+    co.resume::<(), crate::Error>(321)?;
     // The main state should see the `global` variable (as the thread is not sandboxed)
     assert_eq!(lua.globals().get::<Option<i32>>("global")?, Some(321));
 
     let co = lua.create_thread(f.clone())?;
     co.sandbox()?;
-    co.resume::<()>(123)?;
+    co.resume::<(), crate::Error>(123)?;
     // The main state should see the previous `global` value (as the thread is sandboxed)
     assert_eq!(lua.globals().get::<Option<i32>>("global")?, Some(321));
 
     // Try to reset the (sandboxed) thread
     co.reset(f)?;
-    co.resume::<()>(111)?;
+    co.resume::<(), crate::Error>(111)?;
     assert_eq!(lua.globals().get::<Option<i32>>("global")?, Some(111));
 
     Ok(())
@@ -336,9 +336,9 @@ fn test_interrupts() -> Result<()> {
         )
         .into_function()?,
     )?;
-    co.resume::<()>(())?;
+    co.resume::<(), crate::Error>(())?;
     assert_eq!(co.status(), ThreadStatus::Resumable);
-    let result: i32 = co.resume(())?;
+    let result: i32 = co.resume::<_, crate::Error>(())?;
     assert_eq!(result, 6);
     assert_eq!(yield_count.load(Ordering::Relaxed), 7);
     assert_eq!(co.status(), ThreadStatus::Finished);
@@ -348,7 +348,7 @@ fn test_interrupts() -> Result<()> {
     let co = lua.create_thread(lua.create_function(|lua, arg: Value| {
         (lua.load("return (function(x) return x end)(...)")).call::<Value>(arg)
     })?)?;
-    let res = co.resume::<String>("abc")?;
+    let res = co.resume::<String, crate::Error>("abc")?;
     assert_eq!(res, "abc".to_string());
     assert_eq!(yield_count.load(Ordering::Relaxed), 3);
 
@@ -380,9 +380,6 @@ fn test_fflags() {
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_fflag_does_not_panic() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     // This used to panic with:
     // "Error configuring Luau (this is a bug, please file an issue):
     //  SyntaxError { message: \"attempt to load a text chunk (mode is 'b')\" ... }"
@@ -400,9 +397,6 @@ fn test_classes_fflag_does_not_panic() -> Result<()> {
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_lib_registered_when_fflag_enabled() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     let lua = Lua::new();
 
     let has_class: bool = lua.load("return class ~= nil").eval()?;
@@ -425,9 +419,6 @@ fn test_classes_lib_registered_when_fflag_enabled() -> Result<()> {
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_instantiate_and_roundtrip_through_rust() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     let lua = Lua::new();
 
     let receive_class = lua.create_function(|_, class: mluau::Class| Ok(class))?;
@@ -475,9 +466,6 @@ fn test_classes_instantiate_and_roundtrip_through_rust() -> Result<()> {
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_value_enum_roundtrip() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     let lua = Lua::new();
 
     let seen_class: Arc<std::sync::Mutex<Option<Value>>> = Arc::new(std::sync::Mutex::new(None));
@@ -548,9 +536,6 @@ fn test_classes_value_enum_roundtrip() -> Result<()> {
 #[cfg(feature = "luau-classes")]
 #[test]
 fn test_classes_get_set_object_field_from_rust() -> Result<()> {
-    Lua::set_fflag("DebugLuauUserDefinedClasses", true).unwrap();
-    Lua::set_fflag("DebugLuauUserDefinedClassesRuntime", true).unwrap();
-
     let lua = Lua::new();
 
     let bump_score = lua.create_function(|_, object: mluau::Object| {
@@ -759,7 +744,7 @@ fn test_thread_state_change_event() -> Result<()> {
         } else {
             changes.push(("error", args.into_vec().len()));
         }
-        lua.create_function(|lua, _: ()| Ok(1u32))?;
+        lua.create_function(|_lua, _: ()| Ok(1u32))?;
         Ok(())
     });
 
@@ -773,8 +758,8 @@ fn test_thread_state_change_event() -> Result<()> {
         return 3, 4, 5
     "#).into_function()?)?;
 
-    thread.resume::<()>(())?;
-    thread.resume::<()>(())?;
+    thread.resume::<(), crate::Error>(())?;
+    thread.resume::<(), crate::Error>(())?;
 
     {
         let changes = state_changes.lock().unwrap();
@@ -790,7 +775,7 @@ fn test_thread_state_change_event() -> Result<()> {
         error("test error")
     "#).into_function()?)?;
 
-    let _ = thread2.resume::<()>(());
+    let _ = thread2.resume::<(), crate::Error>(());
     let changes = state_changes.lock().unwrap();
     assert_eq!(changes.len(), 3);
     assert_eq!(changes[2].0, "error");

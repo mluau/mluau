@@ -4,10 +4,10 @@ use std::os::raw::{c_char, c_int, c_void};
 use std::{slice, str};
 
 use crate::error::{Error, Result};
-
 pub(crate) use error::{
-    error_traceback, error_traceback_thread, pop_error,
-    protect_lua_closure, call_trampoline,
+    error_traceback, func_call_error_traceback, 
+    func_call_error, protect_lua_closure, call_trampoline, pop_error,
+    get_error
 };
 pub(crate) use short_names::short_type_name;
 pub(crate) use userdata::{push_fat_cclosure};

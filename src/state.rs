@@ -349,7 +349,7 @@ impl Lua {
     ///
     /// ```
     /// # use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
-    /// # use mluau::{Lua, Result, ThreadStatus, VmState};
+    /// # use mluau::{Lua, Result, Error, ThreadStatus, VmState};
     /// #
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
@@ -369,7 +369,7 @@ impl Lua {
     ///     .into_function()?,
     /// )?;
     /// while co.status() == ThreadStatus::Resumable {
-    ///     co.resume::<()>(())?;
+    ///     co.resume::<(), Error>(())?;
     /// }
     /// # Ok(())
     /// # }

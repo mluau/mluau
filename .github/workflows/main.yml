@@ -7,12 +7,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
         rust: [stable]
         lua: [luau, luau-jit, luau-vector4]
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
           - os: macos-latest
             target: aarch64-apple-darwin
           - os: windows-latest
@@ -28,26 +30,26 @@ jobs:
         run: |
           cargo build --features "${{ matrix.lua }},vendored" --no-default-features
           cargo build --features "${{ matrix.lua }},vendored,serde" --no-default-features
-          cargo build --features "${{ matrix.lua }},vendored,serde" --no-default-features
         shell: bash
       - name: Build ${{ matrix.lua }} pkg-config
-        if: ${{ matrix.os == 'ubuntu-latest' }}
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends liblua5.4-dev liblua5.3-dev liblua5.2-dev liblua5.1-0-dev libluajit-5.1-dev
           cargo build --features "${{ matrix.lua }}" --no-default-features
-
   test:
     name: Test
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
         rust: [stable, nightly]
         lua: [luau, luau-jit, luau-vector4]
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
           - os: macos-latest
             target: aarch64-apple-darwin
           - os: windows-latest
@@ -63,9 +65,7 @@ jobs:
         run: |
           cargo test --no-default-features --features "${{ matrix.lua }},vendored"
           cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde"
-          cargo test --no-default-features --features "${{ matrix.lua }},vendored,serde"
         shell: bash
-
   test_with_sanitizer:
     name: Test with address sanitizer
     runs-on: ${{ matrix.os }}

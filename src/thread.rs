@@ -2,15 +2,15 @@ use std::fmt;
 use std::os::raw::{c_int, c_void};
 use std::rc::Rc;
 use std::string::String as StdString;
-
+use std::result::Result as StdResult;
 use crate::error::{Error, Result};
 use crate::function::Function;
 use crate::state::{ExtraData, RawLua, callback_error_ext};
 use crate::traits::{FromLuaMulti, IntoLuaMulti};
 use crate::types::{LuaType, TypedRef, UnbackedTypedRef, ValueRef};
 
-use crate::util::{check_stack, error_traceback_thread, pop_error, StackGuard};
-use crate::WeakLua;
+use crate::util::{StackGuard, check_stack, to_string};
+use crate::{FromLuaErr, WeakLua};
 
 /// Continuation thread status. Can either be Ok, Yielded (rare, but can happen) or Error
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -190,11 +190,11 @@ impl Thread {
     ///     end)
     /// "#).eval()?;
     ///
-    /// assert_eq!(thread.resume::<u32>(42)?, 123);
-    /// assert_eq!(thread.resume::<u32>(43)?, 987);
+    /// assert_eq!(thread.resume::<u32, Error>(42)?, 123);
+    /// assert_eq!(thread.resume::<u32, Error>(43)?, 987);
     ///
     /// // The coroutine has now returned, so `resume` will fail
-    /// match thread.resume::<u32>(()) {
+    /// match thread.resume::<u32, Error>(()) {
     ///     Err(Error::CoroutineUnresumable) => {},
     ///     unexpected => panic!("unexpected result {:?}", unexpected),
     /// }
@@ -204,9 +204,10 @@ impl Thread {
     ///
     /// [`coroutine.resume`]: https://www.lua.org/manual/5.4/manual.html#pdf-coroutine.resume
     /// [`coroutine.yield`]: https://www.lua.org/manual/5.4/manual.html#pdf-coroutine.yield
-    pub fn resume<R>(&self, args: impl IntoLuaMulti) -> Result<R>
+    pub fn resume<R, E>(&self, args: impl IntoLuaMulti) -> StdResult<R, E>
     where
         R: FromLuaMulti,
+        E: FromLuaErr
     {
         let lua = self.0.lua.lock();
         let mut has_yielded = false;
@@ -216,7 +217,7 @@ impl Thread {
                 has_yielded = true;
                 nargs
             }
-            _ => return Err(Error::CoroutineUnresumable),
+            _ => return Err(E::from_rust_err(Error::CoroutineUnresumable)),
         };
 
         let state = lua.state();
@@ -226,21 +227,21 @@ impl Thread {
 
             if has_yielded {
                 // We need to use the mainthread here as pcall over a yielded thread is not allowed
-                let nargs = args.push_into_specified_stack_multi(&lua, state)?;
+                let nargs = args.push_into_specified_stack_multi(&lua, state).map_err(E::from_rust_err)?;
                 if nargs > 0 {
-                    check_stack(thread_state, nargs)?;
+                    check_stack(thread_state, nargs).map_err(E::from_rust_err)?;
                     ffi::lua_xmove(state, thread_state, nargs);
                 }
                 pushed_nargs += nargs;
             } else {
-                let nargs = args.push_into_specified_stack_multi(&lua, thread_state)?;
+                let nargs = args.push_into_specified_stack_multi(&lua, thread_state).map_err(E::from_rust_err)?;
                 pushed_nargs += nargs;
             }
 
             let _thread_sg = StackGuard::with_top(thread_state, 0);
             let (_, nresults) = self.resume_inner(&lua, pushed_nargs)?;
 
-            R::from_specified_stack_multi(nresults, &lua, thread_state)
+            R::from_specified_stack_multi(nresults, &lua, thread_state).map_err(E::from_rust_err)
         }
     }
 
@@ -249,16 +250,17 @@ impl Thread {
     /// This is a Luau specific extension.
 
     #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
-    pub fn resume_error<R>(&self, error: impl crate::IntoLua) -> Result<R>
+    pub fn resume_error<R, E>(&self, error: impl crate::IntoLua) -> StdResult<R, E>
     where
         R: FromLuaMulti,
+        E: FromLuaErr
     {
         let lua = self.0.lua.lock();
         let mut has_yielded = false;
         match self.status_inner(&lua) {
             ThreadStatusInner::New(_) => {}
             ThreadStatusInner::Yielded(_) => has_yielded = true,
-            _ => return Err(Error::CoroutineUnresumable),
+            _ => return Err(E::from_rust_err(Error::CoroutineUnresumable)),
         };
 
         let state = lua.state();
@@ -268,25 +270,25 @@ impl Thread {
 
             if has_yielded {
                 // We need to use the mainthread here as pcall over a yielded thread is not allowed
-                check_stack(state, 1)?;
-                error.push_into_specified_stack(&lua, state)?;
+                check_stack(state, 1).map_err(E::from_rust_err)?;
+                error.push_into_specified_stack(&lua, state).map_err(E::from_rust_err)?;
                 ffi::lua_xmove(state, thread_state, 1);
             } else {
-                check_stack(thread_state, 1)?;
-                error.push_into_specified_stack(&lua, thread_state)?;
+                check_stack(thread_state, 1).map_err(E::from_rust_err)?;
+                error.push_into_specified_stack(&lua, thread_state).map_err(E::from_rust_err)?;
             }
 
             let _thread_sg = StackGuard::with_top(thread_state, 0);
             let (_, nresults) = self.resume_inner(&lua, ffi::LUA_RESUMEERROR)?;
 
-            R::from_specified_stack_multi(nresults, &lua, thread_state)
+            R::from_specified_stack_multi(nresults, &lua, thread_state).map_err(E::from_rust_err)
         }
     }
 
     /// Resumes execution of this thread.
     ///
     /// It's similar to `resume()` but leaves `nresults` values on the thread stack.
-    unsafe fn resume_inner(&self, lua: &RawLua, nargs: c_int) -> Result<(ThreadStatusInner, c_int)> {
+    unsafe fn resume_inner<E: FromLuaErr>(&self, lua: &RawLua, nargs: c_int) -> StdResult<(ThreadStatusInner, c_int), E> {
         let state = lua.state();
         let thread_state = self.state();
         let mut nresults = 0;
@@ -296,15 +298,41 @@ impl Thread {
             ffi::LUA_OK => Ok((ThreadStatusInner::Finished, nresults)),
             ffi::LUA_YIELD => Ok((ThreadStatusInner::Yielded(0), nresults)),
             ffi::LUA_ERRMEM => {
-                // Don't call error handler for memory errors
-                Err(pop_error(thread_state, ret))
+                let err_value = lua.stack_value_at(-1, None, thread_state);
+                ffi::lua_pop(thread_state, 1);
+                Err(E::from_lua_err(err_value, ret, String::with_capacity(0)))
             }
             _ => {
-                check_stack(state, 3)?;
-                protect_lua!(state, 0, 1, |state| error_traceback_thread(state, thread_state))?;
-                Err(pop_error(state, ret))
+                let tb_string = if E::NEEDS_TRACEBACK {
+                    check_stack(state, 3).map_err(E::from_rust_err)?;
+                    protect_lua!(state, 0, 1, |state| {
+                        if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {
+                            ffi::luaL_traceback(state, thread_state, std::ptr::null(), 0);
+                        } else {
+                            // Fallback if we can't allocate stack space
+                            ffi::lua_pushstring(state, cstr!(""));
+                        }
+                    }).map_err(E::from_rust_err)?;
+                    to_string(state, -1)
+                } else {
+                    StdString::with_capacity(0)
+                };
+                let err_value = lua.stack_value_at(-1, None, thread_state);
+                Err(E::from_lua_err(err_value, ret, tb_string))
             }
         }
+    }
+
+    /// Gets the status of the thread as the raw Luau state (ffi::LUA_OK, ffi::LUA_YIELD, ffi::LUA_ERR*)
+    #[inline]
+    pub fn raw_status(&self) -> i32 {
+        unsafe { ffi::lua_status(self.state()) }
+    }
+
+    /// Gets the size of the threads current stack
+    #[inline]
+    pub fn get_top(&self) -> i32 {
+        unsafe { ffi::lua_gettop(self.state()) }
     }
 
     /// Gets the status of the thread.
@@ -359,9 +387,11 @@ impl Thread {
     pub fn reset(&self, func: Function) -> Result<()> {
         let lua = self.0.lua.lock();
         let thread_state = self.state();
+        if thread_state == lua.state() {
+            return Err(Error::runtime("cannot reset a running thread"));
+        }
         unsafe {
-            let status = self.status_inner(&lua);
-            self.reset_inner(status)?;
+            ffi::lua_resetthread(thread_state);
 
             // Push function to the top of the thread stack
             lua.push_ref_at(&func.0, thread_state);
@@ -376,25 +406,6 @@ impl Thread {
         }
     }
 
-    unsafe fn reset_inner(&self, status: ThreadStatusInner) -> Result<()> {
-        match status {
-            ThreadStatusInner::New(_) => {
-                // The thread is new, so we can just set the top to 0
-                ffi::lua_settop(self.state(), 0);
-                Ok(())
-            }
-            ThreadStatusInner::Running => Err(Error::runtime("cannot reset a running thread")),
-            ThreadStatusInner::Finished => Ok(()),
-            ThreadStatusInner::Yielded(_) | ThreadStatusInner::Error => {
-                let thread_state = self.state();
-
-                ffi::lua_resetthread(thread_state);
-
-                Ok(())
-            }
-        }
-    }
-
     /// Closes a thread and marks it as finished.
     ///
     /// In [Lua 5.4]: cleans its call stack and closes all pending to-be-closed variables.
@@ -404,10 +415,9 @@ impl Thread {
     /// In Luau: resets to the initial state of a newly created Lua thread.
     /// Lua threads in arbitrary states (like yielded or errored) can be reset properly.
     ///
-
     pub fn close(&self) -> Result<()> {
         let lua = self.0.lua.lock();
-        if self.status_inner(&lua) == ThreadStatusInner::Running {
+        if self.state() == lua.state() {
             return Err(Error::runtime("cannot reset a running thread"));
         }
 
@@ -431,7 +441,7 @@ impl Thread {
     /// # Examples
     ///
     /// ```
-    /// # use mluau::{Lua, Result};
+    /// # use mluau::{Lua, Result, Error};
     /// #
     /// # fn main() -> Result<()> {
     /// let lua = Lua::new();
@@ -441,14 +451,13 @@ impl Thread {
     ///     Ok::<_, mluau::Error>(())
     /// })?)?;
     /// thread.sandbox()?;
-    /// thread.resume::<()>(())?;
+    /// thread.resume::<(), Error>(())?;
     ///
     /// // The global environment should be unchanged
     /// assert_eq!(lua.globals().get::<Option<u32>>("var")?, None);
     /// # Ok(())
     /// # }
     ///
-
     /// ```
     pub fn sandbox(&self) -> Result<()> {
         let lua = self.0.lua.lock();
@@ -487,6 +496,13 @@ impl Thread {
     pub fn attach_thread_state_change_callback(&self) {
         unsafe {
             ffi::lua_setthreadstatechangecb(self.state(), Some(Self::userthreadstatechange_proc));
+        }
+    }
+
+    /// Detach the global user thread state change callback from the thread
+    pub fn detach_thread_state_change_callback(&self) {
+        unsafe {
+            ffi::lua_setthreadstatechangecb(self.state(), None);
         }
     }
 

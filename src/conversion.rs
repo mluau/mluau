@@ -86,7 +86,7 @@ impl FromLua for String {
             return Ok(String(lua.new_value_ref_from(state, idx)));
         }
         // Fallback to default
-        Self::from_lua(lua.stack_value_at(idx, Some(type_id), state)?, lua.lua())
+        Self::from_lua(lua.stack_value_at(idx, Some(type_id), state), lua.lua())
     }
 }
 
@@ -540,7 +540,7 @@ impl FromLua for StdString {
                 });
         }
         // Fallback to default
-        Self::from_lua(lua.stack_value_at(idx, Some(type_id), state)?, lua.lua())
+        Self::from_lua(lua.stack_value_at(idx, Some(type_id), state), lua.lua())
     }
 }
 
@@ -704,7 +704,7 @@ impl FromLua for BString {
             }
             type_id => {
                 // Fallback to default
-                Self::from_lua(lua.stack_value_at(idx, Some(type_id), state)?, lua.lua())
+                Self::from_lua(lua.stack_value_at(idx, Some(type_id), state), lua.lua())
             }
         }
     }
@@ -905,7 +905,7 @@ macro_rules! lua_convert_int {
                     }
                 }
                 // Fallback to default
-                Self::from_lua(lua.stack_value_at(idx, Some(type_id), state)?, lua.lua())
+                Self::from_lua(lua.stack_value_at(idx, Some(type_id), state), lua.lua())
             }
         }
     };
@@ -956,7 +956,7 @@ macro_rules! lua_convert_float {
                     return Ok(ffi::lua_tonumber(state, idx) as _);
                 }
                 // Fallback to default
-                Self::from_lua(lua.stack_value_at(idx, Some(type_id), state)?, lua.lua())
+                Self::from_lua(lua.stack_value_at(idx, Some(type_id), state), lua.lua())
             }
         }
     };

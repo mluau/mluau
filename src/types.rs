@@ -211,7 +211,9 @@ pub enum VmState {
     Yield,
 }
 
-/// Explicit return type for all callback related methods
+/// CallbackResult provides a 'lifecycle' enum that describes what mluau should *do* with the function resp
+/// 
+/// This can either be a normal return (Ok/OkSingle), a yield (Yield) or an error (Error/LuaError)
 pub enum CallbackResult {
     /// The fn succeeded.
     Ok(MultiValue),
@@ -239,6 +241,19 @@ impl CallbackFinalizeAction {
             Self::Error => ffi::lua_error(state),
             Self::Yield(nres) => ffi::lua_yield(state, nres)
         }
+    }
+}
+
+/// Helper to allow extracting out a error with traceback from a function call/thread resume
+#[derive(Debug)]
+pub enum ErrorWithTraceback {
+    /// A BaseError is just a crate::Error
+    BaseError(crate::Error),
+    /// A error w/ the resulting traceback
+    Error {
+        traceback: String,
+        value: crate::Value,
+        err_code: c_int
     }
 }
 

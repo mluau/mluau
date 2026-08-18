@@ -6,22 +6,26 @@ use crate::error::{Error, Result};
 use crate::memory::MemoryState;
 use crate::util::to_string;
 
-// Pops an error off of the stack and returns it. The specific behavior depends on the type of the
-// error at the top of the stack:
-//   1) If the error is actually a panic, this will continue the panic.
-//   2) If the error on the top of the stack is actually an error, just returns it.
-//   3) Otherwise, interprets the error as the appropriate lua error.
-// Uses 2 stack spaces, does not call checkstack.
+/// Pops an error off of the stack and returns it.
+/// 
+/// Uses 2 stack spaces
+#[inline]
 pub(crate) unsafe fn pop_error(state: *mut ffi::lua_State, err_code: c_int) -> Error {
     mlua_debug_assert!(
         err_code != ffi::LUA_OK && err_code != ffi::LUA_YIELD,
         "pop_error called with non-error return code"
     );
 
-
     let err_string = to_string(state, -1);
-    ffi::lua_pop(state, 1);
 
+    let err = get_error(err_string, err_code);
+    ffi::lua_pop(state, 1);
+    err
+}
+
+/// Returns the error given err_string and err_code
+#[inline]
+pub(crate) fn get_error(err_string: String, err_code: c_int) -> Error {
     match err_code {
         ffi::LUA_ERRRUN => Error::RuntimeError(err_string),
         ffi::LUA_ERRSYNTAX => {
@@ -43,7 +47,6 @@ pub(crate) unsafe fn pop_error(state: *mut ffi::lua_State, err_code: c_int) -> E
         _ => mlua_panic!("unrecognized lua error code"),
     }
 }
-
 
 struct ErasedParams {
     invoke: unsafe fn(*mut ffi::lua_State, *mut c_void) -> c_int,
@@ -157,14 +160,34 @@ pub(crate) unsafe extern "C-unwind" fn error_traceback(state: *mut ffi::lua_Stat
     1
 }
 
-// A variant of `error_traceback` that can safely inspect another (yielded) thread stack
-pub(crate) unsafe fn error_traceback_thread(state: *mut ffi::lua_State, thread: *mut ffi::lua_State) {
-    // Move error object to the main thread to safely call `__tostring` metamethod if present
-    ffi::lua_xmove(thread, state, 1);
-
-    let s = ffi::luaL_tolstring(state, -1, ptr::null_mut());
-    if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {
-        ffi::luaL_traceback(state, thread, s, 0);
-        ffi::lua_remove(state, -2);
+pub(crate) unsafe extern "C-unwind" fn func_call_error_traceback(state: *mut ffi::lua_State) -> c_int {
+    // Luau calls error handler for memory allocation errors, skip it
+    // See https://github.com/luau-lang/luau/issues/880
+    if MemoryState::limit_reached(state) {
+        return 0;
     }
+
+    //if ffi::lua_checkstack(state, 3) == 0 { return 1; }
+
+    if ffi::lua_checkstack(state, ffi::LUA_TRACEBACK_STACK) != 0 {
+        ffi::luaL_traceback(state, state, std::ptr::null(), 0);
+    } else {
+        // Fallback if we can't allocate stack space
+        ffi::lua_pushstring(state, cstr!(""));
+    }
+    // Stack consists of [error object, traceback]
+    //
+    // This works bc of lua_pcallmulti in luwu
+    2
+}
+
+pub(crate) unsafe extern "C-unwind" fn func_call_error(state: *mut ffi::lua_State) -> c_int {
+    // Luau calls error handler for memory allocation errors, skip it
+    // See https://github.com/luau-lang/luau/issues/880
+    if MemoryState::limit_reached(state) {
+        return 0;
+    }
+
+    // Stack consists of [error object]
+    1
 }

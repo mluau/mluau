@@ -1,16 +1,15 @@
 use std::cell::RefCell;
 use std::os::raw::{c_int, c_void};
-use std::{mem, ptr, slice};
+use std::{mem, slice};
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 
-use crate::table::Table;
 use crate::traits::{FromLuaMulti, IntoLuaMulti};
 use crate::types::{LuaType, ValueRef};
 use crate::util::{
-    assert_stack, check_stack, linenumber_to_usize, pop_error, ptr_to_lossy_str, ptr_to_str, StackGuard,
+    StackGuard, assert_stack, check_stack, linenumber_to_usize, ptr_to_lossy_str, ptr_to_str, to_string
 };
-use crate::WeakLua;
+use crate::{FromLuaErr, WeakLua};
 
 /// Handle to an internal Lua function.
 #[derive(Clone, Debug, PartialEq)]
@@ -99,165 +98,52 @@ impl Function {
     /// # }
     /// ```
     pub fn call<R: FromLuaMulti>(&self, args: impl IntoLuaMulti) -> Result<R> {
+        self.call_with_err(args)
+    }
+
+    /// Same as call but supports custom error values
+    pub fn call_with_err<R: FromLuaMulti, E: FromLuaErr>(&self, args: impl IntoLuaMulti) -> std::result::Result<R, E> {
         let lua = self.0.lua.lock();
         let state = lua.state();
         unsafe {
             let _sg = StackGuard::new(state);
-            check_stack(state, 2)?;
+            check_stack(state, 2).map_err(E::from_rust_err)?;
 
             // Push error handler
-            lua.push_error_traceback_at(state);
+            if E::NEEDS_TRACEBACK {
+                ffi::lua_getrefpool(state, (*lua.extra()).func_call_error_traceback);
+            } else {
+                ffi::lua_getrefpool(state, (*lua.extra()).func_call_error);
+            }
+
             let stack_start = ffi::lua_gettop(state);
             // Push function and the arguments
             lua.push_ref_at(&self.0, state);
-            let nargs = args.push_into_specified_stack_multi(&lua, state)?;
+            let nargs = args.push_into_specified_stack_multi(&lua, state).map_err(E::from_rust_err)?;
+            
             // Call the function
-            let ret = ffi::lua_pcall(state, nargs, ffi::LUA_MULTRET, stack_start);
+            let ret = ffi::lua_pcallmulti(state, nargs, ffi::LUA_MULTRET, stack_start);
+            
             if ret != ffi::LUA_OK {
-                return Err(pop_error(state, ret));
+                let num_err_retvals = ffi::lua_gettop(state) - stack_start;
+                if num_err_retvals == 2 {
+                    // Stack: [..., error_object, traceback_string]
+                    let tb = to_string(state, -1);
+                    let err_value = lua.stack_value_at(-2, None, state);            
+                    return Err(E::from_lua_err(err_value, ret, tb));
+                } else if num_err_retvals == 1 {
+                    // Stack: [..., error_object]
+                    let err_value = lua.stack_value_at(-1, None, state);         
+                    return Err(E::from_lua_err(err_value, ret, String::with_capacity(0)));
+                } else {
+                    // No results, catastrophic failure
+                    return Err(E::from_lua_err(crate::Value::Nil, ret, String::with_capacity(0)));
+                }
             }
+
             // Get the results
             let nresults = ffi::lua_gettop(state) - stack_start;
-            R::from_specified_stack_multi(nresults, &lua, state)
-        }
-    }
-
-    /// Returns a function that, when called, calls `self`, passing `args` as the first set of
-    /// arguments.
-    ///
-    /// If any arguments are passed to the returned function, they will be passed after `args`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use mluau::{Function, Lua, Result};
-    /// # fn main() -> Result<()> {
-    /// # let lua = Lua::new();
-    /// let sum: Function = lua.load(
-    ///     r#"
-    ///         function(a, b)
-    ///             return a + b
-    ///         end
-    /// "#).eval()?;
-    ///
-    /// let bound_a = sum.bind(1)?;
-    /// assert_eq!(bound_a.call::<u32>(2)?, 1 + 2);
-    ///
-    /// let bound_a_and_b = sum.bind(13)?.bind(57)?;
-    /// assert_eq!(bound_a_and_b.call::<u32>(())?, 13 + 57);
-    ///
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn bind(&self, args: impl IntoLuaMulti) -> Result<Function> {
-        unsafe extern "C-unwind" fn args_wrapper_impl(state: *mut ffi::lua_State) -> c_int {
-            let nargs = ffi::lua_gettop(state);
-            let nbinds = ffi::lua_tointeger(state, ffi::lua_upvalueindex(1)) as c_int;
-            ffi::luaL_checkstack(state, nbinds, ptr::null());
-
-            for i in 0..nbinds {
-                ffi::lua_pushvalue(state, ffi::lua_upvalueindex(i + 2));
-            }
-            if nargs > 0 {
-                ffi::lua_rotate(state, 1, nbinds);
-            }
-
-            nargs + nbinds
-        }
-
-        let lua = self.0.lua.lock();
-        let state = lua.state();
-
-        let args = args.into_lua_multi(lua.lua())?;
-        let nargs = args.len() as c_int;
-
-        if nargs == 0 {
-            return Ok(self.clone());
-        }
-
-        if nargs + 1 > ffi::LUA_MAX_UPVALUES {
-            return Err(Error::BindError);
-        }
-
-        let args_wrapper = unsafe {
-            let _sg = StackGuard::new(state);
-            check_stack(state, nargs + 3)?;
-
-            ffi::lua_pushinteger(state, nargs as ffi::lua_Integer);
-            for arg in &args {
-                lua.push_value_at(arg, state);
-            }
-            protect_lua!(state, nargs + 1, 1, fn(state) {
-                ffi::lua_pushcclosure(state, args_wrapper_impl, ffi::lua_gettop(state));
-            })?;
-
-            Function(lua.pop_ref())
-        };
-
-        let lua = lua.lua();
-        lua.load(
-            r#"
-            local func, args_wrapper = ...
-            return function(...)
-                return func(args_wrapper(...))
-            end
-            "#,
-        )
-        .try_cache()
-        .set_name("=__mlua_bind")
-        .call((self, args_wrapper))
-    }
-
-    /// Returns the environment of the Lua function.
-    ///
-    /// By default Lua functions shares a global environment.
-    ///
-    /// This function always returns `None` for Rust/C functions.
-    pub fn environment(&self) -> Option<Table> {
-        let lua = self.0.lua.lock();
-        let state = lua.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            assert_stack(state, 1);
-
-            lua.push_ref_at(&self.0, state);
-            if ffi::lua_iscfunction(state, -1) != 0 {
-                return None;
-            }
-
-            ffi::lua_getfenv(state, -1);
-
-            if ffi::lua_type(state, -1) != ffi::LUA_TTABLE {
-                return None;
-            }
-            Some(Table(lua.pop_ref()))
-        }
-    }
-
-    /// Sets the environment of the Lua function.
-    ///
-    /// The environment is a table that is used as the global environment for the function.
-    /// Returns `true` if environment successfully changed, `false` otherwise.
-    ///
-    /// This function does nothing for Rust/C functions.
-    pub fn set_environment(&self, env: Table) -> Result<bool> {
-        let lua = self.0.lua.lock();
-        let state = lua.state();
-        unsafe {
-            let _sg = StackGuard::new(state);
-            check_stack(state, 2)?;
-
-            lua.push_ref_at(&self.0, state);
-            if ffi::lua_iscfunction(state, -1) != 0 {
-                return Ok(false);
-            }
-
-            {
-                lua.push_ref_at(&env.0, state);
-                ffi::lua_setfenv(state, -2);
-            }
-
-            Ok(true)
+            R::from_specified_stack_multi(nresults, &lua, state).map_err(E::from_rust_err)
         }
     }
 
