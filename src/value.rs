@@ -47,16 +47,12 @@ pub enum Value {
     Integer(Integer),
     /// A floating point number.
     Number(Number),
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     /// A luau (64-bit) `integer` (not to be confused with number)
     ///
     /// Note that in `luau`, an 64-bit `integer` is a distinct (and completely unrelated type)
     /// to a number (``Value::Number`` and ``Value::Integer``)
     Int64(i64),
     /// A Luau vector.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     Vector(crate::Vector),
     /// An interned string, managed by Lua.
     ///
@@ -73,8 +69,6 @@ pub enum Value {
     /// Special builtin userdata types will be represented as other `Value` variants.
     UserData(AnyUserData),
     /// A Luau buffer.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     Buffer(crate::Buffer),
     /// A Luau class (the "blueprint" produced by a `class ... end` declaration).
     #[cfg(any(feature = "luau-classes", doc))]
@@ -485,8 +479,6 @@ impl Value {
     /// If the value is [`Buffer`], returns it or `None` otherwise.
     ///
     /// [`Buffer`]: crate::Buffer
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     #[inline]
     pub fn as_buffer(&self) -> Option<&crate::Buffer> {
         match self {
@@ -498,8 +490,6 @@ impl Value {
     /// Returns `true` if the value is a [`Buffer`].
     ///
     /// [`Buffer`]: crate::Buffer
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     #[inline]
     pub fn is_buffer(&self) -> bool {
         self.as_buffer().is_some()

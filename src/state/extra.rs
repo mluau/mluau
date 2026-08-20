@@ -8,7 +8,6 @@ use crate::stdlib::StdLib;
 use crate::types::{AppData, ErasedHeader};
 use std::rc::Rc as XRc;
 
-#[cfg(any(feature = "luau", doc))]
 use crate::chunk::Compiler;
 
 use super::{Lua, WeakLua};

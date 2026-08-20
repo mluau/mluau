@@ -1,5 +1,4 @@
 use crate::{CallbackFinalizeAction, IntoCallbackResult};
-#[cfg(any(feature = "luau", doc))]
 use crate::buffer::{ExternalBuffer, ExternalBufferMut};
 use crate::chunk::{AsChunk, Chunk};
 use crate::debug::Debug;
@@ -38,7 +37,6 @@ use crate::util::{assert_stack, check_stack, protect_lua_closure, StackGuard};
 use crate::value::{Nil, Value};
 
 use crate::types::ErasedHeader;
-#[cfg(any(feature = "luau", doc))]
 use crate::{buffer::Buffer, chunk::Compiler};
 
 use std::ffi::c_void;
@@ -304,10 +302,7 @@ impl Lua {
     /// # Ok(())
     /// # }
     ///
-    /// # #[cfg(not(feature = "luau"))]
-    /// # fn main() {}
     /// ```
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn sandbox(&self, enabled: bool) -> Result<()> {
         let lua = self.lock();
         unsafe {
@@ -374,10 +369,7 @@ impl Lua {
     /// # Ok(())
     /// # }
     ///
-    /// # #[cfg(not(feature = "luau"))]
-    /// # fn main() {}
     /// ```
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_interrupt<F>(&self, callback: F)
     where
         F: Fn(&Lua) -> Result<VmState> + 'static,
@@ -432,8 +424,6 @@ impl Lua {
     /// Removes any interrupt function previously set by `set_interrupt`.
     ///
     /// This function has no effect if an 'interrupt' was not previously set.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn remove_interrupt(&self) {
         let lua = &self.raw;
         unsafe {
@@ -449,8 +439,6 @@ impl Lua {
     /// and setting/removing interrupts, thread callbacks and yield arguments/check if yieldable
     ///
     /// Does not do anything if a normal interrupt callback is not set first
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_gc_interrupt<F>(&self, callback: F)
     where
         F: Fn(&Lua, c_int) + 'static,
@@ -462,8 +450,6 @@ impl Lua {
     }
 
     /// Removes any GC interrupt callback previously set by `set_gc_interrupt`.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn remove_gc_interrupt(&self) {
         let lua = &self.raw;
         unsafe {
@@ -472,8 +458,6 @@ impl Lua {
     }
 
     /// Sets a thread creation callback that will be called when a thread is created.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_thread_creation_callback<F>(&self, callback: F)
     where
         F: Fn(&Lua, Thread) -> Result<()> + 'static,
@@ -489,8 +473,6 @@ impl Lua {
     ///
     /// Luau GC does not support exceptions during collection, so the callback must be
     /// non-panicking. If the callback panics, the program will be aborted.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_thread_collection_callback<F>(&self, callback: F)
     where
         F: Fn(crate::LightUserData) + 'static,
@@ -502,8 +484,6 @@ impl Lua {
         }
     }
     /// Sets a thread state change callback that will be called when a attached thread suspends or completes.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_thread_state_change_callback<F>(&self, callback: F)
     where
         F: Fn(&Lua, Thread, crate::ThreadStatus, MultiValue) -> Result<()> + 'static,
@@ -574,8 +554,6 @@ impl Lua {
 
     /// Removes the thread state change callback
     /// [`Lua::set_thread_state_change_callback`].
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn remove_thread_state_change_callback(&self) {
         let lua = self.lock();
         unsafe {
@@ -589,8 +567,6 @@ impl Lua {
     ///
     /// This function has no effect if a thread callbacks were not previously set or if
     /// thread data was ever used.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn remove_thread_callbacks(&self) {
         let lua = self.lock();
         unsafe {
@@ -805,8 +781,6 @@ impl Lua {
     /// including via `require` function.
     ///
     /// See [`Compiler`] for details and possible options.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_compiler(&self, compiler: Compiler) {
         let lua = self.lock();
         unsafe { (*lua.extra.get()).compiler = Some(compiler) };
@@ -904,8 +878,6 @@ impl Lua {
     /// Creates and returns a Luau [buffer] object from a byte slice of data.
     ///
     /// [buffer]: https://luau.org/library#buffer-library
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn create_buffer(&self, data: impl AsRef<[u8]>) -> Result<Buffer> {
         let lua = self.lock();
         let data = data.as_ref();
@@ -923,7 +895,6 @@ impl Lua {
     /// guarantees of the provided `buffer` type. Specifically, if `mode` is `LUA_BHOST_MUTABLE`,
     /// the `buffer` must actually support safe mutable access to its backing store
     /// (e.g., implementing `ExternalBufferMut`).
-    #[cfg(any(feature = "luau", doc))]
     unsafe fn create_external_buffer_with_mode<B: ExternalBuffer>(
         &self,
         buffer: B,
@@ -943,8 +914,6 @@ impl Lua {
     /// Creates and returns an externally managed immutable Luau [buffer] object.
     ///
     /// [buffer]: https://luau.org/library#buffer-library
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn create_external_buffer<B: ExternalBuffer>(&self, buffer: B) -> Result<Buffer> {
         let data = buffer.as_ptr() as *mut u8;
         unsafe { self.create_external_buffer_with_mode(buffer, data, ffi::LUA_BHOST_IMMUTABLE) }
@@ -953,8 +922,6 @@ impl Lua {
     /// Creates and returns an externally managed mutable Luau [buffer] object.
     ///
     /// [buffer]: https://luau.org/library#buffer-library
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn create_external_buffer_mut<B: ExternalBufferMut>(&self, mut buffer: B) -> Result<Buffer> {
         let data = buffer.as_mut_ptr();
         unsafe { self.create_external_buffer_with_mode(buffer, data, ffi::LUA_BHOST_MUTABLE) }
@@ -965,8 +932,6 @@ impl Lua {
     /// Size limit is 1GB. All bytes will be initialized to zero.
     ///
     /// [buffer]: https://luau.org/library#buffer-library
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn create_buffer_with_capacity(&self, size: usize) -> Result<Buffer> {
         unsafe { Ok(self.lock().create_buffer_with_capacity(size)?.1) }
     }

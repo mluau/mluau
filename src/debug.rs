@@ -16,7 +16,6 @@ use crate::util::{assert_stack, linenumber_to_usize, ptr_to_lossy_str, ptr_to_st
 pub struct Debug<'a> {
     state: *mut lua_State,
     lua: &'a RawLua,
-    #[cfg_attr(not(feature = "luau"), allow(unused))]
     level: c_int,
     ar: *mut lua_Debug,
 }

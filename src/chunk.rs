@@ -236,8 +236,6 @@ pub enum ChunkMode {
 }
 
 /// Represents a constant value that can be used by Luau compiler.
-#[cfg(any(feature = "luau", doc))]
-#[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
 #[derive(Clone, Debug)]
 pub enum CompileConstant {
     Nil,
@@ -247,40 +245,33 @@ pub enum CompileConstant {
     String(StdString),
 }
 
-#[cfg(any(feature = "luau", doc))]
 impl From<bool> for CompileConstant {
     fn from(b: bool) -> Self {
         CompileConstant::Boolean(b)
     }
 }
 
-#[cfg(any(feature = "luau", doc))]
 impl From<crate::Number> for CompileConstant {
     fn from(n: crate::Number) -> Self {
         CompileConstant::Number(n)
     }
 }
 
-#[cfg(any(feature = "luau", doc))]
 impl From<crate::Vector> for CompileConstant {
     fn from(v: crate::Vector) -> Self {
         CompileConstant::Vector(v)
     }
 }
 
-#[cfg(any(feature = "luau", doc))]
 impl From<&str> for CompileConstant {
     fn from(s: &str) -> Self {
         CompileConstant::String(s.to_owned())
     }
 }
 
-#[cfg(any(feature = "luau", doc))]
 type LibraryMemberConstantMap = HashMap<(StdString, StdString), CompileConstant>;
 
 /// Luau compiler
-#[cfg(any(feature = "luau", doc))]
-#[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
 #[derive(Clone, Debug)]
 pub struct Compiler {
     optimization_level: u8,
@@ -297,14 +288,12 @@ pub struct Compiler {
     disabled_builtins: Vec<StdString>,
 }
 
-#[cfg(any(feature = "luau", doc))]
 impl Default for Compiler {
     fn default() -> Self {
         const { Self::new() }
     }
 }
 
-#[cfg(any(feature = "luau", doc))]
 impl Compiler {
     /// Creates Luau compiler instance with default options
     pub const fn new() -> Self {
@@ -630,8 +619,6 @@ impl Chunk<'_> {
     /// Sets or overwrites a Luau compiler used for this chunk.
     ///
     /// See [`Compiler`] for details and possible options.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_compiler(mut self, compiler: Compiler) -> Self {
         self.compiler = Some(compiler);
         self

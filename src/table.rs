@@ -508,8 +508,6 @@ impl Table {
     }
 
     /// Sets `readonly` attribute on the table.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_readonly(&self, enabled: bool) {
         let lua = self.0.lua.lock();
         let state = lua.state();
@@ -525,8 +523,6 @@ impl Table {
     }
 
     /// Returns `readonly` attribute of the table.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn is_readonly(&self) -> bool {
         let lua = self.0.lua.lock();
         let state = lua.state();
@@ -546,8 +542,6 @@ impl Table {
     /// - Fast-path for some built-in functions (fastcall).
     ///
     /// For `safeenv` environments, monkey patching or modifying values may not work as expected.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_safeenv(&self, enabled: bool) {
         let lua = self.0.lua.lock();
         unsafe { 

@@ -12,7 +12,6 @@ use crate::types::{TypedRef, UnbackedTypedRef, ValueRef};
 /// See the buffer [documentation] for more information.
 ///
 /// [documentation]: https://luau.org/library#buffer-library
-#[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Buffer(pub(crate) ValueRef);
 
