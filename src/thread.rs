@@ -245,7 +245,6 @@ impl Thread {
     /// Resumes execution of this thread, immediately raising an error.
     ///
     /// This is a Luau specific extension.
-
     pub fn resume_error<R, E>(&self, error: impl crate::IntoLua) -> StdResult<R, E>
     where
         R: FromLuaMulti,
