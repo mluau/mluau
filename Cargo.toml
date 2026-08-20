@@ -22,22 +22,22 @@ rustdoc-args = ["--cfg", "docsrs"]
 members = ["mlua-sys"]
 
 [features]
-default = ["luau", "dynamic-userdata", "bytes", "none-primitive", "serde"]
-luau = ["ffi/luau"]
-luau-jit = ["luau", "ffi/luau-codegen"]
-luau-vector4 = ["luau", "ffi/luau-vector4"]
+default = ["dynamic-userdata", "bytes", "none-primitive", "serde"]
+luau-jit = ["ffi/luau-codegen"]
+luau-vector4 = ["ffi/luau-vector4"]
 # Luau's user-defined classes support is experimental upstream (gated behind
 # fastflags prefixed `Debug*`) and its shape may still change, so this is opt-in.
-luau-classes = ["luau", "ffi/luau-classes"]
+luau-classes = ["ffi/luau-classes"]
 # Custom `none` primitive in mluau/luau
-none-primitive = ["luau", "ffi/none-primitive"]
+none-primitive = ["ffi/none-primitive"]
 
 serde = ["dep:serde", "bstr/serde", "none-primitive"]
-dynamic-userdata = ["luau"]
+dynamic-userdata = []
 
 bytes = ["dep:bytes"]
 
 # deprecated features
+luau = [] # no-op
 serialize = ["serde"]
 vendored = []
 

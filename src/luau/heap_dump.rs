@@ -8,8 +8,6 @@ use crate::state::ExtraData;
 use super::json::{self, Json};
 
 /// Represents a heap dump of a Luau memory state.
-#[cfg(any(feature = "luau", doc))]
-#[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
 pub struct HeapDump {
     data: Json<'static>, // refers to the contents of `buf`
     buf: Box<str>,

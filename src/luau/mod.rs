@@ -49,8 +49,6 @@ pub static RESTRICTED_FFLAGS: &[&str] = &[
 impl Lua {
     /// Create a custom Luau `require` function using provided [`Require`] implementation to find
     /// and load modules.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn create_require_function<R: Require + 'static>(&self, require: R) -> Result<Function> {
         require::create_require_function(self, require)
     }
@@ -65,8 +63,6 @@ impl Lua {
     /// Return error if too many categories are registered or if the category name is invalid.
     ///
     /// See [`Lua::heap_dump`] for tracking memory usage by category.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_memory_category(&self, category: &str) -> Result<()> {
         let lua = self.lock();
 
@@ -98,8 +94,6 @@ impl Lua {
     ///
     /// The returned `HeapDump` can be used to analyze memory usage.
     /// It's recommended to call [`Lua::gc_collect`] before dumping the heap.
-    #[cfg(any(feature = "luau", doc))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn heap_dump(&self) -> Result<HeapDump> {
         let lua = self.lock();
         unsafe { heap_dump::HeapDump::new(lua.state()).ok_or_else(|| Error::runtime("unable to dump heap")) }

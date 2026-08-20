@@ -1,33 +1,32 @@
 [package]
 name = "mlua-sys"
 version = "0.9.0"
-authors = ["Aleksandr Orlenko <zxteam@pm.me>"]
+authors = ["cheesycod", "Aleksandr Orlenko <zxteam@pm.me>"]
 rust-version = "1.71"
 edition = "2021"
-repository = "https://github.com/mlua-rs/mlua"
-documentation = "https://docs.rs/mlua-sys"
+repository = "https://github.com/luwu-community/mluau"
+documentation = "https://docs.rs/mluau-sys"
 readme = "README.md"
 categories = ["external-ffi-bindings"]
 license = "MIT"
 links = "lua"
 build = "build/main.rs"
 description = """
-Low level (FFI) bindings to Lua 5.4/5.3/5.2/5.1 (including LuaJIT) and Luau
+Low level (FFI) bindings to Luwu
 """
 
 [package.metadata.docs.rs]
-features = ["luau", "vendored"]
+features = []
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-luau = ["luau0-src"]
-luau-codegen = ["luau"]
-luau-vector4 = ["luau"]
+luau-codegen = []
+luau-vector4 = []
 # Luau's user-defined classes support is experimental upstream (gated behind
 # fastflags prefixed `Debug*`) and its shape may still change, so bindings for it
 # are opt-in.
-luau-classes = ["luau"]
-none-primitive = ["luau"]
+luau-classes = []
+none-primitive = []
 external = []
 module = []
 
@@ -37,7 +36,6 @@ module = []
 cc = "1.0"
 cfg-if = "1.0"
 pkg-config = "0.3.17"
-luau0-src = { git = "https://github.com/mluau/luau-src-rs", optional = true }
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(raw_dylib)'] }

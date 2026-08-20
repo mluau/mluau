@@ -72,7 +72,6 @@ mod conversion;
 mod debug;
 mod error;
 mod function;
-#[cfg(any(feature = "luau", doc))]
 mod luau;
 mod memory;
 mod multi;
@@ -116,8 +115,6 @@ pub use crate::auxlib::*;
 pub use crate::userdata::{AnyUserData, TypedUserData, TypedUserData as UserDataRef};
 pub use crate::value::{Nil, Value};
 
-#[cfg(any(feature = "luau", doc))]
-#[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
 pub use crate::{
     buffer::Buffer,
     chunk::{CompileConstant, Compiler},

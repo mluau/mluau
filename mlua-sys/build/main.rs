@@ -1,21 +1,10 @@
-use std::env;
-
-#[path = "find_vendored.rs"]
-mod find;
+mod luau_build;
 
 fn main() {
-    println!("cargo:rerun-if-changed=build");
+    let artifacts = luau_build::Build::new()
+        .enable_codegen(cfg!(feature = "luau-codegen"))
+        .set_vector_size(if cfg!(feature = "luau-vector4") { 4 } else { 3 })
+        .build();
 
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-    if target_os == "windows" && cfg!(feature = "module") {
-        if !std::env::var("LUA_LIB_NAME").unwrap_or_default().is_empty() {
-            // Don't use raw-dylib linking
-            find::probe_lua();
-            return;
-        }
-
-        println!("cargo:rustc-cfg=raw_dylib");
-    }
-
-    find::probe_lua();
+    artifacts.print_cargo_metadata();
 }

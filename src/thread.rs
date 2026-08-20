@@ -102,7 +102,6 @@ impl Thread {
     /// # Safety
     /// 
     /// Must not reset thread while holding onto the TypedRef
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn with_data<T: 'static>(self) -> Option<TypedRef<T, Self, 0>> {
         let lua = self.0.lua.lock();
         let thread_state = self.state();
@@ -121,7 +120,6 @@ impl Thread {
     /// # Safety
     /// 
     /// Must not reset thread while holding onto the TypedRef
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn with_data_ref<T: 'static>(&self) -> Option<UnbackedTypedRef<'_, T>> {
         let lua = self.0.lua.lock();
         let thread_state = self.state();
@@ -140,7 +138,6 @@ impl Thread {
     /// Errors if thread data was already set for the current lua thread.
     ///
     /// This is a Luau specific extension.
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn set_thread_data<T: 'static>(&self, data: T) -> Result<()> {
         let lua = self.0.lua.lock();
         let thread_state = self.state();
@@ -249,7 +246,6 @@ impl Thread {
     ///
     /// This is a Luau specific extension.
 
-    #[cfg_attr(docsrs, doc(cfg(feature = "luau")))]
     pub fn resume_error<R, E>(&self, error: impl crate::IntoLua) -> StdResult<R, E>
     where
         R: FromLuaMulti,
