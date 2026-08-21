@@ -1,5 +1,3 @@
-#![cfg(feature = "luau")]
-
 use std::cell::Cell;
 use std::fmt::Debug;
 use std::os::raw::c_void;
