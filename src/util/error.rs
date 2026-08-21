@@ -4,7 +4,7 @@ use std::ptr;
 
 use crate::error::{Error, Result};
 use crate::memory::MemoryState;
-use crate::util::to_string;
+use crate::util::{check_stack, to_string};
 
 /// Pops an error off of the stack and returns it.
 /// 
@@ -99,15 +99,16 @@ where
         }
     }
 
+    check_stack(state, 2)?;
+
     let stack_start = ffi::lua_gettop(state) - nargs;
 
     let extra = crate::state::ExtraData::get(state);
     mlua_debug_assert!(!extra.is_null(), "ExtraData is null in protect_lua_closure");
 
-    MemoryState::relax_limit_with(state, || {
-        ffi::lua_getrefpool(state, (*extra).error_traceback_ref);
-        ffi::lua_getrefpool(state, (*extra).call_trampoline_ref);
-    });
+    ffi::lua_getrefpool(state, (*extra).error_traceback_ref);
+    ffi::lua_getrefpool(state, (*extra).call_trampoline_ref);
+
     if nargs > 0 {
         ffi::lua_rotate(state, stack_start + 1, 2);
     }

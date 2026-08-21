@@ -114,7 +114,9 @@ pub use crate::state::extra::USERDATA2_TAG; // embedders should not use this tag
 pub use crate::auxlib::*;
 pub use crate::userdata::{AnyUserData, TypedUserData, TypedUserData as UserDataRef};
 pub use crate::value::{Nil, Value};
-
+pub use crate::memory::{DefaultAllocator, LuaAllocator};
+#[cfg(feature = "bumpalo")]
+pub use crate::memory::BumpAllocator;
 pub use crate::{
     buffer::Buffer,
     chunk::{CompileConstant, Compiler},

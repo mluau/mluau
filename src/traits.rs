@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use either::Either;
 
-use crate::state::util::push_panic_str;
+use crate::state::util::push_callback_error;
 use crate::types::ErrorWithTraceback;
 use crate::{CallbackFinalizeAction, CallbackResult, CustomError, Ok as LuaOk, Yield};
 use crate::error::{Error, Result};
@@ -15,7 +15,7 @@ use crate::value::Value;
 
 #[inline]
 unsafe fn finalize_error(state: *mut ffi::lua_State, extra: *mut ExtraData, err: impl std::fmt::Display) -> CallbackFinalizeAction {
-    push_panic_str(state, extra, err.to_string());
+    push_callback_error(state, extra, err.to_string());
     CallbackFinalizeAction::Error
 }
 
