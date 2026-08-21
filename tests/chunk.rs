@@ -23,6 +23,8 @@ fn test_chunk_methods() -> Result<()> {
 #[test]
 #[cfg(not(target_os = "wasi"))]
 fn test_chunk_path() -> Result<()> {
+    use std::env::temp_dir;
+
     let lua = Lua::new();
 
     if cfg!(target_arch = "wasm32") {
@@ -31,21 +33,21 @@ fn test_chunk_path() -> Result<()> {
         return Ok(());
     }
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let tmp_dir = temp_dir();
     fs::write(
-        temp_dir.path().join("module.lua"),
+        tmp_dir.join("module.lua"),
         r#"
         return 321
     "#,
     )?;
-    let module_path = temp_dir.path().join("module.lua");
+    let module_path = tmp_dir.join("module.lua");
     let source = fs::read_to_string(&module_path)?;
     let i: i32 = lua
         .load(ChunkSource::src(source).path(module_path.display()))
         .eval()?;
     assert_eq!(i, 321);
 
-    match fs::read_to_string(temp_dir.path().join("module2.lua")) {
+    match fs::read_to_string(tmp_dir.join("module2.lua")) {
         Err(err) if err.kind() == io::ErrorKind::NotFound => {}
         res => panic!("expected io::Error, got {:?}", res),
     };

@@ -18,7 +18,6 @@ fn test_debug_format() -> Result<()> {
 }
 
 #[test]
-#[cfg(all(feature = "luau"))]
 fn test_gc_state_name() -> Result<()> {
     let lua = Lua::new();
 
