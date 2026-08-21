@@ -92,7 +92,7 @@ fn test_serialize_failure() -> Result<(), Box<dyn StdError>> {
     Ok(())
 }
 
-#[cfg(all(feature = "luau", not(feature = "luau-vector4")))]
+#[cfg(not(feature = "luau-vector4"))]
 #[test]
 fn test_serialize_vector() -> Result<(), Box<dyn StdError>> {
     let lua = Lua::new();

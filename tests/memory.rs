@@ -96,3 +96,16 @@ fn test_gc_control() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(feature = "bumpalo")]
+#[test]
+fn test_bump_allocator() {
+    use mluau::{Lua, StdLib, BumpAllocator};
+    
+    let alloc = Box::new(BumpAllocator::new());
+    let lua = Lua::new_with_allocator(StdLib::ALL_SAFE, alloc).unwrap();
+    
+    lua.load("x = 1 + 2").exec().unwrap();
+    let x: i32 = lua.globals().get("x").unwrap();
+    assert_eq!(x, 3);
+}

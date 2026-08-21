@@ -5,10 +5,10 @@ use crate::debug::Debug;
 use crate::error::{Error, Result};
 use crate::function::Function;
 use crate::luau::RESTRICTED_FFLAGS;
-use crate::memory::MemoryState;
+use crate::memory::{DefaultAllocator, MemoryState};
 use crate::multi::MultiValue;
 use crate::state::extra::USERDATA2_TAG;
-use crate::state::util::push_panic_str;
+use crate::state::util::push_callback_error;
 use crate::stdlib::StdLib;
 use crate::string::String;
 use crate::table::Table;
@@ -122,6 +122,23 @@ impl Lua {
         Self::unsafe_new_with(StdLib::ALL)
     }
 
+    /// Creates a new Lua state with a custom allocator.
+    pub fn new_with_allocator(libs: StdLib, allocator: Box<dyn crate::memory::LuaAllocator>) -> Result<Lua> {
+        let lua = unsafe { Self::inner_new_with_allocator(libs, allocator) };
+        lua.lock().mark_safe();
+        Ok(lua)
+    }
+
+    #[inline]
+    unsafe fn inner_new_with_allocator(libs: StdLib, allocator: Box<dyn crate::memory::LuaAllocator>) -> Lua {
+        let lua = Lua {
+            raw: RawLua::new(libs, allocator),
+            collect_garbage: true,
+        };
+        mlua_expect!(lua.configure_luau(), "Error configuring Luau");
+        lua
+    }
+
     /// Creates a new Lua state and loads the specified safe subset of the standard libraries.
     ///
     /// Use the [`StdLib`] flags to specify the libraries you want to load.
@@ -132,7 +149,19 @@ impl Lua {
     ///
     /// See [`StdLib`] documentation for a list of unsafe modules that cannot be loaded.
     pub fn new_with(libs: StdLib) -> Result<Lua> {
-        let lua = unsafe { Self::inner_new(libs) };
+        let lua = unsafe { Self::inner_new_with_allocator(libs, Box::new(DefaultAllocator::default())) };
+
+        lua.lock().mark_safe();
+
+        Ok(lua)
+    }
+
+    /// Same as `new_with` but sets a memory_limit of `size` bytes
+    pub fn new_with_memory_limit(libs: StdLib, size: isize) -> Result<Lua> {
+        let lua = unsafe { Self::inner_new_with_allocator(libs, Box::new(DefaultAllocator {
+            memory_limit: size,
+            ..Default::default()
+        })) };
 
         lua.lock().mark_safe();
 
@@ -151,19 +180,24 @@ impl Lua {
         let mut _symbols: Vec<*const extern "C-unwind" fn()> =
             vec![ffi::lua_isuserdata as _, ffi::lua_tocfunction as _];
 
-        Self::inner_new(libs)
+        Self::inner_new_with_allocator(libs, Box::new(DefaultAllocator::default()))
     }
 
-    /// Creates a new Lua state with required `libs` and `options`
-    unsafe fn inner_new(libs: StdLib) -> Lua {
-        let lua = Lua {
-            raw: RawLua::new(libs),
-            collect_garbage: true,
-        };
-
-        mlua_expect!(lua.configure_luau(), "Error configuring Luau");
-
-        lua
+    /// Sets a memory limit (in bytes) on this Lua state.
+    ///
+    /// Once an allocation occurs that would pass this memory limit, a `Error::MemoryError` is
+    /// generated instead.
+    /// Returns previous limit (zero means no limit).
+    ///
+    /// May be a no-op if the allocator does not support this
+    pub fn set_memory_limit(&self, limit: isize) -> Result<isize> {
+        let lua = self.lock();
+        unsafe {
+            match MemoryState::get(lua.state()) {
+                mem_state if !mem_state.is_null() => Ok((*mem_state).set_memory_limit(limit)),
+                _ => Err(Error::MemoryControlNotAvailable),
+            }
+        }
     }
 
     /// Returns or constructs Lua instance from a raw state.
@@ -621,7 +655,7 @@ impl Lua {
     }
 
     /// Returns the amount of memory (in bytes) currently used inside this Lua state.
-    pub fn used_memory(&self) -> usize {
+    pub fn used_memory(&self) -> isize {
         let lua = self.lock();
         let state = lua.main_state();
         unsafe {
@@ -631,38 +665,19 @@ impl Lua {
                     // Get data from the Lua GC
                     let used_kbytes = ffi::lua_gc(state, ffi::LUA_GCCOUNT, 0);
                     let used_kbytes_rem = ffi::lua_gc(state, ffi::LUA_GCCOUNTB, 0);
-                    (used_kbytes as usize) * 1024 + (used_kbytes_rem as usize)
+                    (used_kbytes as isize) * 1024 + (used_kbytes_rem as isize)
                 }
             }
         }
     }
 
-    /// Sets a memory limit (in bytes) on this Lua state.
-    ///
-    /// Once an allocation occurs that would pass this memory limit, a `Error::MemoryError` is
-    /// generated instead.
-    /// Returns previous limit (zero means no limit).
-    ///
-    /// Does not work in module mode where Lua state is managed externally.
-    pub fn set_memory_limit(&self, limit: usize) -> Result<usize> {
-        let lua = self.lock();
-        unsafe {
-            match MemoryState::get(lua.state()) {
-                mem_state if !mem_state.is_null() => Ok((*mem_state).set_memory_limit(limit)),
-                _ => Err(Error::MemoryControlNotAvailable),
-            }
-        }
-    }
-
     /// Returns the current memory limit of the Lua VM (zero means no limit)
-    ///
-    /// Does not work in module mode where Lua state is managed externally.
-    pub fn memory_limit(&self) -> Result<usize> {
+    pub fn memory_limit(&self) -> isize {
         let lua = self.lock();
         unsafe {
             match MemoryState::get(lua.state()) {
-                mem_state if !mem_state.is_null() => Ok((*mem_state).memory_limit()),
-                _ => Err(Error::MemoryControlNotAvailable),
+                mem_state if !mem_state.is_null() => (*mem_state).memory_limit(),
+                _ => 0,
             }
         }
     }
@@ -1023,7 +1038,7 @@ impl Lua {
                 let args = match A::from_specified_stack_args(nargs, 1, None, rawlua, state) {
                     Ok(a) => a,
                     Err(e) => {
-                        push_panic_str(state, rawlua.extra(), e.to_string());
+                        push_callback_error(state, rawlua.extra(), e.to_string());
                         return CallbackFinalizeAction::Error
                     }
                 };
@@ -1064,7 +1079,7 @@ impl Lua {
                 let args = match A::from_specified_stack_args(nargs, 1, None, rawlua, state) {
                     Ok(a) => a,
                     Err(e) => {
-                        push_panic_str(state, rawlua.extra(), e.to_string());
+                        push_callback_error(state, rawlua.extra(), e.to_string());
                         return CallbackFinalizeAction::Error
                     }
                 };
@@ -1075,7 +1090,7 @@ impl Lua {
                 let args = match AC::from_specified_stack_args(nargs, 1, None, rawlua, state) {
                     Ok(a) => a,
                     Err(e) => {
-                        push_panic_str(state, rawlua.extra(), e.to_string());
+                        push_callback_error(state, rawlua.extra(), e.to_string());
                         return CallbackFinalizeAction::Error
                     }
                 };
@@ -1106,7 +1121,7 @@ impl Lua {
                 let args = match A::from_specified_stack_args(nargs, 1, None, rawlua, state) {
                     Ok(a) => a,
                     Err(e) => {
-                        push_panic_str(state, rawlua.extra(), e.to_string());
+                        push_callback_error(state, rawlua.extra(), e.to_string());
                         return CallbackFinalizeAction::Error
                     }
                 };

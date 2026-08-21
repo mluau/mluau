@@ -152,12 +152,12 @@ fn test_value_to_string() -> Result<()> {
     assert_eq!(Value::Int64(1).type_name(), "integer");
     assert_eq!(Value::Number(34.59).to_string()?, "34.59");
     assert_eq!(Value::Number(34.59).type_name(), "number");
-    #[cfg(all(feature = "luau", not(feature = "luau-vector4")))]
+    #[cfg(not(feature = "luau-vector4"))]
     assert_eq!(
         Value::Vector(mluau::Vector::new(10.0, 11.1, 12.2)).to_string()?,
         "vector(10, 11.1, 12.2)"
     );
-    #[cfg(all(feature = "luau", not(feature = "luau-vector4")))]
+    #[cfg(not(feature = "luau-vector4"))]
     assert_eq!(
         Value::Vector(mluau::Vector::new(10.0, 11.1, 12.2)).type_name(),
         "vector"

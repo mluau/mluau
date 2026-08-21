@@ -10,7 +10,7 @@ use crate::error::Result;
 use crate::function::Function;
 use crate::luau::ENABLED_FFLAGS;
 use crate::memory::{MemoryState, ALLOCATOR};
-use crate::state::util::{StateGuard, extract_panic_str, push_panic_str};
+use crate::state::util::{StateGuard, extract_panic_str, push_callback_error};
 use crate::stdlib::StdLib;
 use crate::string::String;
 use crate::table::Table;
@@ -112,7 +112,7 @@ impl RawLua {
         self.extra.get()
     }
 
-    pub(super) unsafe fn new(libs: StdLib) -> XRc<Self> {
+    pub(super) unsafe fn new(libs: StdLib, allocator: Box<dyn crate::memory::LuaAllocator>) -> XRc<Self> {
         // init needed fflags
         {
             static INIT_FFLAGS: std::sync::Once = std::sync::Once::new();
@@ -123,14 +123,15 @@ impl RawLua {
             });
         }
 
-        Self::new_ext(libs, true)
+        Self::new_ext(libs, true, allocator)
     }
 
     pub(super) unsafe fn new_ext(
         libs: StdLib,
         owned: bool,
+        allocator: Box<dyn crate::memory::LuaAllocator>
     ) -> XRc<Self> {
-        let mem_state: *mut MemoryState = Box::into_raw(Box::default());
+        let mem_state: *mut MemoryState = Box::into_raw(Box::new(MemoryState::new(allocator)));
         let mut state = ffi::lua_newstate(ALLOCATOR, mem_state as *mut c_void);
         // If state is null then switch to Lua internal allocator
         if state.is_null() {
@@ -676,7 +677,7 @@ impl RawLua {
                 Ok(ret) => ret.finish(state),
                 Err(panic) => {
                     let panic = extract_panic_str(panic);
-                    push_panic_str(state, extra, panic);
+                    push_callback_error(state, extra, panic);
                     ffi::lua_error(state);
                 }
             }
@@ -725,7 +726,7 @@ impl RawLua {
                 Ok(ret) => ret.finish(state),
                 Err(panic) => {
                     let panic = extract_panic_str(panic);
-                    push_panic_str(state, extra, panic);
+                    push_callback_error(state, extra, panic);
                     ffi::lua_error(state);
                 }
             }
@@ -744,7 +745,7 @@ impl RawLua {
                 Ok(ret) => ret.finish(state),
                 Err(panic) => {
                     let panic = extract_panic_str(panic);
-                    push_panic_str(state, extra, panic);
+                    push_callback_error(state, extra, panic);
                     ffi::lua_error(state);
                 }
             }

@@ -12,7 +12,7 @@ pub use crate::{
     TablePairsOwned as LuaTablePairsOwned, TableSequence as LuaTableSequence, Thread as LuaThread,
     ThreadStatus as LuaThreadStatus, UserData as LuaUserData, TypedUserData as LuaTypedUserData, TypedUserData as LuaUserDataRef, 
     UserDataFields as LuaUserDataFields, UserDataMethods as LuaUserDataMethods, Value as LuaValue, Variadic as LuaVariadic,
-    VmState as LuaVmState, WeakLua,
+    VmState as LuaVmState, WeakLua, DefaultAllocator as LuaDefaultAllocator, LuaAllocator
 };
 
 #[doc(no_inline)]

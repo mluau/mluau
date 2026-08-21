@@ -17,17 +17,18 @@ impl Drop for StateGuard<'_> {
     }
 }
 
-pub(crate) unsafe fn push_panic_str(state: *mut ffi::lua_State, extra: *mut ExtraData, err: String) {
+/// Safety: This is only run in callbacks
+/// 
+/// Luau guarantees LUA_MINSTACK (20 slots) of stack space when entering a C callback.
+pub(crate) unsafe fn push_callback_error(state: *mut ffi::lua_State, extra: *mut ExtraData, err: String) {
     let res = protect_lua!(state, 0, 1, |state| {
         use crate::string::ExternalString;
         let (ptr, len, userdata) = vec_into_ext_parts_infailable(err.into_bytes());
         let free_cb = Some(String::free_string as ffi::lua_StringFree);
 
-        crate::memory::MemoryState::relax_limit_with(state, || {
-            ffi::lua_pushexternalstring(
-                state, ptr as *const _, len, userdata, free_cb
-            );
-        });
+        ffi::lua_pushexternalstring(
+            state, ptr as *const _, len, userdata, free_cb
+        );
     });
 
     if res.is_err() {
@@ -81,13 +82,13 @@ where
             r
         }
         Ok(Err(err)) => {
-            push_panic_str(state, extra, err.to_string());
+            push_callback_error(state, extra, err.to_string());
             ffi::lua_error(state);
         }
         Err(p) => {
             // Push the error message directly onto the stack
             let err_msg = extract_panic_str(p);
-            push_panic_str(state, extra, err_msg);
+            push_callback_error(state, extra, err_msg);
             ffi::lua_error(state);
         }
     }
