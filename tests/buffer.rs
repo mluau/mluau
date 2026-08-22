@@ -1,4 +1,4 @@
-use mluau::{Lua, Result, Value};
+use mluau::{Compiler, Lua, Result, Value};
 use std::io::{Read, Seek, SeekFrom, Write};
 
 #[test]
@@ -127,6 +127,11 @@ fn test_buffer_cursor() -> Result<()> {
 #[test]
 fn test_external_buffer() -> Result<()> {
     let lua = Lua::new();
+    lua.set_compiler(Compiler::new().set_optimization_level(2));
+
+    #[cfg(feature = "luau-jit")]
+    lua.enable_jit(true);
+
     let data = b"hello, world".to_vec();
     let buf = lua.create_external_buffer(data)?;
 
@@ -160,6 +165,29 @@ fn test_external_buffer() -> Result<()> {
     // Ensure memory lifecycle works on GC
     drop(buf);
     lua.gc_collect()?;
+
+    let my_buf_creator = lua.create_function(|lua, _origbuf: mluau::String| {
+        let buf: Vec<u8> = Vec::from_iter([31, 139, 8, 8, 0, 0, 0, 0, 0, 255, 100, 97, 116, 97, 0, 203, 72, 205, 201, 201, 87, 40, 201, 72, 45, 74, 213, 81, 40, 78, 77, 204, 81, 4, 0, 173, 201, 145, 45, 18, 0, 0, 0]);
+        let buf = lua.create_external_buffer_mut(buf)?;
+        return Ok(Value::Buffer(buf))
+    })?;
+    lua.globals().set("my_buf_creator", my_buf_creator)?;
+    lua.sandbox(true)?;
+
+    let first = lua
+        .load("
+const text = 'hello there, seal!'
+const compressed = _G.my_buf_creator(text)
+    
+for i = 0, buffer.len(compressed)-1 do 
+    print('abc', i, buffer.readu8(compressed, i))
+end
+
+return buffer.readu8(compressed, 0)
+        ")
+        .call::<u8>(())
+        .unwrap();
+    assert!(first == 31);
 
     Ok(())
 }
